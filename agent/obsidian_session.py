@@ -1,0 +1,642 @@
+"""
+Obsidian Vault의 agent/ 폴더에 세션·노트·계획을 읽고 쓴다.
+- 1순위: Obsidian Local REST API (OBSIDIAN_HOST + OBSIDIAN_API_KEY)
+- fallback: OBSIDIAN_VAULT_PATH 직접 파일 쓰기
+"""
+
+import os
+import re
+import ssl
+import json
+import urllib.request
+import urllib.error
+import urllib.parse
+from datetime import datetime
+from pathlib import Path
+
+# ── 업무 타입 설정 ────────────────────────────────────────────
+
+TASK_CONFIGS = {
+    "syncade": {
+        "label": "Syncade 배포",
+        "icon": "🚀",
+        "system_prompt": (
+            "너는 Syncade 배포 전문 에이전트야. "
+            "Syncade는 회사 내부 시스템의 소프트웨어 배포 플랫폼이야. "
+            "배포 절차 안내, 배포 상태 확인, 오류 대응을 담당해. "
+            "단계별로 명확하게 안내하고, 오류 발생 시 원인 분석과 해결책을 제시해. "
+            "배포 진행 상황을 체계적으로 기록하고 추적해."
+        ),
+    },
+    "obsidian-rag": {
+        "label": "Obsidian RAG",
+        "icon": "🧠",
+        "system_prompt": (
+            "너는 Obsidian 지식베이스 관리 에이전트야. "
+            "사용자의 Obsidian Vault에서 관련 노트를 찾고, 정보를 정리하고, 새 노트를 작성하는 역할이야. "
+            "질문에 답할 때 Vault의 기존 내용을 참조해서 일관성 있는 지식을 유지해. "
+            "search_sessions, list_recent_sessions 툴로 기존 작업 이력을 먼저 확인하고, "
+            "필요 시 add_dev_note 툴로 인사이트를 기록해."
+        ),
+    },
+    "unscript": {
+        "label": "Unscript 테스트",
+        "icon": "🤖",
+        "system_prompt": (
+            "너는 Unscript 테스트 에이전트야. "
+            "업무 자동화 스크립트의 테스트 계획 수립, 테스트 케이스 작성, 실행 결과 분석을 담당해. "
+            "테스트 시나리오를 체계적으로 관리하고 버그를 명확히 문서화해. "
+            "화면 OCR(capture_screen_ocr)과 데스크탑 제어 툴을 활용해 UI 동작을 검증해."
+        ),
+    },
+    "knox": {
+        "label": "Knox 자동 수집",
+        "icon": "📥",
+        "system_prompt": (
+            "너는 Knox 데이터 수집 에이전트야. "
+            "Knox Chat, Knox Mail 등 사내 시스템에서 필요한 데이터를 수집하고 정리하는 역할이야. "
+            "수집 대상, 방법, 결과를 명확히 보고하고 수집 현황을 추적해. "
+            "화면 캡처(capture_screen_ocr)를 활용해 데이터를 추출하고 정리해."
+        ),
+    },
+}
+
+# ── 환경변수 로드 헬퍼 ────────────────────────────────────────
+
+def _env(key: str, default: str = "") -> str:
+    return os.environ.get(key, default).strip()
+
+
+# ── 싱글턴 ───────────────────────────────────────────────────
+
+_instance = None
+
+def get_session_manager() -> "ObsidianSession":
+    global _instance
+    if _instance is None:
+        _instance = ObsidianSession()
+    return _instance
+
+
+# ── 메인 클래스 ───────────────────────────────────────────────
+
+class ObsidianSession:
+
+    def __init__(self):
+        vault_path = _env("OBSIDIAN_VAULT_PATH")
+        self.agent_dir = Path(vault_path) / "agent" if vault_path else None
+        self.api_base = _env("OBSIDIAN_HOST").rstrip("/")
+        self.api_key  = _env("OBSIDIAN_API_KEY")
+        self._ssl_ctx = ssl.create_default_context()
+        self._ssl_ctx.check_hostname = False
+        self._ssl_ctx.verify_mode = ssl.CERT_NONE
+        self._ready = bool(vault_path)
+
+    # ── 초기화 ────────────────────────────────────────────────
+
+    def setup_vault(self):
+        """서버 시작 시 1회 호출 — 폴더 구조와 인덱스 파일을 생성한다."""
+        if not self._ready:
+            return
+
+        files = {
+            "agent/_index.md": self._tpl_index(),
+            "agent/sessions/_index.md": self._tpl_sessions_index(),
+            "agent/notes/_index.md": self._tpl_notes_index(),
+            "agent/plans/backlog.md": self._tpl_backlog(),
+        }
+        for task_type, cfg in TASK_CONFIGS.items():
+            files[f"agent/threads/{task_type}/_index.md"] = (
+                f"---\ntype: thread-index\ntask_type: {task_type}\n---\n\n"
+                f"# {cfg['icon']} {cfg['label']} — 스레드 목록\n\n"
+                f"```dataview\nTABLE title, status, created\n"
+                f"FROM \"agent/threads/{task_type}\"\n"
+                f"WHERE thread_id\nSORT created DESC\n```\n"
+            )
+        for rel, content in files.items():
+            try:
+                # 이미 있으면 덮어쓰지 않는다
+                existing = self._read(rel)
+                if existing:
+                    continue
+            except Exception:
+                pass
+            try:
+                self._write(rel, content)
+            except Exception as e:
+                print(f"[obsidian] 초기화 실패 {rel}: {e}")
+
+        print("[obsidian] Vault 초기화 완료")
+
+    # ── 세션 ──────────────────────────────────────────────────
+
+    def new_session(self, task: str) -> str:
+        """새 세션 노트를 생성하고 session_id를 반환한다."""
+        if not self._ready:
+            return ""
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M")
+        session_id = self._next_session_id(date_str)
+        slug = self._slug(task[:30])
+        rel_path = f"agent/sessions/{date_str}-{session_id[-3:]}-{slug}.md"
+
+        content = f"""---
+session_id: {session_id}
+date: {date_str}
+time: {time_str}
+type: session
+status: in_progress
+task: "{task[:80].replace('"', "'")}"
+tools_used: []
+duration_min: 0
+tags: []
+---
+
+# 세션: {task[:60]}
+
+## 요청
+{task}
+
+## 진행 내역
+
+## 결과 요약
+
+## 메모
+"""
+        try:
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 세션 생성 실패: {e}")
+            return ""
+        return session_id
+
+    def log_tool(self, session_id: str, tool: str, result: str):
+        """진행 내역에 툴 실행 결과를 추가한다."""
+        if not self._ready or not session_id:
+            return
+        rel_path = self._session_path(session_id)
+        if not rel_path:
+            return
+        try:
+            content = self._read(rel_path)
+            tool_label = f"- ✅ `{tool}`: {result[:120].strip()}\n"
+            content = content.replace("## 진행 내역\n", f"## 진행 내역\n{tool_label}", 1)
+            # frontmatter의 tools_used 업데이트
+            content = re.sub(
+                r"(tools_used: \[)(.*?)(\])",
+                lambda m: m.group(1) + (m.group(2) + ", " if m.group(2) else "") + f'"{tool}"' + m.group(3),
+                content,
+            )
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 툴 로그 실패: {e}")
+
+    def close_session(self, session_id: str, summary: str):
+        """세션을 완료 상태로 닫고 결과 요약을 기록한다."""
+        if not self._ready or not session_id:
+            return
+        rel_path = self._session_path(session_id)
+        if not rel_path:
+            return
+        try:
+            content = self._read(rel_path)
+            content = content.replace("status: in_progress", "status: completed", 1)
+            content = content.replace("## 결과 요약\n", f"## 결과 요약\n{summary[:500]}\n", 1)
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 세션 종료 실패: {e}")
+
+    # ── 스레드 (업무별 대화 세션) ────────────────────────────────
+
+    def new_thread(self, task_type: str, title: str = "") -> str:
+        """새 업무 스레드를 생성하고 thread_id를 반환한다."""
+        if not self._ready:
+            return ""
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        thread_id = self._next_thread_id(task_type, date_str)
+        config = TASK_CONFIGS.get(task_type, {})
+        display_title = title or f"{config.get('label', task_type)} #{thread_id[-3:]}"
+        system_prompt = config.get("system_prompt", "")
+        initial_messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+        meta = {
+            "thread_id": thread_id,
+            "task_type": task_type,
+            "status": "in_progress",
+            "created": now.isoformat(),
+            "title": display_title,
+        }
+        content = self._build_thread_content(meta, initial_messages)
+        rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 스레드 생성 실패: {e}")
+            return ""
+        return thread_id
+
+    def get_thread_messages(self, task_type: str, thread_id: str) -> list:
+        """LLM에 전달할 전체 messages 리스트를 반환한다 (system 포함)."""
+        rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(rel_path)
+            return self._parse_thread_messages(content)
+        except Exception as e:
+            print(f"[obsidian] 스레드 메시지 로드 실패: {e}")
+            config = TASK_CONFIGS.get(task_type, {})
+            sp = config.get("system_prompt", "")
+            return [{"role": "system", "content": sp}] if sp else []
+
+    def save_thread_messages(self, task_type: str, thread_id: str, messages: list):
+        """스레드의 전체 messages 리스트를 저장한다."""
+        rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            existing = self._read(rel_path)
+            meta = self._parse_thread_meta(existing)
+            content = self._build_thread_content(meta, messages)
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 스레드 저장 실패: {e}")
+
+    def get_thread_display_messages(self, task_type: str, thread_id: str) -> list:
+        """채팅창 표시용 메시지만 반환 (system/tool 제외)."""
+        messages = self.get_thread_messages(task_type, thread_id)
+        result = []
+        for m in messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if role == "user" and content:
+                result.append({"role": "user", "content": content})
+            elif role == "assistant" and content:
+                result.append({"role": "assistant", "content": content})
+        return result
+
+    def list_threads(self, task_type: str) -> list:
+        """특정 업무 타입의 스레드 목록을 반환한다."""
+        rel_dir = f"agent/threads/{task_type}"
+        try:
+            files = self._list_dir(rel_dir)
+            threads = []
+            for f in sorted(
+                [f for f in files if f.endswith(".md") and f != "_index.md"],
+                reverse=True
+            ):
+                rel_path = f"{rel_dir}/{f}"
+                try:
+                    content = self._read(rel_path)
+                    meta = self._parse_thread_meta(content)
+                    msgs = self._parse_thread_messages(content)
+                    msg_count = sum(1 for m in msgs if m.get("role") in ("user", "assistant"))
+                    meta["message_count"] = msg_count
+                    threads.append(meta)
+                except Exception:
+                    threads.append({"thread_id": f.replace(".md", ""), "status": "unknown",
+                                    "title": f, "message_count": 0, "created": ""})
+            return threads
+        except Exception as e:
+            print(f"[obsidian] 스레드 목록 조회 실패: {e}")
+            return []
+
+    def close_thread(self, task_type: str, thread_id: str):
+        """스레드를 completed 상태로 변경한다."""
+        rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(rel_path)
+            content = content.replace("status: in_progress", "status: completed", 1)
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 스레드 완료 처리 실패: {e}")
+
+    # ── 스레드 내부 헬퍼 ─────────────────────────────────────
+
+    def _build_thread_content(self, meta: dict, messages: list) -> str:
+        task_type = meta.get("task_type", "")
+        title = meta.get("title", task_type)
+        lines = []
+        for m in messages:
+            role = m.get("role", "")
+            if role == "system":
+                continue
+            elif role == "user" and m.get("content"):
+                lines.append(f"**사용자**  \n{m['content']}\n")
+            elif role == "assistant":
+                text = m.get("content", "")
+                if text:
+                    lines.append(f"**에이전트**  \n{text}\n")
+                elif m.get("tool_calls"):
+                    names = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])
+                    lines.append(f"**에이전트** *(🔧 {names})*\n")
+            elif role == "tool" and m.get("content"):
+                preview = str(m["content"])[:100]
+                lines.append(f"*✅ {preview}*\n")
+        readable = "\n---\n\n".join(lines) if lines else "*(대화 없음)*"
+        messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
+        return (
+            f"---\n"
+            f"thread_id: {meta['thread_id']}\n"
+            f"task_type: {task_type}\n"
+            f"status: {meta.get('status', 'in_progress')}\n"
+            f"created: {meta.get('created', datetime.now().isoformat())}\n"
+            f"title: \"{title}\"\n"
+            f"---\n\n"
+            f"# {title}\n\n"
+            f"{readable}\n\n"
+            f"---\n\n"
+            f"```agent-messages\n{messages_json}\n```\n"
+        )
+
+    def _parse_thread_messages(self, content: str) -> list:
+        match = re.search(r"```agent-messages\n(.*?)\n```", content, re.DOTALL)
+        if match:
+            return json.loads(match.group(1))
+        return []
+
+    def _parse_thread_meta(self, content: str) -> dict:
+        meta = {}
+        for key in ("thread_id", "task_type", "status", "created"):
+            m = re.search(rf"^{key}: (\S+)", content, re.MULTILINE)
+            meta[key] = m.group(1) if m else ""
+        m = re.search(r'^title: "(.*?)"', content, re.MULTILINE)
+        meta["title"] = m.group(1) if m else ""
+        return meta
+
+    def _next_thread_id(self, task_type: str, date_str: str) -> str:
+        try:
+            files = self._list_dir(f"agent/threads/{task_type}")
+            count = sum(1 for f in files if f.startswith(date_str) and f.endswith(".md"))
+        except Exception:
+            count = 0
+        return f"{date_str}-{count + 1:03d}"
+
+    # ── 개발 노트 ─────────────────────────────────────────────
+
+    def add_note(self, title: str, content: str,
+                 tags: list = None, related_session: str = "") -> str:
+        """개발 노트를 생성하고 경로를 반환한다."""
+        if not self._ready:
+            return "Obsidian 미설정"
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        slug = self._slug(title[:40])
+        rel_path = f"agent/notes/{date_str}-{slug}.md"
+        tags_yaml = "\n".join(f"  - {t}" for t in (tags or []))
+        note = f"""---
+date: {date_str}
+type: dev-note
+related_session: "{related_session}"
+tags:
+{tags_yaml if tags_yaml else "  []"}
+---
+
+# {title}
+
+{content}
+"""
+        try:
+            self._write(rel_path, note)
+            return f"노트 저장: {rel_path}"
+        except Exception as e:
+            return f"노트 저장 실패: {e}"
+
+    # ── 계획/백로그 ───────────────────────────────────────────
+
+    def add_plan_item(self, title: str, description: str = "") -> str:
+        """backlog.md의 '## 예정' 섹션에 항목을 추가한다."""
+        if not self._ready:
+            return "Obsidian 미설정"
+        rel_path = "agent/plans/backlog.md"
+        try:
+            content = self._read(rel_path) or self._tpl_backlog()
+            item = f"- [ ] {title}" + (f" — {description}" if description else "") + "\n"
+            content = content.replace("## 예정\n", f"## 예정\n{item}", 1)
+            now = datetime.now().strftime("%Y-%m-%d")
+            content = re.sub(r"updated: .*", f"updated: {now}", content)
+            self._write(rel_path, content)
+            return f"백로그에 추가: {title}"
+        except Exception as e:
+            return f"백로그 추가 실패: {e}"
+
+    # ── 조회 ──────────────────────────────────────────────────
+
+    def list_recent_sessions(self, limit: int = 5) -> str:
+        """최근 세션 목록을 문자열로 반환한다."""
+        if not self._ready:
+            return "Obsidian 미설정"
+        try:
+            files = self._list_dir("agent/sessions")
+            sessions = sorted(
+                [f for f in files if f.endswith(".md") and not f.endswith("_index.md")],
+                reverse=True
+            )[:limit]
+            if not sessions:
+                return "저장된 세션이 없습니다."
+            lines = []
+            for f in sessions:
+                rel = f"agent/sessions/{f}"
+                try:
+                    raw = self._read(rel)
+                    task_m = re.search(r'task: "(.*?)"', raw)
+                    status_m = re.search(r'status: (\w+)', raw)
+                    task = task_m.group(1) if task_m else f
+                    status = status_m.group(1) if status_m else "?"
+                    lines.append(f"- [{f.replace('.md','')}] {task} ({status})")
+                except Exception:
+                    lines.append(f"- {f}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"세션 조회 실패: {e}"
+
+    def search_sessions(self, query: str) -> str:
+        """세션 내용을 키워드로 검색한다."""
+        if not self._ready:
+            return "Obsidian 미설정"
+        query_lower = query.lower()
+        try:
+            files = self._list_dir("agent/sessions")
+            sessions = [f for f in files if f.endswith(".md") and not f.endswith("_index.md")]
+            results = []
+            for f in sorted(sessions, reverse=True):
+                rel = f"agent/sessions/{f}"
+                try:
+                    raw = self._read(rel)
+                    if query_lower in raw.lower():
+                        task_m = re.search(r'task: "(.*?)"', raw)
+                        task = task_m.group(1) if task_m else f
+                        results.append(f"- [{f.replace('.md','')}] {task}")
+                except Exception:
+                    pass
+            if not results:
+                return f'"{query}" 검색 결과 없음'
+            return f'"{query}" 검색 결과:\n' + "\n".join(results)
+        except Exception as e:
+            return f"검색 실패: {e}"
+
+    # ── REST API / 파일 I/O ───────────────────────────────────
+
+    def _write(self, vault_rel: str, content: str):
+        if self.api_base and self.api_key:
+            url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel, safe="/")
+            data = content.encode("utf-8")
+            req = urllib.request.Request(
+                url, data=data, method="PUT",
+                headers={"Authorization": self.api_key,
+                         "Content-Type": "text/markdown; charset=utf-8"}
+            )
+            try:
+                with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5):
+                    return
+            except Exception as e:
+                print(f"[obsidian] REST 쓰기 실패({vault_rel}), fallback: {e}")
+
+        # fallback: 직접 파일 쓰기
+        if self.agent_dir:
+            # vault_rel은 'agent/...' 형식이므로 agent_dir의 부모(vault root)에서 경로 구성
+            path = self.agent_dir.parent / vault_rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+    def _read(self, vault_rel: str) -> str:
+        if self.api_base and self.api_key:
+            url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel, safe="/")
+            req = urllib.request.Request(
+                url, headers={"Authorization": self.api_key}
+            )
+            try:
+                with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5) as r:
+                    return r.read().decode("utf-8")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return ""
+                raise
+            except Exception as e:
+                print(f"[obsidian] REST 읽기 실패({vault_rel}), fallback: {e}")
+
+        if self.agent_dir:
+            path = self.agent_dir.parent / vault_rel
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        return ""
+
+    def _list_dir(self, vault_rel_dir: str) -> list:
+        if self.api_base and self.api_key:
+            url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel_dir, safe="/") + "/"
+            req = urllib.request.Request(
+                url, headers={"Authorization": self.api_key}
+            )
+            try:
+                with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                    return [f.rstrip("/") for f in data.get("files", [])]
+            except Exception as e:
+                print(f"[obsidian] 디렉터리 조회 실패: {e}")
+
+        if self.agent_dir:
+            path = self.agent_dir.parent / vault_rel_dir
+            if path.exists():
+                return [p.name for p in path.iterdir()]
+        return []
+
+    # ── 유틸 ──────────────────────────────────────────────────
+
+    def _slug(self, text: str) -> str:
+        text = re.sub(r"[^\w가-힣\s-]", "", text)
+        text = re.sub(r"\s+", "-", text.strip())
+        return text[:40].lower() or "session"
+
+    def _next_session_id(self, date_str: str) -> str:
+        try:
+            files = self._list_dir("agent/sessions")
+            count = sum(1 for f in files if f.startswith(date_str) and f.endswith(".md"))
+        except Exception:
+            count = 0
+        return f"{date_str}-{count + 1:03d}"
+
+    def _session_path(self, session_id: str) -> str:
+        """session_id로 실제 파일 경로를 찾는다."""
+        date_part = session_id[:10]  # YYYY-MM-DD
+        num_part = session_id[-3:]   # NNN
+        try:
+            files = self._list_dir("agent/sessions")
+            for f in files:
+                if f.startswith(f"{date_part}-{num_part}-"):
+                    return f"agent/sessions/{f}"
+        except Exception:
+            pass
+        return ""
+
+    # ── 템플릿 ────────────────────────────────────────────────
+
+    def _tpl_index(self) -> str:
+        today = datetime.now().strftime("%Y-%m-%d")
+        return f"""---
+created: {today}
+type: index
+---
+
+# MES Agent — 업무 기록
+
+에이전트와의 업무 세션, 개발 노트, 계획을 관리하는 공간입니다.
+
+## 폴더 구조
+
+| 폴더 | 설명 |
+|------|------|
+| [[sessions/_index\\|sessions/]] | 에이전트 대화 세션 자동 로그 |
+| [[notes/_index\\|notes/]] | 개발 노트, 인사이트 |
+| [[plans/backlog\\|plans/]] | 할 일 목록 및 계획 |
+
+## 사용 방법
+
+- **세션 자동 저장**: 채팅창에서 대화하면 `sessions/`에 자동 기록됩니다.
+- **개발 노트 추가**: 채팅에서 "개발 노트 추가해줘: [내용]"이라고 말하세요.
+- **백로그 추가**: "백로그에 추가해줘: [할 일]"이라고 말하세요.
+- **세션 검색**: "최근 세션 보여줘" 또는 "XXX 관련 세션 찾아줘"
+"""
+
+    def _tpl_sessions_index(self) -> str:
+        return """---
+type: index
+---
+
+# 세션 목록
+
+```dataview
+TABLE task, status, date, tools_used
+FROM "agent/sessions"
+WHERE type = "session"
+SORT date DESC
+LIMIT 20
+```
+"""
+
+    def _tpl_notes_index(self) -> str:
+        return """---
+type: index
+---
+
+# 개발 노트
+
+```dataview
+TABLE date, tags, related_session
+FROM "agent/notes"
+WHERE type = "dev-note"
+SORT date DESC
+```
+"""
+
+    def _tpl_backlog(self) -> str:
+        today = datetime.now().strftime("%Y-%m-%d")
+        return f"""---
+type: backlog
+updated: {today}
+---
+
+# 개발 백로그
+
+## 진행 중
+
+## 예정
+
+## 완료
+"""

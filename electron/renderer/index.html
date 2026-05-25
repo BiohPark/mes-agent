@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://localhost:*" />
+  <title>MES Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <span id="title">MES Agent</span>
+      <div id="header-right">
+        <div id="profile-switcher" class="hidden">
+          <button id="profile-btn" class="profile-btn" title="LLM 프로파일 전환"></button>
+          <div id="profile-menu" class="profile-menu hidden"></div>
+        </div>
+        <span id="status" class="status connecting">● 서버 연결 중...</span>
+      </div>
+    </header>
+
+    <div id="main">
+      <aside id="sidebar">
+        <div class="sidebar-label">업무 자동화</div>
+        <button class="quick-btn task-btn" data-task="syncade">
+          🚀 Syncade 배포
+        </button>
+        <button class="quick-btn task-btn" data-task="obsidian-rag">
+          🧠 Obsidian RAG
+        </button>
+        <button class="quick-btn task-btn" data-task="unscript">
+          🤖 Unscript 테스트
+        </button>
+        <button class="quick-btn task-btn" data-task="knox">
+          📥 Knox 자동 수집
+        </button>
+
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-label">도구 테스트</div>
+        <button class="quick-btn secondary tool-test-btn" data-tool="capture_screen_ocr" data-args="{}">
+          📷 화면 OCR
+        </button>
+        <button class="quick-btn secondary tool-test-btn" data-tool="get_mouse_position" data-args="{}">
+          🖱️ 마우스 위치
+        </button>
+        <button class="quick-btn secondary tool-test-btn" data-tool="mouse_click" data-args='{"x":100,"y":100}'>
+          🖱️ 클릭 (100,100)
+        </button>
+        <button class="quick-btn secondary tool-test-btn" data-tool="key_press" data-args='{"keys":"ctrl+c"}'>
+          ⌨️ Ctrl+C
+        </button>
+      </aside>
+
+      <div id="toast-container"></div>
+
+      <section id="chat-area">
+        <!-- 스레드 바 (업무 선택 시 표시) -->
+        <div id="thread-bar" class="hidden">
+          <div id="thread-bar-inner">
+            <span id="thread-task-label"></span>
+            <div id="thread-tabs-scroll">
+              <div id="thread-tabs"></div>
+            </div>
+            <button id="thread-close-current-btn" class="hidden" title="이 스레드를 완료로 닫기">완료로 닫기</button>
+            <button id="thread-back-btn" title="일반 모드로 돌아가기">✕ 일반 모드</button>
+          </div>
+        </div>
+
+        <div id="messages"></div>
+        <div id="input-area">
+          <textarea
+            id="input"
+            placeholder="지시사항을 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)"
+            rows="2"
+            disabled
+          ></textarea>
+          <button id="send-btn" disabled>전송</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="chat.js"></script>
+  <script src="tool-test.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# 보안 - 절대 커밋 금지
+.env
+
+# Node
+node_modules/
+dist/
+out/
+release/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 런타임 로그
+*.log
+
+# Claude Code 로컬 설정
+.claude/settings.local.json

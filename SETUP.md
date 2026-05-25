@@ -1,0 +1,213 @@
+# 설치 및 환경 설정 가이드
+
+## 사전 요구사항
+
+| 소프트웨어 | 버전 | 비고 |
+|-----------|------|------|
+| Windows | 10 / 11 | 64비트 |
+| Miniconda | 최신 | Python 3.11 환경 생성용 |
+| Node.js | 22.x | nvm-windows 권장 |
+| Tesseract OCR | 5.x | UB-Mannheim 설치본 |
+| Git | 최신 | 저장소 클론용 |
+
+---
+
+## 1단계 — Node.js 설치 (nvm-windows)
+
+1. [nvm-windows](https://github.com/coreybutler/nvm-windows/releases) 에서 `nvm-setup.exe` 다운로드 후 설치
+2. PowerShell 재시작 후:
+
+```powershell
+nvm install 22
+nvm use 22
+node --version   # v22.x.x 확인
+```
+
+---
+
+## 2단계 — Python 환경 생성
+
+```powershell
+conda create -n mes-agent python=3.11 -y
+conda activate mes-agent
+pip install -r requirements.txt
+```
+
+### Tesseract OCR 설치
+
+1. [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) 에서 `tesseract-ocr-w64-setup-*.exe` 다운로드
+2. 설치 시 **Korean** 언어 팩 체크 (Korean.traineddata)
+3. 설치 경로 확인 후 `.env`에 반영:
+
+```
+OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
+```
+
+---
+
+## 3단계 — 저장소 클론 및 Node 패키지
+
+```powershell
+git clone https://github.com/your-org/mes-agent.git
+cd mes-agent
+npm install
+```
+
+---
+
+## 4단계 — 환경 설정 (.env)
+
+```powershell
+copy .env.example .env
+```
+
+`.env`를 열어 아래 항목을 설정합니다:
+
+```ini
+# ── 개발 환경 경로 ────────────────────────────────────
+NODE_VERSION=22.22.3
+CONDA_ENV=mes-agent
+NVM_HOME=C:\Users\<사용자명>\AppData\Local\nvm
+NVM_SYMLINK=C:\nvm4w\nodejs
+MINICONDA_HOME=C:\ProgramData\miniconda3   # 설치 경로에 맞게
+
+# ── LLM 설정 ─────────────────────────────────────────
+LLM_ACTIVE=openai                          # openai 또는 internal
+LLM_OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_OPENAI_MODEL=gpt-4o
+
+LLM_INTERNAL_BASE_URL=http://사내LLM주소/v1
+LLM_INTERNAL_MODEL=사내모델명
+
+# ── API 키 (터미널에서 직접 주입 권장) ──────────────────
+# set OPENAI_API_KEY=sk-...
+# set INTERNAL_API_KEY=...
+
+# ── Agent 서버 ────────────────────────────────────────
+AGENT_PORT=8000
+
+# ── OCR ──────────────────────────────────────────────
+OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
+OCR_LANG=kor+eng
+
+# ── Obsidian ──────────────────────────────────────────
+OBSIDIAN_VAULT_PATH=D:/archive/obsidian/brain
+OBSIDIAN_HOST=https://127.0.0.1:27124
+OBSIDIAN_API_KEY=<발급받은 API 키>
+```
+
+> **주의**: `.env`는 `.gitignore`에 포함되어 있어 git에 올라가지 않습니다.
+
+### Obsidian API 키 발급
+
+Obsidian Local REST API 키는 Obsidian 앱 내에서 발급합니다:
+
+1. Obsidian 실행 → **설정(⚙)** → **Community plugins**
+2. `Local REST API` 플러그인 찾아서 **옵션** 클릭
+3. **API Key** 항목에서 키 복사
+4. `.env`의 `OBSIDIAN_API_KEY=` 뒤에 붙여넣기
+
+> 폐쇄망 주의: `Local REST API` 플러그인이 없으면 외부망 PC에서 미리 다운로드해야 합니다.
+
+---
+
+## 5단계 — 실행
+
+### PowerShell 초기화 (최초 1회)
+
+conda를 PowerShell에서 쓰려면 conda init이 필요합니다:
+
+```powershell
+# Miniconda Prompt에서 실행
+conda init powershell
+# PowerShell 재시작
+```
+
+### 개발 환경 시작
+
+```powershell
+cd mes-agent
+.\start.ps1          # conda + Node PATH 자동 설정
+npm start            # Electron 앱 실행 (FastAPI 서버 자동 시작)
+```
+
+### 개발 모드 (DevTools 포함)
+
+```powershell
+$env:DEV_TOOLS=1; npm start
+```
+
+---
+
+## 폐쇄망 이전
+
+외부 인터넷 접근이 불가한 사내 PC로 이전하는 방법입니다.
+
+### Python 환경 이전 (conda-pack)
+
+외부망 PC에서:
+```bash
+conda activate mes-agent
+conda install conda-pack -y
+conda pack -n mes-agent -o mes-agent-env.tar.gz
+```
+
+사내 PC에서:
+```bash
+mkdir C:\conda-envs\mes-agent
+tar -xzf mes-agent-env.tar.gz -C C:\conda-envs\mes-agent
+C:\conda-envs\mes-agent\Scripts\activate
+conda-unpack
+```
+
+`.env`의 `MINICONDA_HOME`을 `C:\conda-envs`로 수정합니다.
+
+### Node 패키지 이전
+
+외부망 PC에서:
+```powershell
+npm pack --dry-run    # 확인
+# node_modules 폴더 전체를 ZIP으로 압축 후 이전
+```
+
+또는 `package-lock.json` 포함하여 클론 후 오프라인 상태에서 `npm ci --prefer-offline`.
+
+### Playwright 브라우저 이전
+
+```powershell
+# 외부망에서 다운로드
+npx playwright install chromium
+# %LOCALAPPDATA%\ms-playwright\ 폴더 전체를 사내 PC에 복사
+```
+
+사내 PC에서:
+```powershell
+$env:PLAYWRIGHT_BROWSERS_PATH = "D:\playwright-browsers"
+```
+
+---
+
+## 문제 해결
+
+### conda가 PowerShell에서 안 될 때
+```powershell
+# Miniconda Prompt에서 실행
+conda init powershell
+# PowerShell을 관리자 권한으로 재시작
+```
+
+### npm을 못 찾을 때
+```powershell
+# nvm 경로를 수동으로 추가
+$env:PATH = "C:\Users\<사용자명>\AppData\Local\nvm;C:\nvm4w\nodejs;" + $env:PATH
+```
+또는 `start.ps1`을 실행하면 자동 처리됩니다.
+
+### Tesseract 오류
+```
+TesseractNotFoundError
+```
+`.env`의 `OCR_TESSERACT_CMD` 경로가 실제 `tesseract.exe` 위치와 일치하는지 확인하세요.
+
+### Python 서버 포트 충돌
+`.env`에서 `AGENT_PORT`를 다른 포트(예: `8001`)로 변경하세요.

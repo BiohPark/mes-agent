@@ -1,0 +1,15 @@
+{
+  "name": "mes-agent",
+  "version": "1.0.0",
+  "description": "사내 폐쇄망 LLM 업무자동화 에이전트",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^42.2.0"
+  }
+}
