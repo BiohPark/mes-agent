@@ -1,9 +1,16 @@
+import sys
 import json
 import asyncio
 import os
 from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
+
+# 'python agent/server.py' 직접 실행 시 프로젝트 루트를 sys.path에 추가
+# 'python -m agent.server' 실행 시에는 이미 추가되어 있으므로 중복 없음
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 # Electron이 .env를 주입하지 않는 환경(직접 실행)에서도 동작하도록
 _env_path = Path(__file__).parent.parent / '.env'
@@ -196,12 +203,20 @@ async def chat(body: ChatRequest):
 @app.get("/task-config")
 async def task_config():
     from agent.obsidian_session import TASK_CONFIGS
-    return {k: {"label": v["label"], "icon": v["icon"]} for k, v in TASK_CONFIGS.items()}
+    return {k: {"label": v["label"], "icon": v["icon"], "description": v.get("description", "")} for k, v in TASK_CONFIGS.items()}
+
+
+@app.get("/threads")
+async def list_all_threads():
+    mgr = get_session_manager()
+    return await asyncio.get_event_loop().run_in_executor(None, mgr.list_all_threads)
 
 
 @app.get("/threads/{task_type}")
-async def list_threads(task_type: str):
+async def list_threads(task_type: str, archived: bool = False):
     mgr = get_session_manager()
+    if archived:
+        return await asyncio.get_event_loop().run_in_executor(None, mgr.list_archived_threads, task_type)
     return await asyncio.get_event_loop().run_in_executor(None, mgr.list_threads, task_type)
 
 
@@ -219,11 +234,51 @@ async def create_thread(task_type: str, body: NewThreadRequest):
 
 
 @app.get("/threads/{task_type}/{thread_id}/messages")
-async def get_thread_messages(task_type: str, thread_id: str):
+async def get_thread_messages(task_type: str, thread_id: str, archived: bool = False):
     mgr = get_session_manager()
+    if archived:
+        return await asyncio.get_event_loop().run_in_executor(
+            None, mgr.get_thread_display_messages_archived, task_type, thread_id
+        )
     return await asyncio.get_event_loop().run_in_executor(
         None, mgr.get_thread_display_messages, task_type, thread_id
     )
+
+
+@app.delete("/threads/{task_type}/{thread_id}")
+async def archive_thread_endpoint(task_type: str, thread_id: str):
+    mgr = get_session_manager()
+    await asyncio.get_event_loop().run_in_executor(
+        None, mgr.archive_thread, task_type, thread_id
+    )
+    return {"status": "archived"}
+
+
+@app.delete("/threads/{task_type}/{thread_id}/permanent")
+async def delete_thread_permanent(task_type: str, thread_id: str, archived: bool = False):
+    mgr = get_session_manager()
+    await asyncio.get_event_loop().run_in_executor(
+        None, mgr.delete_thread_permanent, task_type, thread_id, archived
+    )
+    return {"status": "deleted"}
+
+
+@app.post("/threads/{task_type}/{thread_id}/restore")
+async def restore_thread(task_type: str, thread_id: str):
+    mgr = get_session_manager()
+    await asyncio.get_event_loop().run_in_executor(
+        None, mgr.restore_thread, task_type, thread_id
+    )
+    return {"status": "restored"}
+
+
+@app.post("/threads/{task_type}/{thread_id}/unarchive")
+async def unarchive_thread(task_type: str, thread_id: str):
+    mgr = get_session_manager()
+    await asyncio.get_event_loop().run_in_executor(
+        None, mgr.restore_archived_thread, task_type, thread_id
+    )
+    return {"status": "unarchived"}
 
 
 @app.post("/threads/{task_type}/{thread_id}/close")

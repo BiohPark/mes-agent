@@ -4,7 +4,7 @@
 
 | 소프트웨어 | 버전 | 비고 |
 |-----------|------|------|
-| Windows | 10 / 11 | 64비트 |
+| Windows | 10 / 11 (64비트) | |
 | Miniconda | 최신 | Python 3.11 환경 생성용 |
 | Node.js | 22.x | nvm-windows 권장 |
 | Tesseract OCR | 5.x | UB-Mannheim 설치본 |
@@ -39,9 +39,24 @@ pip install -r requirements.txt
 2. 설치 시 **Korean** 언어 팩 체크 (Korean.traineddata)
 3. 설치 경로 확인 후 `.env`에 반영:
 
-```
+```ini
 OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
 ```
+
+### Playwright 브라우저 바이너리 설치
+
+Playwright Python 패키지는 `pip install -r requirements.txt`로 설치되지만,
+실제 Chromium 브라우저 바이너리는 별도로 다운로드해야 합니다:
+
+```powershell
+conda activate mes-agent
+python -m playwright install chromium
+```
+
+> **주의**: `playwright install chromium` (CLI) 또는 `npx playwright install chromium` 이 아닌
+> `python -m playwright install chromium` 을 사용해야 conda 환경의 Playwright와 일치합니다.
+
+설치 후 바이너리 위치: `%LOCALAPPDATA%\ms-playwright\chromium-xxxx\`
 
 ---
 
@@ -79,9 +94,9 @@ LLM_OPENAI_MODEL=gpt-4o
 LLM_INTERNAL_BASE_URL=http://사내LLM주소/v1
 LLM_INTERNAL_MODEL=사내모델명
 
-# ── API 키 (터미널에서 직접 주입 권장) ──────────────────
-# set OPENAI_API_KEY=sk-...
-# set INTERNAL_API_KEY=...
+# ── API 키 ────────────────────────────────────────────
+OPENAI_API_KEY=sk-...
+# INTERNAL_API_KEY=...
 
 # ── Agent 서버 ────────────────────────────────────────
 AGENT_PORT=8000
@@ -146,14 +161,14 @@ $env:DEV_TOOLS=1; npm start
 ### Python 환경 이전 (conda-pack)
 
 외부망 PC에서:
-```bash
+```powershell
 conda activate mes-agent
 conda install conda-pack -y
 conda pack -n mes-agent -o mes-agent-env.tar.gz
 ```
 
 사내 PC에서:
-```bash
+```powershell
 mkdir C:\conda-envs\mes-agent
 tar -xzf mes-agent-env.tar.gz -C C:\conda-envs\mes-agent
 C:\conda-envs\mes-agent\Scripts\activate
@@ -164,26 +179,31 @@ conda-unpack
 
 ### Node 패키지 이전
 
-외부망 PC에서:
-```powershell
-npm pack --dry-run    # 확인
-# node_modules 폴더 전체를 ZIP으로 압축 후 이전
-```
-
-또는 `package-lock.json` 포함하여 클론 후 오프라인 상태에서 `npm ci --prefer-offline`.
+`node_modules` 폴더 전체를 ZIP으로 압축해서 이전하거나,
+`package-lock.json` 포함하여 클론 후 오프라인 상태에서 `npm ci --prefer-offline`.
 
 ### Playwright 브라우저 이전
 
+외부망 PC에서:
 ```powershell
-# 외부망에서 다운로드
-npx playwright install chromium
-# %LOCALAPPDATA%\ms-playwright\ 폴더 전체를 사내 PC에 복사
+conda activate mes-agent
+python -m playwright install chromium
+# 이후 %LOCALAPPDATA%\ms-playwright\ 폴더 전체를 USB에 복사
 ```
 
-사내 PC에서:
+사내 PC에서 동일 경로에 붙여넣기:
+```
+C:\Users\<사용자명>\AppData\Local\ms-playwright\
+```
+
+또는 환경변수로 경로를 지정할 수 있습니다:
 ```powershell
 $env:PLAYWRIGHT_BROWSERS_PATH = "D:\playwright-browsers"
 ```
+
+### Tesseract OCR 이전
+
+UB-Mannheim 설치본(`tesseract-ocr-w64-setup-*.exe`)을 USB로 복사 후 설치.
 
 ---
 
@@ -208,6 +228,17 @@ $env:PATH = "C:\Users\<사용자명>\AppData\Local\nvm;C:\nvm4w\nodejs;" + $env:
 TesseractNotFoundError
 ```
 `.env`의 `OCR_TESSERACT_CMD` 경로가 실제 `tesseract.exe` 위치와 일치하는지 확인하세요.
+
+### Playwright 브라우저 오류
+```
+Executable doesn't exist / BrowserNotFound
+```
+conda 환경이 활성화된 터미널에서 아래 명령을 실행하세요:
+```powershell
+conda activate mes-agent
+python -m playwright install chromium
+```
+앱 실행 후에도 오류가 계속되면 앱을 재시작하세요.
 
 ### Python 서버 포트 충돌
 `.env`에서 `AGENT_PORT`를 다른 포트(예: `8001`)로 변경하세요.

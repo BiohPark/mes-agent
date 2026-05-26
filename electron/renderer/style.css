@@ -206,6 +206,68 @@ body {
 }
 #thread-back-btn:hover { color: #8899aa; }
 
+/* 보관함 토글 버튼 */
+#archive-toggle-btn {
+  background: transparent;
+  border: 1px solid #3a3020;
+  color: #7a6a44;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+#archive-toggle-btn:hover { background: #1a1200; color: #c0a060; border-color: #7a5a20; }
+#archive-toggle-btn.active { background: #2a1800; color: #c0a060; border-color: #8a6030; }
+
+/* 스레드 바 보관 모드 */
+#thread-bar.archive-mode {
+  background: #1a1200;
+  border-bottom-color: #4a3000;
+}
+
+/* 탭 내 보관 버튼 (↓) */
+.tab-archive-btn {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #334455;
+  padding: 0 2px;
+  vertical-align: middle;
+  border-radius: 2px;
+  transition: color 0.1s;
+  line-height: 1;
+}
+.thread-tab:hover .tab-archive-btn { color: #556677; }
+.tab-archive-btn:hover { color: #f0a500 !important; }
+
+/* 탭 내 보관 복원 버튼 (↑) */
+.tab-unarchive-btn {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #6a5a33;
+  padding: 0 2px;
+  vertical-align: middle;
+  border-radius: 2px;
+  transition: color 0.1s;
+  line-height: 1;
+}
+.thread-tab:hover .tab-unarchive-btn { color: #9a8a55; }
+.tab-unarchive-btn:hover { color: #c0a060 !important; }
+
+/* 보관된 스레드 탭 */
+.thread-tab.archived { color: #8a7a55; border-color: #4a3a20; }
+.thread-tab.archived:hover { background: #1a1200; color: #c0a060; border-color: #7a5a20; }
+.thread-tab.archived.active { background: #2a1800; border-color: #8a6030; color: #c0a060; }
+
+/* 보관함 탭 없음 힌트 */
+.thread-empty-hint {
+  color: #554433;
+  font-size: 11px;
+  padding: 4px 8px;
+  align-self: center;
+}
+
 /* 활성 task 버튼 강조 */
 .task-btn.active {
   background: #1a4a8a;
@@ -410,6 +472,194 @@ body {
 @keyframes toast-progress {
   from { width: 100%; }
   to   { width: 0%; }
+}
+
+/* 탭 영구 삭제 버튼 (×) */
+.tab-del-btn {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #2a2020;
+  padding: 0 2px;
+  vertical-align: middle;
+  border-radius: 2px;
+  transition: color 0.1s;
+  line-height: 1;
+}
+.thread-tab:hover .tab-del-btn { color: #553333; }
+.tab-del-btn:hover { color: #e94560 !important; }
+
+/* 탭 복원 버튼 */
+.tab-restore-btn {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #334455;
+  padding: 0 2px;
+  vertical-align: middle;
+  border-radius: 2px;
+  transition: color 0.1s;
+  line-height: 1;
+}
+.thread-tab:hover .tab-restore-btn { color: #3366aa; }
+.tab-restore-btn:hover { color: #66aaff !important; }
+
+/* ── 스레드 전체 관리 모달 ─────────────────────────── */
+#delete-manager-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#delete-manager {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  width: 640px;
+  max-width: 92vw;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+#delete-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid #0f3460;
+  font-size: 14px;
+  font-weight: bold;
+  color: #c0d8ff;
+  flex-shrink: 0;
+}
+
+#delete-manager-close {
+  background: transparent;
+  border: none;
+  color: #556677;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+#delete-manager-close:hover { color: #e94560; }
+
+#delete-manager-body {
+  overflow-y: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dm-loading { color: #445566; text-align: center; padding: 30px; font-size: 13px; }
+.dm-empty   { color: #445566; text-align: center; padding: 30px; font-size: 13px; }
+
+.dm-section { display: flex; flex-direction: column; gap: 4px; }
+
+.dm-heading {
+  font-size: 11px;
+  font-weight: bold;
+  color: #6688aa;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #0f3460;
+  margin-bottom: 4px;
+}
+
+.dm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.dm-row:hover { background: #0d1b2a; }
+
+.dm-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dm-label  { font-size: 11px; color: #8899bb; white-space: nowrap; font-family: 'Consolas', monospace; }
+.dm-title  { font-size: 12px; color: #c0d8ff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-count  { font-size: 11px; color: #445566; white-space: nowrap; }
+
+.dm-status { font-size: 10px; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+.dm-status-active   { background: #0a2a1a; color: #4caf50; border: 1px solid #2a6a3a; }
+.dm-status-done     { background: #0a1a2a; color: #4488cc; border: 1px solid #1a3a6a; }
+.dm-status-archived { background: #2a1800; color: #c0a060; border: 1px solid #4a3020; }
+
+.dm-delete-btn {
+  background: transparent;
+  border: 1px solid #4a1a1a;
+  color: #884444;
+  padding: 3px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.dm-delete-btn:hover { background: #2a0808; color: #e94560; border-color: #e94560; }
+
+/* 스레드 환영 메시지 */
+.thread-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 60px 40px;
+  min-height: 200px;
+  cursor: text;
+  user-select: none;
+}
+
+.welcome-icon {
+  font-size: 44px;
+  margin-bottom: 6px;
+}
+
+.welcome-title {
+  font-size: 20px;
+  font-weight: bold;
+  color: #c0d8ff;
+}
+
+.welcome-desc {
+  font-size: 14px;
+  color: #5577aa;
+  line-height: 1.9;
+  max-width: 340px;
+}
+
+.welcome-hint {
+  margin-top: 14px;
+  font-size: 11px;
+  color: #334455;
+  border: 1px dashed #1a3050;
+  padding: 5px 16px;
+  border-radius: 20px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.thread-welcome:hover .welcome-hint {
+  color: #5577aa;
+  border-color: #2a4a7a;
 }
 
 /* 스크롤바 */

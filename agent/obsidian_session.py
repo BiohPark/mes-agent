@@ -17,9 +17,21 @@ from pathlib import Path
 # ── 업무 타입 설정 ────────────────────────────────────────────
 
 TASK_CONFIGS = {
+    "general": {
+        "label": "기본업무",
+        "icon": "💬",
+        "description": "무엇이든 물어보세요.\n화면 OCR, 마우스/키보드 제어, 파일 처리 등\n다양한 업무 자동화를 도와드립니다.",
+        "system_prompt": (
+            "너는 사내 업무자동화 데스크탑 에이전트야. "
+            "사용자의 자연어 지시에 따라 화면 인식, 키보드/마우스 제어, "
+            "문서 처리 등 다양한 업무를 수행한다. "
+            "명확하게 이해하고 단계적으로 처리하며, 결과를 간결하게 보고해."
+        ),
+    },
     "syncade": {
         "label": "Syncade 배포",
         "icon": "🚀",
+        "description": "Syncade 배포 전문 에이전트입니다.\n배포 절차 안내, 배포 상태 확인,\n오류 대응을 도와드립니다.",
         "system_prompt": (
             "너는 Syncade 배포 전문 에이전트야. "
             "Syncade는 회사 내부 시스템의 소프트웨어 배포 플랫폼이야. "
@@ -31,6 +43,7 @@ TASK_CONFIGS = {
     "obsidian-rag": {
         "label": "Obsidian RAG",
         "icon": "🧠",
+        "description": "Obsidian 지식베이스 관리 에이전트입니다.\nVault에서 관련 노트를 찾고,\n정보를 정리하고 새 노트를 작성합니다.",
         "system_prompt": (
             "너는 Obsidian 지식베이스 관리 에이전트야. "
             "사용자의 Obsidian Vault에서 관련 노트를 찾고, 정보를 정리하고, 새 노트를 작성하는 역할이야. "
@@ -42,6 +55,7 @@ TASK_CONFIGS = {
     "unscript": {
         "label": "Unscript 테스트",
         "icon": "🤖",
+        "description": "Unscript 테스트 에이전트입니다.\n테스트 계획 수립, 케이스 작성,\n실행 결과 분석을 도와드립니다.",
         "system_prompt": (
             "너는 Unscript 테스트 에이전트야. "
             "업무 자동화 스크립트의 테스트 계획 수립, 테스트 케이스 작성, 실행 결과 분석을 담당해. "
@@ -52,6 +66,7 @@ TASK_CONFIGS = {
     "knox": {
         "label": "Knox 자동 수집",
         "icon": "📥",
+        "description": "Knox 데이터 수집 에이전트입니다.\nKnox Chat, Knox Mail 등 사내 시스템에서\n필요한 데이터를 수집하고 정리합니다.",
         "system_prompt": (
             "너는 Knox 데이터 수집 에이전트야. "
             "Knox Chat, Knox Mail 등 사내 시스템에서 필요한 데이터를 수집하고 정리하는 역할이야. "
@@ -106,12 +121,21 @@ class ObsidianSession:
             "agent/plans/backlog.md": self._tpl_backlog(),
         }
         for task_type, cfg in TASK_CONFIGS.items():
+            desc = cfg.get("description", "")
             files[f"agent/threads/{task_type}/_index.md"] = (
                 f"---\ntype: thread-index\ntask_type: {task_type}\n---\n\n"
                 f"# {cfg['icon']} {cfg['label']} — 스레드 목록\n\n"
+                f"{desc}\n\n"
                 f"```dataview\nTABLE title, status, created\n"
                 f"FROM \"agent/threads/{task_type}\"\n"
                 f"WHERE thread_id\nSORT created DESC\n```\n"
+            )
+            files[f"agent/threads/_archive/{task_type}/_index.md"] = (
+                f"---\ntype: thread-archive-index\ntask_type: {task_type}\n---\n\n"
+                f"# {cfg['icon']} {cfg['label']} — 보관된 스레드\n\n"
+                f"```dataview\nTABLE title, archived_at\n"
+                f"FROM \"agent/threads/_archive/{task_type}\"\n"
+                f"WHERE thread_id\nSORT archived_at DESC\n```\n"
             )
         for rel, content in files.items():
             try:
@@ -217,7 +241,9 @@ tags: []
         date_str = now.strftime("%Y-%m-%d")
         thread_id = self._next_thread_id(task_type, date_str)
         config = TASK_CONFIGS.get(task_type, {})
-        display_title = title or f"{config.get('label', task_type)} #{thread_id[-3:]}"
+        date_part = thread_id[:10]   # YYYY-MM-DD
+        num_part  = thread_id[-3:]   # NNN
+        display_title = title or f"{config.get('label', task_type)} {date_part} #{num_part}"
         system_prompt = config.get("system_prompt", "")
         initial_messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
         meta = {
@@ -307,6 +333,132 @@ tags: []
             self._write(rel_path, content)
         except Exception as e:
             print(f"[obsidian] 스레드 완료 처리 실패: {e}")
+
+    def archive_thread(self, task_type: str, thread_id: str):
+        """스레드를 _archive 폴더로 이동한다 (실제 삭제 아님)."""
+        src_path = f"agent/threads/{task_type}/{thread_id}.md"
+        dst_path = f"agent/threads/_archive/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(src_path)
+            if not content:
+                print(f"[obsidian] 보관 실패: 파일 없음 {src_path}")
+                return
+            now = datetime.now().isoformat(timespec="seconds")
+            # 복원 시 원래 상태로 돌아갈 수 있도록 보관 전 status 저장
+            pre_match = re.search(r"^status: (\S+)$", content, re.MULTILINE)
+            pre_status = pre_match.group(1) if pre_match else "in_progress"
+            content = re.sub(r"(status: )\S+", r"\1archived", content, count=1)
+            content = content.replace(
+                "status: archived\n",
+                f"status: archived\narchived_at: {now}\npre_archive_status: {pre_status}\n",
+                1
+            )
+            self._write(dst_path, content)
+            self._delete(src_path)
+        except Exception as e:
+            print(f"[obsidian] 스레드 보관 실패: {e}")
+
+    def list_archived_threads(self, task_type: str) -> list:
+        """보관된 스레드 목록을 반환한다."""
+        rel_dir = f"agent/threads/_archive/{task_type}"
+        try:
+            files = self._list_dir(rel_dir)
+            threads = []
+            for f in sorted(
+                [f for f in files if f.endswith(".md") and f != "_index.md"],
+                reverse=True
+            ):
+                rel_path = f"{rel_dir}/{f}"
+                try:
+                    content = self._read(rel_path)
+                    meta = self._parse_thread_meta(content)
+                    m = re.search(r"^archived_at: (.+)$", content, re.MULTILINE)
+                    meta["archived_at"] = m.group(1).strip() if m else ""
+                    msgs = self._parse_thread_messages(content)
+                    msg_count = sum(1 for msg in msgs if msg.get("role") in ("user", "assistant"))
+                    meta["message_count"] = msg_count
+                    threads.append(meta)
+                except Exception:
+                    threads.append({
+                        "thread_id": f.replace(".md", ""), "status": "archived",
+                        "title": f, "message_count": 0, "created": "", "archived_at": ""
+                    })
+            return threads
+        except Exception as e:
+            print(f"[obsidian] 보관 스레드 목록 조회 실패: {e}")
+            return []
+
+    def list_all_threads(self) -> dict:
+        """모든 업무 타입의 활성·완료·보관 스레드를 묶어 반환한다."""
+        result = {}
+        for task_type in TASK_CONFIGS:
+            active = self.list_threads(task_type)
+            archived = self.list_archived_threads(task_type)
+            for t in active:
+                t["is_archived"] = False
+            for t in archived:
+                t["is_archived"] = True
+            all_threads = active + archived
+            if all_threads:
+                result[task_type] = all_threads
+        return result
+
+    def delete_thread_permanent(self, task_type: str, thread_id: str, archived: bool = False) -> None:
+        """스레드 .md 파일을 영구 삭제한다."""
+        if archived:
+            rel_path = f"agent/threads/_archive/{task_type}/{thread_id}.md"
+        else:
+            rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        self._delete(rel_path)
+
+    def restore_thread(self, task_type: str, thread_id: str) -> None:
+        """완료된 스레드를 진행 중 상태로 복원한다."""
+        rel_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(rel_path)
+            content = re.sub(r"(status: )\S+", r"\1in_progress", content, count=1)
+            self._write(rel_path, content)
+        except Exception as e:
+            print(f"[obsidian] 스레드 복원 실패: {e}")
+
+    def restore_archived_thread(self, task_type: str, thread_id: str) -> None:
+        """보관된 스레드를 보관 전 상태(pre_archive_status)로 활성 폴더에 복원한다."""
+        src_path = f"agent/threads/_archive/{task_type}/{thread_id}.md"
+        dst_path = f"agent/threads/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(src_path)
+            if not content:
+                print(f"[obsidian] 보관 복원 실패: 파일 없음 {src_path}")
+                return
+            # 저장해둔 보관 전 status로 복원 (없으면 in_progress로 fallback)
+            pre_match = re.search(r"^pre_archive_status: (\S+)$", content, re.MULTILINE)
+            restore_status = pre_match.group(1) if pre_match else "in_progress"
+            content = re.sub(r"(status: )\S+", r"\1" + restore_status, content, count=1)
+            content = re.sub(r"^archived_at: .+\n", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^pre_archive_status: .+\n", "", content, flags=re.MULTILINE)
+            self._write(dst_path, content)
+            self._delete(src_path)
+        except Exception as e:
+            print(f"[obsidian] 보관 스레드 복원 실패: {e}")
+
+    def get_thread_display_messages_archived(self, task_type: str, thread_id: str) -> list:
+        """보관된 스레드의 채팅창 표시용 메시지를 반환한다."""
+        rel_path = f"agent/threads/_archive/{task_type}/{thread_id}.md"
+        try:
+            content = self._read(rel_path)
+            messages = self._parse_thread_messages(content)
+            result = []
+            for msg in messages:
+                role = msg.get("role", "")
+                text = msg.get("content", "")
+                if role == "user" and text:
+                    result.append({"role": "user", "content": text})
+                elif role == "assistant" and text:
+                    result.append({"role": "assistant", "content": text})
+            return result
+        except Exception as e:
+            print(f"[obsidian] 보관 스레드 메시지 로드 실패: {e}")
+            return []
 
     # ── 스레드 내부 헬퍼 ─────────────────────────────────────
 
@@ -517,6 +669,24 @@ tags:
             if path.exists():
                 return path.read_text(encoding="utf-8")
         return ""
+
+    def _delete(self, vault_rel: str):
+        """파일을 삭제한다."""
+        if self.api_base and self.api_key:
+            url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel, safe="/")
+            req = urllib.request.Request(
+                url, method="DELETE",
+                headers={"Authorization": self.api_key}
+            )
+            try:
+                with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5):
+                    return
+            except Exception as e:
+                print(f"[obsidian] REST 삭제 실패({vault_rel}), fallback: {e}")
+        if self.agent_dir:
+            path = self.agent_dir.parent / vault_rel
+            if path.exists():
+                path.unlink()
 
     def _list_dir(self, vault_rel_dir: str) -> list:
         if self.api_base and self.api_key:
