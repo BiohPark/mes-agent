@@ -182,3 +182,166 @@ def get_system_info() -> str:
         })
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+MANIFEST = [
+    {
+        "name": "run_command",
+        "label": "명령 실행",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "PowerShell 또는 CMD 명령어를 실행하고 stdout, stderr, returncode를 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cmd": {"type": "string"},
+                        "timeout": {"type": "integer", "description": "초 (기본 30)"},
+                        "shell": {"type": "string", "enum": ["powershell", "cmd"]}
+                    },
+                    "required": ["cmd"]
+                }
+            }
+        },
+        "handler": lambda a: run_command(a["cmd"], a.get("timeout", 30), a.get("shell", "powershell"))
+    },
+    {
+        "name": "list_processes",
+        "label": "프로세스 목록 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "list_processes",
+                "description": "실행 중인 프로세스 목록을 반환합니다. name_filter로 검색 가능합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name_filter": {"type": "string", "description": "프로세스 이름 검색어"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: list_processes(a.get("name_filter", ""))
+    },
+    {
+        "name": "kill_process",
+        "label": "프로세스 종료",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "kill_process",
+                "description": "프로세스 이름 또는 PID로 프로세스를 종료합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name_or_pid": {"type": "string", "description": "프로세스 이름 또는 PID"}
+                    },
+                    "required": ["name_or_pid"]
+                }
+            }
+        },
+        "handler": lambda a: kill_process(a["name_or_pid"])
+    },
+    {
+        "name": "is_process_running",
+        "label": "프로세스 실행 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "is_process_running",
+                "description": "특정 프로세스가 실행 중인지 확인합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"]
+                }
+            }
+        },
+        "handler": lambda a: is_process_running(a["name"])
+    },
+    {
+        "name": "start_process",
+        "label": "프로세스 시작",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "start_process",
+                "description": "명령어로 프로세스를 실행합니다. wait=true 시 완료 대기합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cmd": {"type": "string"},
+                        "wait": {"type": "boolean"}
+                    },
+                    "required": ["cmd"]
+                }
+            }
+        },
+        "handler": lambda a: start_process(a["cmd"], a.get("wait", False))
+    },
+    {
+        "name": "open_file",
+        "label": "파일 열기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "open_file",
+                "description": "파일을 연결된 기본 프로그램으로 엽니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: open_file(a["path"])
+    },
+    {
+        "name": "list_directory",
+        "label": "폴더 목록 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "list_directory",
+                "description": "폴더의 파일 및 하위 폴더 목록을 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: list_directory(a["path"])
+    },
+    {
+        "name": "file_exists",
+        "label": "파일 존재 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "file_exists",
+                "description": "파일 또는 폴더가 존재하는지 확인합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: file_exists(a["path"])
+    },
+    {
+        "name": "get_system_info",
+        "label": "시스템 정보 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_system_info",
+                "description": "CPU, 메모리, 디스크 사용량 등 현재 시스템 상태를 반환합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: get_system_info()
+    },
+]

@@ -225,3 +225,365 @@ def browser_close() -> str:
         pass
     _pw = _browser = _page = None
     return "브라우저 종료 완료"
+
+
+MANIFEST = [
+    {
+        "name": "browser_open",
+        "label": "브라우저 열기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_open",
+                "description": "브라우저를 열고 URL로 이동합니다. 세션이 이미 열려있으면 재사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "headless": {"type": "boolean", "description": "true=화면 없이 실행"}
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        "handler": lambda a: browser_open(a["url"], a.get("headless", False))
+    },
+    {
+        "name": "browser_navigate",
+        "label": "페이지 이동",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_navigate",
+                "description": "현재 브라우저 탭에서 다른 URL로 이동합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"]
+                }
+            }
+        },
+        "handler": lambda a: browser_navigate(a["url"])
+    },
+    {
+        "name": "browser_get_url",
+        "label": "현재 URL 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_url",
+                "description": "현재 브라우저의 URL을 반환합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_get_url()
+    },
+    {
+        "name": "browser_get_title",
+        "label": "페이지 제목 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_title",
+                "description": "현재 브라우저 페이지의 제목(title)을 반환합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_get_title()
+    },
+    {
+        "name": "browser_click",
+        "label": "웹 요소 클릭",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_click",
+                "description": "CSS selector 또는 XPath로 웹 요소를 찾아 클릭합니다. 예: '#btn-submit', 'button:has-text(\"확인\")'",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "timeout": {"type": "integer", "description": "밀리초 (기본 5000)"}
+                    },
+                    "required": ["selector"]
+                }
+            }
+        },
+        "handler": lambda a: browser_click(a["selector"], a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_fill",
+        "label": "웹 입력창 채우기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_fill",
+                "description": "웹 입력창에 텍스트를 채웁니다. 기존 내용을 지우고 새로 입력합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "text": {"type": "string"},
+                        "timeout": {"type": "integer"}
+                    },
+                    "required": ["selector", "text"]
+                }
+            }
+        },
+        "handler": lambda a: browser_fill(a["selector"], a["text"], a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_type",
+        "label": "웹 타이핑",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_type",
+                "description": "웹 입력창에 한 글자씩 타이핑합니다. 자동완성 드롭다운을 트리거해야 할 때 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "text": {"type": "string"},
+                        "delay": {"type": "integer", "description": "글자 간 딜레이 ms (기본 50)"}
+                    },
+                    "required": ["selector", "text"]
+                }
+            }
+        },
+        "handler": lambda a: browser_type(a["selector"], a["text"], a.get("delay", 50))
+    },
+    {
+        "name": "browser_select",
+        "label": "드롭다운 선택",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_select",
+                "description": "드롭다운에서 값을 선택합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "value": {"type": "string"}
+                    },
+                    "required": ["selector", "value"]
+                }
+            }
+        },
+        "handler": lambda a: browser_select(a["selector"], a["value"], a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_get_text",
+        "label": "웹 텍스트 추출",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_text",
+                "description": "지정한 웹 요소의 텍스트를 추출합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "timeout": {"type": "integer"}
+                    },
+                    "required": ["selector"]
+                }
+            }
+        },
+        "handler": lambda a: browser_get_text(a["selector"], a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_get_page_text",
+        "label": "페이지 전체 텍스트",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_page_text",
+                "description": "현재 브라우저 페이지의 전체 텍스트를 추출합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_get_page_text()
+    },
+    {
+        "name": "browser_get_attribute",
+        "label": "웹 요소 속성 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_attribute",
+                "description": "웹 요소의 속성값을 반환합니다. 예: href, value, class, data-id",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "attribute": {"type": "string"},
+                        "timeout": {"type": "integer"}
+                    },
+                    "required": ["selector", "attribute"]
+                }
+            }
+        },
+        "handler": lambda a: browser_get_attribute(a["selector"], a["attribute"], a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_wait_for",
+        "label": "웹 요소 대기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_wait_for",
+                "description": "웹 요소가 나타나거나 특정 상태가 될 때까지 기다립니다. state: visible/hidden/attached/detached",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string"},
+                        "state": {"type": "string", "enum": ["visible", "hidden", "attached", "detached"]},
+                        "timeout": {"type": "integer", "description": "밀리초 (기본 10000)"}
+                    },
+                    "required": ["selector"]
+                }
+            }
+        },
+        "handler": lambda a: browser_wait_for(a["selector"], a.get("state", "visible"), a.get("timeout", 10000))
+    },
+    {
+        "name": "browser_wait_for_url",
+        "label": "URL 변경 대기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_wait_for_url",
+                "description": "브라우저 URL이 지정한 패턴을 포함할 때까지 기다립니다. 페이지 이동 완료 감지에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string"},
+                        "timeout": {"type": "integer"}
+                    },
+                    "required": ["pattern"]
+                }
+            }
+        },
+        "handler": lambda a: browser_wait_for_url(a["pattern"], a.get("timeout", 10000))
+    },
+    {
+        "name": "browser_wait_for_network_idle",
+        "label": "네트워크 완료 대기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_wait_for_network_idle",
+                "description": "페이지의 모든 네트워크 요청이 완료될 때까지 기다립니다. Ajax 로딩 완료 감지에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "timeout": {"type": "integer"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: browser_wait_for_network_idle(a.get("timeout", 10000))
+    },
+    {
+        "name": "browser_screenshot",
+        "label": "브라우저 스크린샷",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_screenshot",
+                "description": "현재 브라우저 페이지 전체의 스크린샷을 저장합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "save_path": {"type": "string", "description": "저장 경로 (생략 시 임시 파일)"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: browser_screenshot(a.get("save_path", ""))
+    },
+    {
+        "name": "browser_execute_js",
+        "label": "JavaScript 실행",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_execute_js",
+                "description": "현재 페이지에서 JavaScript를 실행하고 결과를 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"script": {"type": "string"}},
+                    "required": ["script"]
+                }
+            }
+        },
+        "handler": lambda a: browser_execute_js(a["script"])
+    },
+    {
+        "name": "browser_handle_dialog",
+        "label": "다이얼로그 처리",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_handle_dialog",
+                "description": "다음에 발생할 alert/confirm/prompt 다이얼로그를 자동 처리합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["accept", "dismiss"]},
+                        "prompt_text": {"type": "string", "description": "prompt 입력값"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: browser_handle_dialog(a.get("action", "accept"), a.get("prompt_text", ""))
+    },
+    {
+        "name": "browser_upload_file",
+        "label": "파일 업로드",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_upload_file",
+                "description": "파일 업로드 input 요소에 파일을 지정합니다. <input type='file'> 요소에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string", "description": "파일 input 요소의 CSS selector"},
+                        "file_path": {"type": "string", "description": "업로드할 파일의 절대 경로"}
+                    },
+                    "required": ["selector", "file_path"]
+                }
+            }
+        },
+        "handler": lambda a: browser_upload_file(a["selector"], a["file_path"])
+    },
+    {
+        "name": "browser_get_cookies",
+        "label": "쿠키 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_cookies",
+                "description": "현재 브라우저 세션의 모든 쿠키를 반환합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_get_cookies()
+    },
+    {
+        "name": "browser_close",
+        "label": "브라우저 종료",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_close",
+                "description": "브라우저 세션을 완전히 종료합니다.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_close()
+    },
+]
