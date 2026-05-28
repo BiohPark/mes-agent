@@ -142,6 +142,77 @@ agent/
 
 ---
 
+## 자동 디스커버리 동작 원리
+
+`agent/tools/__init__.py`는 서버 시작 시 아래 순서로 실행된다.
+
+```
+1. pkgutil.iter_modules("agent/tools/") 로 파일 목록 스캔
+2. 각 파일을 import
+3. MANIFEST 속성이 있으면 → 각 항목을 _registry에 등록
+4. obsidian_session.py는 tools/ 밖에 있으므로 별도로 명시적 import
+5. TOOLS / TOOL_LABELS / run_tool 을 _registry 기반으로 조립 → server.py에 제공
+```
+
+**`_registry` 구조** (내부 저장 형식):
+```python
+_registry = {
+    "tool_name": {
+        "name":    "tool_name",       # run_tool() 호출 키
+        "label":   "UI 표시명",       # 채팅창 체크리스트에 표시
+        "schema":  { ... },           # LLM에 전달하는 OpenAI function schema
+        "handler": lambda a: fn(...)  # 실제 실행 함수
+    },
+    ...
+}
+```
+
+**에러 흐름**: `run_tool` 자체는 예외를 잡지 않는다. 예외는 `server.py`의 try/except로 전파되어 SSE 오류 이벤트로 클라이언트에 전달된다.
+
+**`obsidian_session.py` 예외 처리**: 이 파일은 `agent/tools/` 밖에 있어 자동 스캔 대상이 아니다. `__init__.py`에서 명시적으로 `from agent import obsidian_session`으로 import 후 MANIFEST를 읽는다. `obsidian_session.py` 안에 MANIFEST를 추가해 두었기 때문에 나머지 툴과 동일한 형식으로 관리된다.
+
+---
+
+## MANIFEST 키 레퍼런스
+
+| 키 | 타입 | 설명 |
+|----|------|------|
+| `name` | `str` | 툴 식별자. `run_tool()` 호출 시 사용하는 키. LLM이 호출할 function name과 반드시 일치해야 함 |
+| `label` | `str` | UI 표시명. 채팅창의 툴 실행 체크리스트에 보이는 한글 이름 |
+| `schema` | `dict` | LLM에 전달하는 OpenAI function calling 스키마. `type: "function"` 형식 |
+| `handler` | `callable` | 실제 실행 함수. `lambda a: fn(a["param"])` 형태로 인자 딕셔너리를 받음 |
+
+```python
+# MANIFEST 최소 예시 (파라미터 없는 툴)
+{
+    "name":    "get_mouse_position",
+    "label":   "마우스 위치 확인",
+    "schema":  {"type": "function", "function": {
+                    "name": "get_mouse_position",
+                    "description": "현재 마우스 커서의 좌표를 반환합니다.",
+                    "parameters": {"type": "object", "properties": {}}
+                }},
+    "handler": lambda a: get_mouse_position()
+}
+
+# MANIFEST 파라미터 있는 툴
+{
+    "name":    "mouse_click",
+    "label":   "마우스 클릭",
+    "schema":  {"type": "function", "function": {
+                    "name": "mouse_click",
+                    "description": "지정 좌표를 클릭합니다.",
+                    "parameters": {"type": "object",
+                                   "properties": {"x": {"type": "integer"},
+                                                  "y": {"type": "integer"}},
+                                   "required": ["x", "y"]}
+                }},
+    "handler": lambda a: mouse_click(a["x"], a["y"])
+}
+```
+
+---
+
 ## 새 툴 추가하는 법
 
 ### 1. 툴 함수 + MANIFEST 작성 (이것만으로 끝)
@@ -182,7 +253,7 @@ MANIFEST = [
 **코딩 규칙:**
 - 반환값은 항상 `str`
 - JSON 반환 시 `json.dumps(..., ensure_ascii=False)` 사용
-- 예외는 caller에게 전파 — 레지스트리에서 잡아 오류 문자열로 변환
+- 예외는 caller에게 전파 — `server.py`의 try/except에서 잡아 SSE 오류 이벤트로 변환
 - 긴 결과는 적절히 잘라서 반환 (LLM 컨텍스트 절약)
 
 ---
