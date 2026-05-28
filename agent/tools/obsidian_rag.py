@@ -89,6 +89,63 @@ def _parse_frontmatter(content: str) -> dict:
     return fm
 
 
+def _extract_wikilinks(content: str) -> list[str]:
+    """[[링크]], [[링크|별칭]], [[링크#섹션]] 에서 타깃 제목만 추출. 코드블록 제외."""
+    body = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
+    body = re.sub(r"`[^`]+`", "", body)
+    raw = re.findall(r"\[\[([^\]]+)\]\]", body)
+    seen, result = set(), []
+    for m in raw:
+        title = m.split("|")[0].split("#")[0].strip()
+        if title and title not in seen:
+            seen.add(title)
+            result.append(title)
+    return result
+
+
+def _resolve_wikilink(title: str) -> tuple[str | None, str | None]:
+    """wikilink 제목 → (vault 상대 경로, 내용). 없으면 (None, None)."""
+    # 1) REST API — 루트에 동일 이름 파일
+    enc = urllib.parse.quote(f"{title}.md", safe="/")
+    raw = _api_request("GET", f"/vault/{enc}")
+    if raw:
+        return (f"{title}.md", raw)
+
+    # 2) REST API — 검색 후 stem 매칭
+    sraw = _api_request("POST", f"/search/simple/?query={urllib.parse.quote(title)}")
+    if sraw:
+        try:
+            results = json.loads(sraw)
+            # stem 이름이 정확히 일치하는 것 우선
+            for r in results[:10]:
+                fname = r.get("filename", "")
+                if Path(fname).stem.lower() == title.lower():
+                    content = _api_request("GET", f"/vault/{urllib.parse.quote(fname, safe='/')}")
+                    if content:
+                        return (fname, content)
+            # 없으면 첫 번째 결과
+            if results:
+                fname = results[0].get("filename", "")
+                content = _api_request("GET", f"/vault/{urllib.parse.quote(fname, safe='/')}")
+                if content:
+                    return (fname, content)
+        except Exception:
+            pass
+
+    # 3) 직접 파일 스캔 (fallback)
+    vault = _vault()
+    if not vault:
+        return (None, None)
+    for md in vault.rglob("*.md"):
+        if md.stem.lower() == title.lower():
+            rel = str(md.relative_to(vault)).replace("\\", "/")
+            try:
+                return (rel, md.read_text(encoding="utf-8", errors="ignore"))
+            except Exception:
+                return (rel, None)
+    return (None, None)
+
+
 # ── 툴 함수 ───────────────────────────────────────────────────
 
 def obsidian_search(query: str, limit: int = 20) -> str:
@@ -266,6 +323,58 @@ def obsidian_get_tags(path: str) -> str:
     )
 
 
+def obsidian_follow_links(path: str, depth: int = 1, max_notes: int = 20) -> str:
+    """노트의 [[wikilink]]를 따라 연결 노트를 BFS로 다중 뎁스 스캔한다."""
+    root_result = json.loads(obsidian_read_note(path))
+    if "error" in root_result:
+        return json.dumps(root_result)
+
+    visited: dict[str, dict] = {}
+    unresolved: list[str] = []
+    # (경로, 내용, 현재 깊이)
+    queue: list[tuple[str, str, int]] = [(path, root_result["content"], 0)]
+
+    while queue and len(visited) < max_notes:
+        cur_path, cur_content, cur_depth = queue.pop(0)
+        if cur_path in visited:
+            continue
+
+        links = _extract_wikilinks(cur_content)
+        entry: dict = {
+            "path":      cur_path,
+            "depth":     cur_depth,
+            "wikilinks": links,
+            "content":   cur_content if cur_depth == 0 else cur_content[:2000],
+        }
+        if cur_depth > 0 and len(cur_content) > 2000:
+            entry["content_truncated"] = True
+        visited[cur_path] = entry
+
+        if cur_depth < depth:
+            for title in links:
+                if len(visited) >= max_notes:
+                    break
+                if any(v["path"].endswith(f"/{title}.md") or v["path"] == f"{title}.md"
+                       for v in visited.values()):
+                    continue
+                resolved_path, link_content = _resolve_wikilink(title)
+                if resolved_path and link_content is not None and resolved_path not in visited:
+                    queue.append((resolved_path, link_content, cur_depth + 1))
+                elif resolved_path is None and title not in unresolved:
+                    unresolved.append(title)
+
+    return json.dumps(
+        {
+            "root":            path,
+            "depth_scanned":   depth,
+            "total":           len(visited),
+            "unresolved_links": unresolved,
+            "notes":           list(visited.values()),
+        },
+        ensure_ascii=False,
+    )
+
+
 # ── MANIFEST ──────────────────────────────────────────────────
 
 MANIFEST = [
@@ -402,5 +511,30 @@ MANIFEST = [
             }
         },
         "handler": lambda a: obsidian_get_tags(a["path"])
+    },
+    {
+        "name": "obsidian_follow_links",
+        "label": "[[링크]] 다중 뎁스 스캔",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "obsidian_follow_links",
+                "description": (
+                    "노트의 [[wikilink]]를 따라 연결된 노트들을 BFS 방식으로 다중 뎁스 스캔합니다. "
+                    "관련 노트 네트워크 파악, 도메인 지식 그래프 탐색, 주제 연결 분석에 사용합니다. "
+                    "depth=1이면 직접 링크만, depth=2이면 링크의 링크까지 탐색합니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path":      {"type": "string",  "description": "시작 노트 경로 (예: 'projects/Syncade.md')"},
+                        "depth":     {"type": "integer", "description": "탐색 깊이 (기본 1, 권장 최대 3)"},
+                        "max_notes": {"type": "integer", "description": "최대 스캔 노트 수 (기본 20)"},
+                    },
+                    "required": ["path"],
+                },
+            }
+        },
+        "handler": lambda a: obsidian_follow_links(a["path"], a.get("depth", 1), a.get("max_notes", 20))
     },
 ]

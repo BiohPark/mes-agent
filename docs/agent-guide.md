@@ -16,7 +16,7 @@
 
 ---
 
-## 구현된 툴 목록 (70종)
+## 구현된 툴 목록 (77종)
 
 ### 화면 인식 (10종)
 
@@ -111,7 +111,7 @@
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 |
 
-### Obsidian RAG — Vault 접근 (6종)
+### Obsidian RAG — Vault 접근 (7종)
 
 > **TODO**: Vault 구조·접근 패턴 상세 문서화 필요 (아래는 기본사항)
 
@@ -143,6 +143,62 @@ Vault/
 | `obsidian_write_note` | Vault 전체 | 노트 생성/덮어쓰기 |
 | `obsidian_append_note` | Vault 전체 | 노트에 내용 추가 |
 | `obsidian_get_tags` | Vault 전체 | 태그 조회 |
+| `obsidian_follow_links` | Vault 전체 | `[[wikilink]]` 다중 뎁스 BFS 스캔 |
+
+#### Obsidian Wikilink 스캔 (`obsidian_follow_links`)
+
+Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 탐색한다.
+
+**지원 문법:**
+```
+[[노트 제목]]              — 기본 링크
+[[노트 제목|표시 텍스트]]  — 별칭 링크 (alias)
+[[노트 제목#섹션]]         — 헤딩 링크 (섹션 기호는 무시하고 노트만 탐색)
+```
+
+**링크 해석 순서:**
+1. REST API `GET /vault/{title}.md` (루트 직접 시도)
+2. REST API `POST /search/simple/?query={title}` → stem 이름 매칭
+3. Vault 전체 파일 스캔 (대소문자 무시)
+
+**사용 예:**
+```json
+{
+  "name": "obsidian_follow_links",
+  "arguments": {
+    "path": "projects/Syncade.md",
+    "depth": 2,
+    "max_notes": 30
+  }
+}
+```
+
+**반환 구조:**
+```json
+{
+  "root": "projects/Syncade.md",
+  "depth_scanned": 2,
+  "total": 5,
+  "unresolved_links": ["없는노트"],
+  "notes": [
+    {
+      "path": "projects/Syncade.md",
+      "depth": 0,
+      "wikilinks": ["SAP 연동", "배포 절차"],
+      "content": "전체 내용..."
+    },
+    {
+      "path": "systems/SAP 연동.md",
+      "depth": 1,
+      "wikilinks": ["RFC 설정"],
+      "content": "최대 2000자..."
+    }
+  ]
+}
+```
+
+> **depth 권장값**: 1~2가 적당. 3 이상은 `max_notes`를 줄여 응답 크기를 제한할 것.
+> depth=0인 루트 노트만 전체 내용 반환, 나머지는 2000자로 자동 잘림.
 
 ### Obsidian 세션 (4종)
 
