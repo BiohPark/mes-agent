@@ -41,9 +41,9 @@
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기, 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
-| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (18종) |
-| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (20종) |
-| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회 (6종), REST API + 파일 fallback |
+| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (19종) |
+| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
+| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회·링크 순회 (7종), REST API + 파일 fallback |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
 | 문서 처리 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 (9종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
@@ -75,6 +75,27 @@
 | `interaction.py` | 1 |
 | `workflow.py` | 2 |
 | `obsidian_session.py` | 4 |
+
+---
+
+### ✅ 완성된 기능 (Phase 0 — 2026-05-29)
+
+| 항목 | 내용 |
+|------|------|
+| Phase 0 task_type/thread_id 주입 | `server.py generate()` — 시스템 프롬프트에 세션 컨텍스트 삽입, LLM이 workflow 툴 호출 시 올바른 값 사용 |
+| `_AUTO_EXEC` 워크플로우 지침 | `obsidian_session.py` — 작업 시작 시 `workflow_init` 강제, 각 단계 `workflow_set_step` 업데이트 지침 |
+| TASK_CONFIGS 시스템 프롬프트 보강 | `obsidian_session.py` — 5개 업무별 워크플로우 상세 지침, 브라우저 조작 전략 명시 |
+| 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian-rag(4)/unscript(5)/knox(5) 단계 |
+| 워크플로우 데이터 모델 | `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스, StepType·StepStatus Literal |
+| 워크플로우 스토리지 | `agent/workflow/storage.py` — Vault `agent/workflows/{type}/{id}.json` 저장/로드/삭제 |
+| 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종) |
+| 워크플로우 API | `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` |
+| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` — 탭 전환, 드래그 리사이즈, 접기/펼치기 |
+| 에이전트 상태 바 + 중단 버튼 | `electron/renderer/chat.js` — thinking/running/waiting/idle, `POST /stop/{request_id}` |
+| 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` — 헤더 진행 바, 80%/95% 경고 |
+| 실행 로그 패널 | `electron/renderer/workflow.js` — 툴 실행 시간·결과 기록, 최대 50개 유지 |
+| 빠른 작업 버튼 | `electron/renderer/index.html` — OCR·파일·브라우저·타이핑 프롬프트 삽입 |
+| SSE 이벤트 상수 | `agent/core/events.py` — 모든 이벤트 타입 중앙화 |
 
 ---
 
@@ -119,32 +140,21 @@ agent/server.py 내 generate() 수정
 
 ---
 
-#### 3. 업무 워크플로우 (`agent/workflows/`)
+#### 3. ✅ 업무 워크플로우 패널 — 완성
 
-**무엇**: 여러 툴을 조합한 실제 사내 업무 시나리오를 자동화한다.
-
-**왜 필요**: 사용자는 "Syncade 배포해줘" 한 마디로 끝내고 싶다. 복잡한 단계를 워크플로우로 캡슐화.
-
-**구현 계획**:
-```
-agent/workflows/
-├── syncade_deploy.py    — 빌드 확인 → 서버 접속 → 배포 → 결과 확인
-├── knox_collect.py      — Knox Chat/Mail 수집 모드 활성화
-├── obsidian_rag.py      — Obsidian Vault attach → 검색 인덱스 구성
-└── unscript_test.py     — Unscript 테스트 에이전트 활성화
-```
-
-각 워크플로우는 툴로 등록하여 LLM이 호출 가능하게 한다.
-사이드바 업무 버튼이 이 워크플로우를 실행한다.
-완료 시 `CLAUDE.md` + `README.md` + `electron/renderer/index.html` 사이드바 업데이트.
+**구현 완료** (2026-05-29):
+- `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스
+- `agent/workflow/storage.py` — Vault JSON 저장 + 태스크별 기본 템플릿
+- `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종)
+- `electron/renderer/workflow.js` — 우측 패널 렌더링·리사이즈·탭
+- `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` API
+- Phase 0: task_type/thread_id 시스템 프롬프트 주입으로 LLM이 툴 호출 가능
 
 ---
 
-#### 4. ✅ Obsidian RAG 연동
+#### 4. ✅ Obsidian RAG 연동 — 완성
 
-**무엇**: Obsidian Vault를 지식 베이스로 활용해 에이전트가 업무 도메인 지식을 참조한다.
-
-**구현 완료**: `agent/tools/obsidian_rag.py` (6종 툴)
+**구현 완료**: `agent/tools/obsidian_rag.py` (7종 툴)
 - `obsidian_search` — Vault 전체 키워드 검색
 - `obsidian_read_note` — 노트 읽기
 - `obsidian_list_notes` — 폴더 목록
@@ -154,8 +164,6 @@ agent/workflows/
 - `obsidian_follow_links` — `[[wikilink]]` BFS 다중 뎁스 스캔
 
 접근: Local REST API (`OBSIDIAN_HOST`) → 직접 파일 fallback (`OBSIDIAN_VAULT_PATH`)
-
-> **TODO**: `docs/agent-guide.md` Vault 접근 패턴 상세 문서화 필요
 
 ---
 

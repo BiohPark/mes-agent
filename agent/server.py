@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
 from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
-from agent.obsidian_session import get_session_manager
+from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
 from agent.core import events as ev
 
@@ -113,6 +113,18 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         )
         messages.append({"role": "user", "content": message})
         session_id = None
+
+        # task_type·thread_id를 항상 최신 시스템 프롬프트에 주입 (LLM이 workflow 툴 호출 시 사용)
+        cfg = TASK_CONFIGS.get(task_type, {})
+        system_content = cfg.get("system_prompt", _AUTONOMOUS_INSTRUCTION) + (
+            f"\n\n[현재 세션]\n"
+            f"task_type={task_type}  thread_id={thread_id}\n"
+            f"workflow_init·workflow_set_step 호출 시 이 값을 그대로 사용하라."
+        )
+        if messages and messages[0].get("role") == "system":
+            messages[0]["content"] = system_content
+        else:
+            messages.insert(0, {"role": "system", "content": system_content})
     else:
         messages = [
             {"role": "system", "content": _AUTONOMOUS_INSTRUCTION},
