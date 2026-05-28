@@ -52,7 +52,7 @@
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
 
-**총 툴 수: 70종** (`agent/tools/__init__.py` 기준 — TOOLS·LABELS·MAP 모두 70으로 일치)
+**총 툴 수: 70종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -240,7 +240,7 @@ mes-agent/
 │   ├── config.py           ← LLM 프로파일 (openai/internal)
 │   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
 │   └── tools/
-│       ├── __init__.py     ← 툴 레지스트리 + run_tool() (70종)
+│       ├── __init__.py     ← 자동 디스커버리 레지스트리 (수정 불필요)
 │       ├── ocr.py          ← 전체화면 OCR (1종) ✅
 │       ├── desktop.py      ← 마우스·키보드·클립보드·창 관리 (18종) ✅
 │       ├── screen.py       ← 화면 인텔리전스: 영역OCR·이미지매칭·텍스트위치·대기·비교·픽셀 (9종) ✅
