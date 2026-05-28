@@ -43,6 +43,7 @@
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기, 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (18종) |
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (20종) |
+| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회 (6종), REST API + 파일 fallback |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
 | 문서 처리 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 (9종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
@@ -52,7 +53,7 @@
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
 
-**총 툴 수: 70종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 76종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -62,6 +63,7 @@
 | `browser.py` | 20 |
 | `process.py` | 9 |
 | `document.py` | 9 |
+| `obsidian_rag.py` | 6 |
 | `obsidian_session.py` | 4 |
 
 ---
