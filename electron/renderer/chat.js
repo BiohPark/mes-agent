@@ -18,12 +18,55 @@ const deleteManagerOverlay = document.getElementById('delete-manager-overlay')
 const deleteManagerBody = document.getElementById('delete-manager-body')
 const deleteManagerClose = document.getElementById('delete-manager-close')
 const taskBtns = document.querySelectorAll('.task-btn')
+const agentStateBar = document.getElementById('agent-state-bar')
+const agentStateIcon = document.getElementById('agent-state-icon')
+const agentStateText = document.getElementById('agent-state-text')
+const stopBtn = document.getElementById('stop-btn')
+const contextBar = document.getElementById('context-bar')
+const contextFill = document.getElementById('context-fill')
+const contextLabel = document.getElementById('context-label')
 
 // ── 스레드 상태 ──────────────────────────────────────────────
 let currentTaskType = ''
 let currentThreadId = ''
 let taskConfigs = {}   // { syncade: { label, icon }, ... }
 let showingArchive = false
+let currentRequestId = ''
+
+// ── 에이전트 상태 바 ─────────────────────────────────────────
+
+const STATE_META = {
+  thinking: { icon: '🧠', text: '생각 중...' },
+  running:  { icon: '⚙️', text: '도구 실행 중...' },
+  waiting:  { icon: '⏸️', text: '사용자 입력 대기' },
+  idle:     { icon: '✓',  text: '완료' },
+}
+
+function setAgentState(state) {
+  const meta = STATE_META[state] || STATE_META.thinking
+  agentStateIcon.textContent = meta.icon
+  agentStateText.textContent = meta.text
+  if (state === 'idle') {
+    setTimeout(() => agentStateBar.classList.add('hidden'), 800)
+  } else {
+    agentStateBar.classList.remove('hidden')
+  }
+}
+
+function setContextUsage(tokensUsed, tokensTotal) {
+  const pct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100))
+  contextFill.style.width = pct + '%'
+  contextFill.className = 'context-fill' + (pct > 80 ? ' warn' : pct > 95 ? ' crit' : '')
+  contextLabel.textContent = `${(tokensUsed / 1000).toFixed(1)}k / ${(tokensTotal / 1000).toFixed(0)}k`
+  contextBar.classList.remove('hidden')
+}
+
+stopBtn.addEventListener('click', async () => {
+  if (!currentRequestId) return
+  try {
+    await fetch(`${BASE_URL}/stop/${currentRequestId}`, { method: 'POST' })
+  } catch {}
+})
 
 const PROFILE_LABELS = {
   openai: 'OpenAI',
@@ -161,7 +204,16 @@ async function readStream(response, agentEl) {
   }
 }
 
+// tool_start별 시작 시각 (로그 duration 계산용)
+const _toolStartTimes = {}
+
 function handleEvent(event, agentEl, bubble) {
+  // type 없이 request_id만 있는 경우 (최초 SSE)
+  if (event.request_id && !event.type) {
+    currentRequestId = event.request_id
+    return
+  }
+
   switch (event.type) {
     case 'text':
       bubble.textContent += event.content
@@ -169,6 +221,7 @@ function handleEvent(event, agentEl, bubble) {
       break
 
     case 'tool_start': {
+      _toolStartTimes[event.tool] = Date.now()
       const step = document.createElement('div')
       step.className = 'tool-step running'
       step.dataset.tool = event.tool
@@ -179,22 +232,50 @@ function handleEvent(event, agentEl, bubble) {
     }
 
     case 'tool_done': {
+      const duration = _toolStartTimes[event.tool]
+        ? Date.now() - _toolStartTimes[event.tool]
+        : null
+      delete _toolStartTimes[event.tool]
+
+      const isError = event.result && event.result.startsWith('툴 실행 오류')
       const step = agentEl.querySelector(`.tool-step[data-tool="${event.tool}"]`)
       if (step) {
-        step.className = 'tool-step done'
-        step.querySelector('.icon').textContent = '✓'
+        step.className = isError ? 'tool-step error' : 'tool-step done'
+        step.querySelector('.icon').textContent = isError ? '✗' : '✓'
       }
       if (event.result) {
         const result = document.createElement('div')
-        result.className = 'tool-result'
+        result.className = 'tool-result' + (isError ? ' error' : '')
         result.textContent = event.result
         agentEl.querySelector('.msg-bubble').before(result)
       }
       scrollToBottom()
+
+      // 실행 로그에 추가
+      if (window.workflowPanel) {
+        window.workflowPanel.appendLog(event.tool, event.result || '', duration)
+      }
       break
     }
 
+    case 'confirm':
+      showConfirmDialog(event).catch(console.error)
+      break
+
+    case 'agent_state':
+      setAgentState(event.state)
+      break
+
+    case 'context_usage':
+      setContextUsage(event.tokens_used, event.tokens_total)
+      break
+
+    case 'workflow_update':
+      if (window.workflowPanel) window.workflowPanel.handleUpdate(event.workflow)
+      break
+
     case 'done':
+      currentRequestId = ''
       if (!bubble.textContent) bubble.textContent = '완료되었습니다.'
       break
 
@@ -202,6 +283,102 @@ function handleEvent(event, agentEl, bubble) {
       bubble.textContent = `오류: ${event.message}`
       break
   }
+}
+
+// ── 사용자 확인 팝업 ─────────────────────────────────────────
+
+function getOptionIcon(label) {
+  if (label.includes('계속') || label.includes('진행')) return '✅'
+  if (label.includes('중단') || label.includes('취소')) return '❌'
+  if (label.includes('방법') || label.includes('제안') || label.includes('변경')) return '💡'
+  if (label.includes('의견') || label.includes('입력') || label.includes('전달')) return '✏️'
+  return '•'
+}
+
+// 텍스트 입력이 필요한 옵션인지 판단
+const TEXT_INPUT_KEYWORDS = ['방법 변경', '제안', '의견', '입력', '전달', '기타']
+function needsTextInput(label) {
+  return TEXT_INPUT_KEYWORDS.some(k => label.includes(k))
+}
+
+async function showConfirmDialog({ confirm_id, question, options }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.className = 'confirm-overlay'
+
+    const optBtns = options.map((opt, i) => `
+      <button class="confirm-opt-btn" data-index="${i}" data-label="${escapeHtml(opt)}">
+        <span class="confirm-opt-icon">${getOptionIcon(opt)}</span>
+        <span>${escapeHtml(opt)}</span>
+      </button>
+    `).join('')
+
+    overlay.innerHTML = `
+      <div class="confirm-dialog">
+        <div class="confirm-header">⚠ 에이전트 확인 요청</div>
+        <div class="confirm-question">${escapeHtml(question)}</div>
+        <div class="confirm-options">${optBtns}</div>
+        <div class="confirm-textarea-wrap hidden">
+          <textarea class="confirm-textarea" placeholder="내용을 입력하세요..."></textarea>
+          <div class="confirm-actions">
+            <button class="confirm-cancel-text-btn">취소</button>
+            <button class="confirm-send-btn">전송</button>
+          </div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+
+    const textWrap = overlay.querySelector('.confirm-textarea-wrap')
+    const textarea  = overlay.querySelector('.confirm-textarea')
+    let selectedLabel = null
+
+    async function submit(choice, customText = '') {
+      overlay.remove()
+      try {
+        await fetch(`${BASE_URL}/confirm/${confirm_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ choice, custom_text: customText }),
+        })
+      } catch (e) { console.error('confirm submit error', e) }
+      resolve()
+    }
+
+    overlay.querySelectorAll('.confirm-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const label = btn.dataset.label
+        if (needsTextInput(label)) {
+          overlay.querySelectorAll('.confirm-opt-btn').forEach(b => b.classList.remove('selected'))
+          btn.classList.add('selected')
+          selectedLabel = label
+          textWrap.classList.remove('hidden')
+          textarea.focus()
+        } else {
+          submit(label)
+        }
+      })
+    })
+
+    overlay.querySelector('.confirm-send-btn').addEventListener('click', () => {
+      submit(selectedLabel || options[0], textarea.value.trim())
+    })
+
+    overlay.querySelector('.confirm-cancel-text-btn').addEventListener('click', () => {
+      textWrap.classList.add('hidden')
+      overlay.querySelectorAll('.confirm-opt-btn').forEach(b => b.classList.remove('selected'))
+      selectedLabel = null
+    })
+
+    // Esc로 닫기 (중단으로 처리)
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        document.removeEventListener('keydown', onKey)
+        submit('중단')
+      }
+    }
+    document.addEventListener('keydown', onKey)
+  })
 }
 
 function appendUserMessage(text) {
@@ -670,6 +847,12 @@ async function selectThread(taskType, threadId, status) {
     : `${cfg.label || taskType} 스레드에 메시지를 입력하세요...`
   inputEl.disabled = status === 'completed'
   sendBtn.disabled = status === 'completed'
+
+  // 워크플로우 패널 로드
+  if (window.workflowPanel) {
+    window.workflowPanel.load(taskType, threadId)
+    window.workflowPanel.clearLog()
+  }
 }
 
 async function closeCurrentThread() {
@@ -705,6 +888,16 @@ inputEl.addEventListener('keydown', (e) => {
 
 taskBtns.forEach(btn => {
   btn.addEventListener('click', () => openTask(btn.dataset.task))
+})
+
+// 빠른 작업 버튼 — 프롬프트를 입력창에 삽입 (자동 전송 없음)
+document.querySelectorAll('.quick-action-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const prompt = btn.dataset.prompt || ''
+    inputEl.value = prompt
+    inputEl.focus()
+    inputEl.setSelectionRange(prompt.length, prompt.length)
+  })
 })
 
 threadCloseCurrentBtn.addEventListener('click', closeCurrentThread)

@@ -90,10 +90,12 @@ def browser_fill(selector: str, text: str, timeout: int = 5000) -> str:
     return _safe_call(_do)
 
 
-def browser_type(selector: str, text: str, delay: int = 50) -> str:
+def browser_type(selector: str, text: str, delay: int = 50, timeout: int = 5000) -> str:
     """입력창에 한 글자씩 타이핑합니다. 자동완성이 필요한 입력창에 사용합니다."""
     def _do():
-        _get_page().type(selector, text, delay=delay)
+        page = _get_page()
+        page.wait_for_selector(selector, state="visible", timeout=timeout)
+        page.type(selector, text, delay=delay)
         return json.dumps({"typed": selector, "text": text[:50]})
     return _safe_call(_do)
 
@@ -211,6 +213,58 @@ def browser_get_cookies() -> str:
     return _safe_call(_do)
 
 
+def browser_get_interactive_elements() -> str:
+    """현재 페이지의 입력창·버튼·링크 목록을 반환합니다. 올바른 selector 파악에 사용합니다."""
+    def _do():
+        page = _get_page()
+        result = page.evaluate("""() => {
+            const visible = el => el.offsetWidth > 0 && el.offsetHeight > 0;
+            const trim = s => (s || '').trim().slice(0, 40);
+            const cls = el => (el.className || '').split(' ').filter(Boolean).slice(0, 3).join('.');
+            const items = [];
+            document.querySelectorAll('input, textarea, select').forEach(el => {
+                if (!visible(el)) return;
+                items.push({
+                    kind: 'input',
+                    tag: el.tagName.toLowerCase(),
+                    type: el.type || '',
+                    id: el.id || '',
+                    name: el.name || '',
+                    placeholder: trim(el.placeholder),
+                    ariaLabel: trim(el.getAttribute('aria-label')),
+                    class: cls(el),
+                });
+            });
+            document.querySelectorAll('button, [role="button"], [type="submit"]').forEach(el => {
+                if (!visible(el)) return;
+                items.push({
+                    kind: 'button',
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || '',
+                    text: trim(el.innerText),
+                    ariaLabel: trim(el.getAttribute('aria-label')),
+                    class: cls(el),
+                });
+            });
+            return items.slice(0, 40);
+        }""")
+        return json.dumps(result, ensure_ascii=False)
+    return _safe_call(_do)
+
+
+def browser_press_key(key: str, selector: str = "") -> str:
+    """키를 누릅니다. selector 지정 시 해당 요소에, 없으면 페이지 전체에 전송합니다.
+    예: key='Enter', 'Tab', 'Escape', 'ArrowDown', 'Control+a'"""
+    def _do():
+        page = _get_page()
+        if selector:
+            page.press(selector, key)
+        else:
+            page.keyboard.press(key)
+        return json.dumps({"key_pressed": key, "target": selector or "page"})
+    return _safe_call(_do)
+
+
 def browser_close() -> str:
     """브라우저 세션을 닫습니다."""
     global _pw, _browser, _page
@@ -235,7 +289,10 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "browser_open",
-                "description": "브라우저를 열고 URL로 이동합니다. 세션이 이미 열려있으면 재사용합니다.",
+                "description": (
+                    "브라우저를 열고 URL로 이동합니다. 세션이 이미 열려있으면 재사용합니다. "
+                    "페이지 로드 후 browser_get_interactive_elements로 입력창·버튼 selector를 확인하세요."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -318,7 +375,10 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "browser_fill",
-                "description": "웹 입력창에 텍스트를 채웁니다. 기존 내용을 지우고 새로 입력합니다.",
+                "description": (
+                    "웹 입력창에 텍스트를 채웁니다. 기존 내용을 지우고 새로 입력합니다. "
+                    "폼 제출은 이 툴로 입력 후 browser_press_key('Enter')를 사용하세요."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -339,19 +399,63 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "browser_type",
-                "description": "웹 입력창에 한 글자씩 타이핑합니다. 자동완성 드롭다운을 트리거해야 할 때 사용합니다.",
+                "description": (
+                    "웹 입력창에 한 글자씩 타이핑합니다. 자동완성 드롭다운을 트리거해야 할 때 사용합니다. "
+                    "selector를 모를 경우 먼저 browser_get_interactive_elements로 확인하세요."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "selector": {"type": "string"},
                         "text": {"type": "string"},
-                        "delay": {"type": "integer", "description": "글자 간 딜레이 ms (기본 50)"}
+                        "delay": {"type": "integer", "description": "글자 간 딜레이 ms (기본 50)"},
+                        "timeout": {"type": "integer", "description": "요소 대기 최대 ms (기본 5000)"}
                     },
                     "required": ["selector", "text"]
                 }
             }
         },
-        "handler": lambda a: browser_type(a["selector"], a["text"], a.get("delay", 50))
+        "handler": lambda a: browser_type(a["selector"], a["text"], a.get("delay", 50), a.get("timeout", 5000))
+    },
+    {
+        "name": "browser_get_interactive_elements",
+        "label": "페이지 인터랙티브 요소 목록",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_get_interactive_elements",
+                "description": (
+                    "현재 페이지의 보이는 입력창·버튼·선택박스 목록(id, name, ariaLabel, text 등)을 반환합니다. "
+                    "browser_open 후 어떤 selector를 써야 할지 모를 때 먼저 호출하세요."
+                ),
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        "handler": lambda a: browser_get_interactive_elements()
+    },
+    {
+        "name": "browser_press_key",
+        "label": "키 입력",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "browser_press_key",
+                "description": (
+                    "브라우저 페이지 또는 특정 요소에 키를 전송합니다. "
+                    "예: 'Enter'(폼 제출), 'Tab'(다음 필드), 'Escape', 'ArrowDown'. "
+                    "폼 제출 시 browser_fill → browser_press_key('Enter') 패턴을 사용하세요."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key":      {"type": "string", "description": "전송할 키 이름 (예: 'Enter', 'Tab', 'Escape')"},
+                        "selector": {"type": "string", "description": "대상 요소 selector. 생략 시 페이지 전체에 전송."}
+                    },
+                    "required": ["key"]
+                }
+            }
+        },
+        "handler": lambda a: browser_press_key(a["key"], a.get("selector", ""))
     },
     {
         "name": "browser_select",

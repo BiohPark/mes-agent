@@ -6,34 +6,33 @@
 
 ```
 □ agent/tools/<name>.py        — 툴 함수 작성 + MANIFEST 정의 (이것만으로 자동 등록)
-□ CLAUDE.md                    — 현재 상태 표의 해당 항목 ✅ 변경
+□ CLAUDE.md                    — 현재 상태 표의 해당 항목 ✅ 변경, 툴 수 업데이트
 □ README.md                    — 기능 현황 표 상태 업데이트
-□ electron/renderer/index.html — (워크플로우인 경우) 사이드바 버튼 추가
 □ docs/agent-guide.md          — 아래 "구현된 툴 목록" 업데이트
 ```
 
-> **__init__.py는 수정하지 않아도 된다.** MANIFEST가 있는 파일을 tools/ 폴더에 넣으면 서버 시작 시 자동 등록된다.
+> **`__init__.py`는 수정하지 않아도 된다.** MANIFEST가 있는 파일을 `tools/` 폴더에 넣으면 서버 시작 시 자동 등록된다.
 
 ---
 
-## 구현된 툴 목록 (77종)
+## 구현된 툴 목록 (83종)
 
 ### 화면 인식 (10종)
 
 | 툴 이름 | 파일 | 기능 |
 |---------|------|------|
-| `capture_screen_ocr` | `ocr.py` | 전체 화면 OCR |
-| `capture_region_ocr` | `screen.py` | 지정 영역 OCR (더 정확) |
+| `capture_screen_ocr` | `ocr.py` | 전체 화면 OCR → 텍스트 반환 |
+| `capture_region_ocr` | `screen.py` | 지정 영역 OCR (좌표·크기 지정, 더 정확) |
 | `find_image_on_screen` | `screen.py` | OpenCV 템플릿 매칭 → 좌표 반환 |
 | `find_text_location` | `screen.py` | OCR로 텍스트 위치(좌표) 탐색 |
 | `wait_for_image` | `screen.py` | 이미지 나타날 때까지 대기 |
 | `wait_for_text` | `screen.py` | 텍스트 나타날 때까지 대기 |
-| `compare_screenshots` | `screen.py` | 두 스크린샷 비교 → 변화율 |
+| `compare_screenshots` | `screen.py` | 두 스크린샷 픽셀 비교 → 변화율 |
 | `save_screenshot` | `screen.py` | 전체 화면 파일 저장 |
 | `get_pixel_color` | `screen.py` | 픽셀 RGB/HEX 색상 반환 |
 | `capture_window_screenshot` | `screen.py` | 특정 창만 캡처 |
 
-### 마우스/키보드 제어 (18종)
+### 마우스/키보드 제어 (19종)
 
 | 툴 이름 | 파일 | 기능 |
 |---------|------|------|
@@ -55,25 +54,31 @@
 | `list_windows` | `desktop.py` | 열린 창 목록 + 위치/크기 |
 | `resize_window` | `desktop.py` | 창 크기 변경 |
 | `move_window` | `desktop.py` | 창 위치 변경 |
+| `maximize_window` | `desktop.py` | 창 최대화 |
 
-### 브라우저 자동화 (20종, Playwright)
+### 브라우저 자동화 (22종, Playwright)
 
 > **사전 조건**: `python -m playwright install chromium` 실행 필요 (최초 1회)
+>
+> **선택자 전략**: CSS id/class보다 `aria-label`, `placeholder`, `:has-text()` 기반 선택자를 우선 사용한다.  
+> 새 페이지 진입 시 `browser_get_interactive_elements`로 실제 선택자를 먼저 확인한 후 클릭·입력해라.
 
 | 툴 이름 | 기능 |
 |---------|------|
-| `browser_open(url)` | 브라우저 열기 (세션 재사용) |
+| `browser_open(url)` | 브라우저 열기 (Chromium 싱글턴, 세션 재사용) |
 | `browser_navigate(url)` | URL 이동 |
 | `browser_get_url()` | 현재 URL |
 | `browser_get_title()` | 페이지 제목 |
+| `browser_get_interactive_elements()` | 현재 페이지의 입력·버튼 요소 목록 (선택자 확인용) ★ |
 | `browser_click(selector)` | CSS/XPath 클릭 |
-| `browser_fill(selector, text)` | 입력창 채우기 |
-| `browser_type(selector, text)` | 한 글자씩 타이핑 (자동완성용) |
+| `browser_fill(selector, text)` | 입력창 채우기 (기존 내용 대체) |
+| `browser_type(selector, text, timeout)` | 한 글자씩 타이핑 (자동완성용, 기본 5초 대기) |
+| `browser_press_key(key, selector)` | 키 입력 (Enter·Tab 등, 폼 제출에 사용) ★ |
 | `browser_select(selector, value)` | 드롭다운 선택 |
 | `browser_get_text(selector)` | 요소 텍스트 추출 |
 | `browser_get_page_text()` | 페이지 전체 텍스트 |
 | `browser_get_attribute(selector, attr)` | 요소 속성값 |
-| `browser_wait_for(selector, state)` | 요소 대기 (visible/hidden/...) |
+| `browser_wait_for(selector, state)` | 요소 대기 (visible/hidden/attached) |
 | `browser_wait_for_url(pattern)` | URL 변경 대기 |
 | `browser_wait_for_network_idle()` | 네트워크 완료 대기 |
 | `browser_screenshot(path)` | 페이지 전체 스크린샷 |
@@ -113,8 +118,6 @@
 
 ### Obsidian RAG — Vault 접근 (7종)
 
-> **TODO**: Vault 구조·접근 패턴 상세 문서화 필요 (아래는 기본사항)
-
 **환경 설정 (`.env`):**
 ```ini
 OBSIDIAN_VAULT_PATH=D:/archive/obsidian/brain   # Vault 루트 경로
@@ -122,87 +125,45 @@ OBSIDIAN_HOST=https://127.0.0.1:27124           # Local REST API 주소
 OBSIDIAN_API_KEY=발급받은-API-키                 # Obsidian 플러그인에서 발급
 ```
 
-**Vault 폴더 구조 (에이전트 관련):**
-```
-Vault/
-├── agent/               ← 에이전트 전용 폴더
-│   ├── sessions/        ← 대화 세션 자동 저장
-│   ├── notes/           ← 개발 노트 (add_dev_note)
-│   ├── plans/backlog.md ← 할 일 목록 (add_plan_item)
-│   └── threads/         ← 스레드별 대화 이력
-└── (나머지)             ← 사용자 지식베이스 → RAG 검색 대상
-```
+**접근 우선순위:** REST API (`OBSIDIAN_HOST`) → 직접 파일 (`OBSIDIAN_VAULT_PATH`) fallback
 
-**접근 우선순위:** REST API (`OBSIDIAN_HOST`) → 직접 파일 접근 (`OBSIDIAN_VAULT_PATH`) 순 fallback.
+| 툴 이름 | 기능 |
+|---------|------|
+| `obsidian_search` | Vault 전체 키워드 검색 |
+| `obsidian_read_note` | 경로로 노트 읽기 |
+| `obsidian_list_notes` | 폴더 내 목록 조회 |
+| `obsidian_write_note` | 노트 생성/덮어쓰기 |
+| `obsidian_append_note` | 노트에 내용 추가 |
+| `obsidian_get_tags` | 태그 조회 |
+| `obsidian_follow_links` | `[[wikilink]]` 다중 뎁스 BFS 스캔 |
 
-| 툴 이름 | 대상 | 기능 |
-|---------|------|------|
-| `obsidian_search` | Vault 전체 | 키워드 검색 |
-| `obsidian_read_note` | Vault 전체 | 경로로 노트 읽기 |
-| `obsidian_list_notes` | Vault 전체 | 폴더 내 목록 조회 |
-| `obsidian_write_note` | Vault 전체 | 노트 생성/덮어쓰기 |
-| `obsidian_append_note` | Vault 전체 | 노트에 내용 추가 |
-| `obsidian_get_tags` | Vault 전체 | 태그 조회 |
-| `obsidian_follow_links` | Vault 전체 | `[[wikilink]]` 다중 뎁스 BFS 스캔 |
-
-#### Obsidian Wikilink 스캔 (`obsidian_follow_links`)
+#### `obsidian_follow_links` 상세
 
 Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 탐색한다.
 
 **지원 문법:**
 ```
 [[노트 제목]]              — 기본 링크
-[[노트 제목|표시 텍스트]]  — 별칭 링크 (alias)
-[[노트 제목#섹션]]         — 헤딩 링크 (섹션 기호는 무시하고 노트만 탐색)
+[[노트 제목|표시 텍스트]]  — 별칭 링크
+[[노트 제목#섹션]]         — 헤딩 링크 (섹션 기호 무시, 노트만 탐색)
 ```
 
 **링크 해석 순서:**
-1. REST API `GET /vault/{title}.md` (루트 직접 시도)
+1. REST API `GET /vault/{title}.md`
 2. REST API `POST /search/simple/?query={title}` → stem 이름 매칭
 3. Vault 전체 파일 스캔 (대소문자 무시)
 
 **사용 예:**
 ```json
-{
-  "name": "obsidian_follow_links",
-  "arguments": {
-    "path": "projects/Syncade.md",
-    "depth": 2,
-    "max_notes": 30
-  }
-}
+{ "path": "projects/Syncade.md", "depth": 2, "max_notes": 30 }
 ```
 
-**반환 구조:**
-```json
-{
-  "root": "projects/Syncade.md",
-  "depth_scanned": 2,
-  "total": 5,
-  "unresolved_links": ["없는노트"],
-  "notes": [
-    {
-      "path": "projects/Syncade.md",
-      "depth": 0,
-      "wikilinks": ["SAP 연동", "배포 절차"],
-      "content": "전체 내용..."
-    },
-    {
-      "path": "systems/SAP 연동.md",
-      "depth": 1,
-      "wikilinks": ["RFC 설정"],
-      "content": "최대 2000자..."
-    }
-  ]
-}
-```
-
-> **depth 권장값**: 1~2가 적당. 3 이상은 `max_notes`를 줄여 응답 크기를 제한할 것.
+> `depth` 권장값: 1~2. 3 이상은 `max_notes`를 줄여 응답 크기 제한.  
 > depth=0인 루트 노트만 전체 내용 반환, 나머지는 2000자로 자동 잘림.
 
 ### Obsidian 세션 (4종)
 
-> 에이전트 자신의 작업 이력 전용 (`agent/` 폴더만 접근)
+> 에이전트 작업 이력 전용 — `agent/` 폴더만 접근
 
 | 툴 이름 | 기능 |
 |---------|------|
@@ -211,56 +172,146 @@ Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 �
 | `list_recent_sessions` | `agent/sessions/` 최근 세션 목록 |
 | `search_sessions` | `agent/sessions/` 키워드 검색 |
 
+### 사용자 확인 (1종)
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `ask_user` | 팝업 대화상자로 사용자 입력 요청 |
+
+`ask_user`는 반환값으로 JSON을 출력하지 않는다. 서버가 `__confirm__` 플래그를 감지해 SSE `confirm` 이벤트를 발생시키고, 사용자 응답을 기다린 뒤 결과를 tool 메시지로 돌려준다.
+
+**기본 선택지:** 계속 진행 / 중단 / 방법 변경 제안 / 의견 전달  
+**타임아웃:** 300초 (5분) — 초과 시 자동 중단  
+**사용 시점:** 중요한 비가역적 작업 직전 (파일 삭제, 배포 실행, 대량 입력 등)
+
+### 워크플로우 (2종)
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `workflow_init` | 스레드 워크플로우 초기화 (단계 정의, 우측 패널에 표시) |
+| `workflow_set_step` | 특정 단계 상태 업데이트 (pending/running/waiting/done/error/skipped) |
+
+**단계 타입:**
+- `auto` 🤖 — 에이전트가 자동 실행
+- `semi_auto` 👁️ — 사용자 확인 후 실행
+- `manual` ✋ — 사용자가 직접 수행
+
+**사용 패턴:**
+```
+1. workflow_init(task_type, thread_id, title, steps=[...])
+   → 우측 패널에 단계 카드 표시, step_id 반환
+
+2. (단계 시작 전)
+   workflow_set_step(task_type, thread_id, step_id, status="running")
+
+3. (실제 작업 실행 — 다른 툴들 호출)
+
+4. (단계 완료 후)
+   workflow_set_step(task_type, thread_id, step_id, status="done", notes="결과 요약")
+```
+
+> `task_type`·`thread_id`는 시스템 메시지의 `[현재 세션]` 섹션에서 자동 주입된다. LLM이 직접 알아낼 필요 없다.
+
 ---
 
-## 구조 개요
+## 아키텍처
+
+### 툴 자동 디스커버리
+
+```
+서버 시작
+  └─ agent/tools/__init__.py
+       ├─ pkgutil.iter_modules("agent/tools/") → 파일 목록 스캔
+       ├─ 각 파일 import → MANIFEST 속성 확인
+       ├─ obsidian_session.py (tools/ 밖) → 명시적 import
+       └─ _registry 조립
+            ├─ TOOLS      → LLM에 전달하는 function schema 목록
+            ├─ TOOL_LABELS → UI 표시명 (채팅 체크리스트)
+            └─ run_tool() → handler 호출
+```
+
+### 에이전트 루프
+
+```
+POST /chat
+  └─ generate(message, thread_id, task_type)
+       ├─ 시스템 프롬프트 구성 (task_type·thread_id 주입)
+       ├─ for step in range(MAX_STEPS=20):
+       │    ├─ [중단 플래그 확인]
+       │    ├─ SSE: context_usage (토큰 추정)
+       │    ├─ SSE: agent_state="thinking"
+       │    ├─ LLM streaming (tools=TOOLS)
+       │    ├─ finish_reason != "tool_calls" → break
+       │    ├─ SSE: agent_state="running"
+       │    └─ for tool_call in tool_calls:
+       │         ├─ SSE: tool_start
+       │         ├─ run_tool() → 결과
+       │         ├─ __confirm__ 감지 → SSE: confirm → wait
+       │         ├─ workflow_* 감지 → SSE: workflow_update
+       │         └─ SSE: tool_done
+       └─ 스레드 저장 (Obsidian)
+```
+
+### SSE 이벤트 형식
+
+```jsonc
+// 요청 ID (스트림 시작 즉시)
+{"request_id": "abc123def456"}
+
+// 텍스트 스트리밍
+{"type": "text", "content": "..."}
+
+// 툴 실행
+{"type": "tool_start", "tool": "mouse_click", "label": "마우스 클릭"}
+{"type": "tool_done",  "tool": "mouse_click", "result": "..."}
+
+// 에이전트 상태
+{"type": "agent_state", "state": "thinking"}   // LLM 응답 생성 중
+{"type": "agent_state", "state": "running"}    // 툴 실행 중
+{"type": "agent_state", "state": "waiting"}    // 사용자 입력 대기
+{"type": "agent_state", "state": "idle"}       // 완료
+
+// 컨텍스트 사용량
+{"type": "context_usage", "tokens_used": 32000, "tokens_total": 128000}
+
+// 사용자 확인 팝업
+{"type": "confirm", "confirm_id": "a1b2", "question": "...", "options": [...]}
+
+// 워크플로우 업데이트
+{"type": "workflow_update", "workflow": {"title": "...", "steps": [...]}}
+
+// 완료 / 오류
+{"type": "done"}
+{"type": "error", "message": "..."}
+```
+
+---
+
+## 프로젝트 구조
 
 ```
 agent/
-├── server.py            — FastAPI 라우터
+├── server.py            — FastAPI 라우터 (모든 API 엔드포인트)
 ├── llm.py               — LLM 클라이언트 팩토리
 ├── config.py            — LLM 프로파일 (openai / internal)
-├── obsidian_session.py  — Obsidian 세션·노트·스레드 관리 + MANIFEST(4종)
+├── obsidian_session.py  — Obsidian 세션·스레드 관리 + TASK_CONFIGS + MANIFEST(4종)
+├── core/
+│   └── events.py        — SSE 이벤트 타입 상수 (TEXT, TOOL_START, AGENT_STATE, ...)
+├── workflow/
+│   ├── model.py         — Workflow·WorkflowStep 데이터클래스
+│   └── storage.py       — Obsidian JSON 저장 + 태스크별 기본 템플릿
 └── tools/
     ├── __init__.py      — 자동 디스커버리 레지스트리 (수정 불필요)
-    ├── ocr.py           — 전체화면 OCR + MANIFEST(1종)
-    ├── desktop.py       — 마우스·키보드·클립보드·창 + MANIFEST(18종)
-    ├── screen.py        — 화면 인텔리전스 (OpenCV + mss + pytesseract) + MANIFEST(9종)
-    ├── browser.py       — 브라우저 자동화 (Playwright) + MANIFEST(20종)
-    ├── process.py       — 프로세스·시스템 (psutil + subprocess) + MANIFEST(9종)
-    └── document.py      — Excel·Word·PDF·텍스트 + MANIFEST(9종)
+    ├── ocr.py           — MANIFEST(1종)
+    ├── screen.py        — MANIFEST(9종)
+    ├── desktop.py       — MANIFEST(19종)
+    ├── browser.py       — MANIFEST(22종)
+    ├── process.py       — MANIFEST(9종)
+    ├── document.py      — MANIFEST(9종)
+    ├── obsidian_rag.py  — MANIFEST(7종)
+    ├── interaction.py   — MANIFEST(1종) ask_user
+    └── workflow.py      — MANIFEST(2종) workflow_init·workflow_set_step
 ```
-
----
-
-## 자동 디스커버리 동작 원리
-
-`agent/tools/__init__.py`는 서버 시작 시 아래 순서로 실행된다.
-
-```
-1. pkgutil.iter_modules("agent/tools/") 로 파일 목록 스캔
-2. 각 파일을 import
-3. MANIFEST 속성이 있으면 → 각 항목을 _registry에 등록
-4. obsidian_session.py는 tools/ 밖에 있으므로 별도로 명시적 import
-5. TOOLS / TOOL_LABELS / run_tool 을 _registry 기반으로 조립 → server.py에 제공
-```
-
-**`_registry` 구조** (내부 저장 형식):
-```python
-_registry = {
-    "tool_name": {
-        "name":    "tool_name",       # run_tool() 호출 키
-        "label":   "UI 표시명",       # 채팅창 체크리스트에 표시
-        "schema":  { ... },           # LLM에 전달하는 OpenAI function schema
-        "handler": lambda a: fn(...)  # 실제 실행 함수
-    },
-    ...
-}
-```
-
-**에러 흐름**: `run_tool` 자체는 예외를 잡지 않는다. 예외는 `server.py`의 try/except로 전파되어 SSE 오류 이벤트로 클라이언트에 전달된다.
-
-**`obsidian_session.py` 예외 처리**: 이 파일은 `agent/tools/` 밖에 있어 자동 스캔 대상이 아니다. `__init__.py`에서 명시적으로 `from agent import obsidian_session`으로 import 후 MANIFEST를 읽는다. `obsidian_session.py` 안에 MANIFEST를 추가해 두었기 때문에 나머지 툴과 동일한 형식으로 관리된다.
 
 ---
 
@@ -268,13 +319,13 @@ _registry = {
 
 | 키 | 타입 | 설명 |
 |----|------|------|
-| `name` | `str` | 툴 식별자. `run_tool()` 호출 시 사용하는 키. LLM이 호출할 function name과 반드시 일치해야 함 |
-| `label` | `str` | UI 표시명. 채팅창의 툴 실행 체크리스트에 보이는 한글 이름 |
-| `schema` | `dict` | LLM에 전달하는 OpenAI function calling 스키마. `type: "function"` 형식 |
-| `handler` | `callable` | 실제 실행 함수. `lambda a: fn(a["param"])` 형태로 인자 딕셔너리를 받음 |
+| `name` | `str` | 툴 식별자. `run_tool()` 키, LLM function name과 반드시 일치 |
+| `label` | `str` | UI 표시명. 채팅창 체크리스트에 표시되는 한글 이름 |
+| `schema` | `dict` | LLM에 전달하는 OpenAI function calling 스키마 |
+| `handler` | `callable` | 실행 함수. `lambda a: fn(a["param"])` 형태로 dict 인자 수신 |
 
 ```python
-# MANIFEST 최소 예시 (파라미터 없는 툴)
+# 최소 예시 (파라미터 없는 툴)
 {
     "name":    "get_mouse_position",
     "label":   "마우스 위치 확인",
@@ -285,46 +336,27 @@ _registry = {
                 }},
     "handler": lambda a: get_mouse_position()
 }
-
-# MANIFEST 파라미터 있는 툴
-{
-    "name":    "mouse_click",
-    "label":   "마우스 클릭",
-    "schema":  {"type": "function", "function": {
-                    "name": "mouse_click",
-                    "description": "지정 좌표를 클릭합니다.",
-                    "parameters": {"type": "object",
-                                   "properties": {"x": {"type": "integer"},
-                                                  "y": {"type": "integer"}},
-                                   "required": ["x", "y"]}
-                }},
-    "handler": lambda a: mouse_click(a["x"], a["y"])
-}
 ```
 
 ---
 
 ## 새 툴 추가하는 법
 
-### 1. 툴 함수 + MANIFEST 작성 (이것만으로 끝)
-
 ```python
 # agent/tools/mymodule.py
 
 def my_tool(param: str) -> str:
-    # 반환값은 항상 str (LLM과 UI에 노출됨)
-    return f"결과: {param}"
-
+    return f"결과: {param}"   # 반환값은 항상 str
 
 MANIFEST = [
     {
         "name": "my_tool",
-        "label": "나의 툴",          # UI 표시명
+        "label": "나의 툴",
         "schema": {
             "type": "function",
             "function": {
                 "name": "my_tool",
-                "description": "무엇을 하는 툴인지 LLM이 이해할 수 있도록 설명.",
+                "description": "LLM이 이해할 수 있도록 무엇을 하는지 명확히 설명.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -339,39 +371,37 @@ MANIFEST = [
 ]
 ```
 
-파일을 `agent/tools/` 에 저장하면 서버 시작 시 자동 등록된다. `__init__.py`는 건드리지 않는다.
-
 **코딩 규칙:**
 - 반환값은 항상 `str`
-- JSON 반환 시 `json.dumps(..., ensure_ascii=False)` 사용
-- 예외는 caller에게 전파 — `server.py`의 try/except에서 잡아 SSE 오류 이벤트로 변환
-- 긴 결과는 적절히 잘라서 반환 (LLM 컨텍스트 절약)
+- JSON 반환 시 `json.dumps(..., ensure_ascii=False)`
+- 예외는 caller에게 전파 → `server.py` try/except가 SSE error로 변환
+- 긴 결과는 잘라서 반환 (LLM 컨텍스트 절약)
 
 ---
 
 ## 핵심 자동화 패턴
 
-### 화면에서 텍스트 찾아서 클릭
+### 화면에서 텍스트 찾아 클릭
 ```
-1. find_text_location("저장") → {"found": true, "x": 450, "y": 300}
-2. mouse_click(450, 300)
+find_text_location("저장") → {"x": 450, "y": 300}
+mouse_click(450, 300)
+```
+
+### 브라우저 로그인 (권장 패턴)
+```
+browser_open("http://intranet/login")
+browser_get_interactive_elements()     ← 실제 선택자 먼저 확인
+browser_fill("input[name='username']", "user01")
+browser_fill("input[name='password']", "pass")
+browser_press_key("Enter")             ← 폼 제출은 버튼 클릭 대신 Enter
+browser_wait_for_url("/dashboard")
 ```
 
 ### 작업 완료까지 대기
 ```
-1. (배포 시작)
-2. wait_for_text("배포 완료", timeout=60) → {"found": true, "elapsed_sec": 23}
-3. save_screenshot("deploy_result.png")
-```
-
-### 브라우저 로그인 자동화
-```
-1. browser_open("http://intranet/login")
-2. browser_fill("#username", "user01")
-3. browser_fill("#password", "pass")
-4. browser_click("#login-btn")
-5. browser_wait_for_url("/dashboard", timeout=5000)
-6. browser_get_page_text()  → 대시보드 내용 추출
+(배포 시작)
+wait_for_text("배포 완료", timeout=60)
+save_screenshot("deploy_result.png")
 ```
 
 ### UAC/관리자 앱 제어
@@ -380,35 +410,14 @@ mouse_click(x, y, use_sendinput=True)
 key_press("ctrl+s", use_sendinput=True)
 ```
 
----
-
-## LLM 프로파일
-
-`agent/config.py`에서 OpenAI 호환 엔드포인트를 관리합니다.
-
-```python
-from agent.config import get_active, active_llm
-print(get_active())   # 'openai' 또는 'internal'
-print(active_llm())   # {'base_url': ..., 'model': ..., 'api_key': ...}
+### 워크플로우 기반 다단계 작업
 ```
-
-사내 LLM `.env` 설정:
-```ini
-LLM_INTERNAL_BASE_URL=http://192.168.x.x:8000/v1
-LLM_INTERNAL_MODEL=your-model-name
-INTERNAL_API_KEY=your-key
-```
-
----
-
-## 스트리밍 이벤트 형식
-
-```
-data: {"type": "text",       "content": "..."}
-data: {"type": "tool_start", "tool": "...", "label": "..."}
-data: {"type": "tool_done",  "tool": "...", "result": "..."}
-data: {"type": "done"}
-data: {"type": "error",      "message": "..."}
+workflow_init(task_type, thread_id, "배포 작업", steps=[
+    {"title": "빌드 확인", "type": "auto"},
+    {"title": "서버 접속", "type": "auto"},
+    {"title": "배포 실행", "type": "semi_auto"},
+])
+→ 단계별로 workflow_set_step(status="running") / "done" 업데이트
 ```
 
 ---
@@ -419,14 +428,42 @@ data: {"type": "error",      "message": "..."}
 conda activate mes-agent
 cd D:\GithubRepositories\mes-agent
 
-# 개별 툴 직접 테스트
+# 툴 레지스트리 확인
+python -c "from agent.tools import TOOLS, TOOL_LABELS; print(f'툴 수: {len(TOOLS)}')"
+
+# 개별 툴 테스트
 python -c "from agent.tools.desktop import get_mouse_position; print(get_mouse_position())"
 python -c "from agent.tools.screen import get_pixel_color; print(get_pixel_color(100,100))"
 python -c "from agent.tools.process import get_system_info; print(get_system_info())"
 
-# 브라우저 툴 (Chromium 창 뜸)
-python -c "from agent.tools.browser import browser_open, browser_close; print(browser_open('https://google.com')); browser_close()"
+# 브라우저 툴 (Chromium 창 열림)
+python -c "
+from agent.tools.browser import _browser_open, _browser_close
+print(_browser_open({'url': 'https://example.com'}))
+print(_browser_close({}))
+"
 
-# 툴 레지스트리 카운트 확인
-python -c "from agent.tools import TOOLS, TOOL_LABELS; print(f'TOOLS:{len(TOOLS)} LABELS:{len(TOOL_LABELS)}')"
+# 워크플로우 기본 템플릿 확인
+python -c "
+from agent.workflow.storage import load_workflow
+wf = load_workflow('syncade', 'test-001')
+for s in wf.steps: print(f'  [{s.type}] {s.title}')
+"
+```
+
+---
+
+## LLM 프로파일 전환
+
+```python
+from agent.config import get_active, active_llm
+print(get_active())   # 'openai' 또는 'internal'
+print(active_llm())   # {'base_url': ..., 'model': ..., 'api_key': ...}
+```
+
+`.env` 사내 LLM 설정:
+```ini
+LLM_INTERNAL_BASE_URL=http://192.168.x.x:8000/v1
+LLM_INTERNAL_MODEL=your-model-name
+INTERNAL_API_KEY=your-key
 ```

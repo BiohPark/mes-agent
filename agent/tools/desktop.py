@@ -305,6 +305,20 @@ def move_window(title: str, x: int, y: int) -> str:
     return f"창 이동: {win.title} → ({x}, {y})"
 
 
+def maximize_window(title: str) -> str:
+    """창을 OS 수준으로 최대화합니다."""
+    matches = [w for w in gw.getAllWindows() if title.lower() in w.title.lower() and w.title]
+    if not matches:
+        available = [w.title for w in gw.getAllWindows() if w.title][:8]
+        return json.dumps({"error": f"창을 찾지 못했습니다: '{title}'", "available": available})
+    win = matches[0]
+    try:
+        win.maximize()
+        return json.dumps({"maximized": win.title})
+    except Exception as e:
+        return json.dumps({"error": str(e), "title": win.title})
+
+
 MANIFEST = [
     # ── 마우스 ────────────────────────────────────────────────
     {
@@ -635,5 +649,24 @@ MANIFEST = [
             }
         },
         "handler": lambda a: move_window(a["title"], a["x"], a["y"])
+    },
+    {
+        "name": "maximize_window",
+        "label": "창 최대화",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "maximize_window",
+                "description": "창을 OS 수준으로 최대화합니다. resize_window 대신 이 툴을 사용하세요.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "창 제목 일부 (부분 일치)"}
+                    },
+                    "required": ["title"]
+                }
+            }
+        },
+        "handler": lambda a: maximize_window(a["title"])
     },
 ]

@@ -41,9 +41,9 @@
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기, 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
-| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (18종) |
-| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (20종) |
-| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회 (6종), REST API + 파일 fallback |
+| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (19종) |
+| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
+| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회·링크 순회 (7종), REST API + 파일 fallback |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
 | 문서 처리 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 (9종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
@@ -52,19 +52,50 @@
 | 업무 스레드 대화 | `agent/obsidian_session.py` + `agent/server.py` | 사이드바 버튼별 독립 다중 스레드, 멀티턴 대화 이력, 완료/보관/삭제, Obsidian 저장 |
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
+| 에이전트 루프 + 중단 | `agent/server.py` | `_MAX_STEPS=20`, `POST /stop/{request_id}`, `_stop_flags` 딕셔너리 |
+| 에이전트 상태 바 | `electron/renderer/chat.js` + `style.css` | thinking/running/waiting/idle 상태 표시, 중단 버튼 |
+| 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` | 토큰 추정치 헤더 바 표시 |
+| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기 |
+| 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장 |
+| 워크플로우 API | `agent/server.py` | `GET/POST /threads/{type}/{id}/workflow` |
+| 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일·브라우저·타이핑 프롬프트 삽입 |
+| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
 
-**총 툴 수: 77종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 83종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
 | `ocr.py` | 1 |
 | `screen.py` | 9 |
-| `desktop.py` | 18 |
-| `browser.py` | 20 |
+| `desktop.py` | 19 |
+| `browser.py` | 22 |
 | `process.py` | 9 |
 | `document.py` | 9 |
 | `obsidian_rag.py` | 7 |
+| `interaction.py` | 1 |
+| `workflow.py` | 2 |
 | `obsidian_session.py` | 4 |
+
+---
+
+### ✅ 완성된 기능 (Phase 0 — 2026-05-29)
+
+| 항목 | 내용 |
+|------|------|
+| Phase 0 task_type/thread_id 주입 | `server.py generate()` — 시스템 프롬프트에 세션 컨텍스트 삽입, LLM이 workflow 툴 호출 시 올바른 값 사용 |
+| `_AUTO_EXEC` 워크플로우 지침 | `obsidian_session.py` — 작업 시작 시 `workflow_init` 강제, 각 단계 `workflow_set_step` 업데이트 지침 |
+| TASK_CONFIGS 시스템 프롬프트 보강 | `obsidian_session.py` — 5개 업무별 워크플로우 상세 지침, 브라우저 조작 전략 명시 |
+| 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian-rag(4)/unscript(5)/knox(5) 단계 |
+| 워크플로우 데이터 모델 | `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스, StepType·StepStatus Literal |
+| 워크플로우 스토리지 | `agent/workflow/storage.py` — Vault `agent/workflows/{type}/{id}.json` 저장/로드/삭제 |
+| 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종) |
+| 워크플로우 API | `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` |
+| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` — 탭 전환, 드래그 리사이즈, 접기/펼치기 |
+| 에이전트 상태 바 + 중단 버튼 | `electron/renderer/chat.js` — thinking/running/waiting/idle, `POST /stop/{request_id}` |
+| 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` — 헤더 진행 바, 80%/95% 경고 |
+| 실행 로그 패널 | `electron/renderer/workflow.js` — 툴 실행 시간·결과 기록, 최대 50개 유지 |
+| 빠른 작업 버튼 | `electron/renderer/index.html` — OCR·파일·브라우저·타이핑 프롬프트 삽입 |
+| SSE 이벤트 상수 | `agent/core/events.py` — 모든 이벤트 타입 중앙화 |
 
 ---
 
@@ -109,32 +140,21 @@ agent/server.py 내 generate() 수정
 
 ---
 
-#### 3. 업무 워크플로우 (`agent/workflows/`)
+#### 3. ✅ 업무 워크플로우 패널 — 완성
 
-**무엇**: 여러 툴을 조합한 실제 사내 업무 시나리오를 자동화한다.
-
-**왜 필요**: 사용자는 "Syncade 배포해줘" 한 마디로 끝내고 싶다. 복잡한 단계를 워크플로우로 캡슐화.
-
-**구현 계획**:
-```
-agent/workflows/
-├── syncade_deploy.py    — 빌드 확인 → 서버 접속 → 배포 → 결과 확인
-├── knox_collect.py      — Knox Chat/Mail 수집 모드 활성화
-├── obsidian_rag.py      — Obsidian Vault attach → 검색 인덱스 구성
-└── unscript_test.py     — Unscript 테스트 에이전트 활성화
-```
-
-각 워크플로우는 툴로 등록하여 LLM이 호출 가능하게 한다.
-사이드바 업무 버튼이 이 워크플로우를 실행한다.
-완료 시 `CLAUDE.md` + `README.md` + `electron/renderer/index.html` 사이드바 업데이트.
+**구현 완료** (2026-05-29):
+- `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스
+- `agent/workflow/storage.py` — Vault JSON 저장 + 태스크별 기본 템플릿
+- `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종)
+- `electron/renderer/workflow.js` — 우측 패널 렌더링·리사이즈·탭
+- `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` API
+- Phase 0: task_type/thread_id 시스템 프롬프트 주입으로 LLM이 툴 호출 가능
 
 ---
 
-#### 4. ✅ Obsidian RAG 연동
+#### 4. ✅ Obsidian RAG 연동 — 완성
 
-**무엇**: Obsidian Vault를 지식 베이스로 활용해 에이전트가 업무 도메인 지식을 참조한다.
-
-**구현 완료**: `agent/tools/obsidian_rag.py` (6종 툴)
+**구현 완료**: `agent/tools/obsidian_rag.py` (7종 툴)
 - `obsidian_search` — Vault 전체 키워드 검색
 - `obsidian_read_note` — 노트 읽기
 - `obsidian_list_notes` — 폴더 목록
@@ -144,8 +164,6 @@ agent/workflows/
 - `obsidian_follow_links` — `[[wikilink]]` BFS 다중 뎁스 스캔
 
 접근: Local REST API (`OBSIDIAN_HOST`) → 직접 파일 fallback (`OBSIDIAN_VAULT_PATH`)
-
-> **TODO**: `docs/agent-guide.md` Vault 접근 패턴 상세 문서화 필요
 
 ---
 
@@ -199,27 +217,31 @@ agent/workflows/
 ## UI 구성
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  MES Agent                      [LLM 프로파일] ● 준비됨 │  ← 헤더
-├──────────────┬───────────────────────────────────────┤
-│  업무 자동화  │ 💬 기본업무 | +새 시작 | #001 ×       │  ← 스레드 탭 바
-│ 💬 기본업무● │                 [완료하기] [보관됨↓]   │
-│  🚀 Syncade  ├───────────────────────────────────────┤
-│  🧠 Obsidian │                                       │
-│  🤖 Unscript │   채팅 메시지 영역                     │
-│  📥 Knox     │   (툴 실행 단계 체크리스트 실시간 표시) │
-│  ──────────  │                                       │
-│  도구 테스트  │   빈 스레드: 업무 설명 + 환영 메시지   │
-│  📷 OCR      │                                       │
-│  🖱️ 마우스   ├───────────────────────────────────────┤
-│  관리         │  입력창 (업무명 placeholder) [전송]    │
-└──────────────┴───────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│  MES Agent        [컨텍스트 ████░ 40k/128k]    [LLM 프로파일] ● 준비됨 │ ← 헤더
+├──────────────┬──────────────────────────────┬──│──────────────────────┤
+│  업무 자동화  │ 💬 기본업무 | +새 시작 | #001×│  │  📋 워크플로우  🗒️ 로그  › │
+│ 💬 기본업무● │         [완료하기] [보관됨↓]  │  ├──────────────────────┤
+│  🚀 Syncade  ├──────────────────────────────┤  │ 1 ○ 환경 확인      🤖 │
+│  🧠 Obsidian │                              │  │ 2 ⏳ 서버 접속 중  🤖 │
+│  🤖 Unscript │   채팅 메시지 영역            │  │ 3 ○ 배포 실행      👁️ │
+│  📥 Knox     │   (툴 실행 체크리스트)        │  │ 4 ○ 결과 확인      🤖 │
+│  ──────────  │                              │  │                      │
+│  빠른 작업   ├──────────────────────────────┤  │                      │
+│  📷 화면 OCR │ 🧠 생각 중...    [■ 중단]    │  │                      │
+│  📂 파일열기 ├──────────────────────────────┤  │                      │
+│  🌐 브라우저  │  입력창              [전송]   │  │                      │
+│  ⌨️ 타이핑   └──────────────────────────────┘  └──────────────────────┘
+└──────────────                                       우측 패널 (리사이즈)
 ```
 
 - 앱 시작 시 **기본업무** 탭이 자동으로 열림
-- 빈 스레드에서는 업무 설명(welcomee 메시지)이 표시되고, 대화창 클릭 시 입력 포커스
+- 빈 스레드에서는 업무 설명(welcome 메시지)이 표시되고, 대화창 클릭 시 입력 포커스
 - 업무 버튼 전환 시 메시지가 있는 가장 최근 스레드를 자동 선택
 - 스레드 탭의 `×` 버튼으로 영구 삭제
+- 우측 패널: 워크플로우 단계 카드 / 실행 로그 탭 전환, 드래그 리사이즈, `›` 버튼으로 접기
+- 에이전트 상태 바: thinking/running/waiting/idle 상태 + 중단 버튼
+- 헤더 컨텍스트 바: 토큰 사용량 시각화 (80% 경고, 95% 위험)
 
 ---
 
@@ -236,23 +258,31 @@ mes-agent/
 │   ├── main.js             ← Python 서버 자동 시작, 창 생성
 │   ├── preload.js          ← contextBridge (serverPort 노출)
 │   └── renderer/
-│       ├── index.html      ← UI 레이아웃 (사이드바 5종 업무 버튼)
-│       ├── chat.js         ← 채팅 + SSE 스트리밍 (기본업무 자동 진입, 환영 메시지)
+│       ├── index.html      ← UI 레이아웃 (3-패널: 사이드바 + 채팅 + 우측 워크플로우)
+│       ├── chat.js         ← 채팅 + SSE 스트리밍 + 에이전트 상태 바 + 중단 버튼
+│       ├── workflow.js     ← 우측 워크플로우 패널 + 실행 로그 탭 + 드래그 리사이즈
 │       ├── tool-test.js    ← 도구 직접 테스트 패널
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI (/health /chat /profile /tool/test /task-config /threads/*)
+│   ├── server.py           ← FastAPI (/health /chat /stop /profile /tool/test /task-config /threads/* /workflow)
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal)
 │   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
+│   ├── core/
+│   │   └── events.py       ← SSE 이벤트 타입 상수
+│   ├── workflow/
+│   │   ├── model.py        ← Workflow·WorkflowStep 데이터클래스
+│   │   └── storage.py      ← Vault agent/workflows/ 파일 저장/로드
 │   └── tools/
 │       ├── __init__.py     ← 자동 디스커버리 레지스트리 (수정 불필요)
 │       ├── ocr.py          ← 전체화면 OCR (1종) ✅
-│       ├── desktop.py      ← 마우스·키보드·클립보드·창 관리 (18종) ✅
+│       ├── desktop.py      ← 마우스·키보드·클립보드·창 관리 (19종) ✅
 │       ├── screen.py       ← 화면 인텔리전스: 영역OCR·이미지매칭·텍스트위치·대기·비교·픽셀 (9종) ✅
-│       ├── browser.py      ← Playwright 브라우저 자동화 (20종) ✅
+│       ├── browser.py      ← Playwright 브라우저 자동화 (22종) ✅
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
-│       └── document.py     ← Excel·Word·PDF·텍스트 처리 (9종) ✅
+│       ├── document.py     ← Excel·Word·PDF·텍스트 처리 (9종) ✅
+│       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
+│       └── workflow.py     ← 워크플로우 초기화·단계 업데이트 (2종) ✅
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)
 ├── .env                    ← 로컬 설정 (git 제외)
 ├── .env.example            ← 설정 템플릿

@@ -16,65 +16,109 @@ from pathlib import Path
 
 # ── 업무 타입 설정 ────────────────────────────────────────────
 
+# 모든 에이전트에 공통으로 붙는 자율 실행 지시
+_AUTO_EXEC = (
+    " 도구 호출 전에 '~하겠습니다', '~할게요' 같은 예고 문구를 절대 쓰지 마라."
+    " 바로 도구를 호출해 실행하고, 여러 단계가 필요하면 사용자 확인 없이 연속으로 실행해라."
+    " 모든 작업이 완료된 뒤에만 결과를 간략히 보고해라."
+    " [워크플로우] 스레드에서 새 작업을 시작할 때 workflow_init으로 목표와 단계를 먼저 정의해라."
+    " 각 단계 실행 시작 시 workflow_set_step(status='running'),"
+    " 완료 시 'done', 오류 시 'error'로 업데이트해라."
+    " task_type·thread_id는 시스템 메시지의 [현재 세션] 섹션에서 읽어 그대로 사용해라."
+    " [브라우저 조작] browser_open 후 browser_get_interactive_elements로 실제 selector를 먼저 확인해라."
+    " CSS id/class보다 aria-label·placeholder·텍스트 기반 selector(예: input[aria-label='검색'], button:has-text('로그인'))를 우선 사용해라."
+    " 폼 제출은 버튼 클릭 대신 browser_press_key('Enter')를 사용해라."
+    " selector 실패 시 같은 것을 반복하지 말고 즉시 다른 전략으로 전환해라."
+)
+
 TASK_CONFIGS = {
     "general": {
         "label": "기본업무",
         "icon": "💬",
-        "description": "무엇이든 물어보세요.\n화면 OCR, 마우스/키보드 제어, 파일 처리 등\n다양한 업무 자동화를 도와드립니다.",
+        "description": (
+            "무엇이든 지시하세요.\n"
+            "화면 OCR, 마우스/키보드 제어, 브라우저 자동화, 문서 처리 등\n"
+            "다양한 업무를 에이전트가 직접 수행합니다.\n\n"
+            "주요 기능: 화면 읽기(OCR) · 마우스·키보드 제어 · 브라우저 자동화\n"
+            "Excel·Word·PDF 처리 · PowerShell 실행 · Obsidian 노트 관리"
+        ),
         "system_prompt": (
             "너는 사내 업무자동화 데스크탑 에이전트야. "
             "사용자의 자연어 지시에 따라 화면 인식, 키보드/마우스 제어, "
-            "문서 처리 등 다양한 업무를 수행한다. "
-            "명확하게 이해하고 단계적으로 처리하며, 결과를 간결하게 보고해."
-        ),
+            "문서 처리, 브라우저 자동화 등 다양한 업무를 수행한다. "
+            "복잡한 작업은 workflow_init으로 단계를 정의하고 순서대로 실행해라."
+        ) + _AUTO_EXEC,
     },
     "syncade": {
         "label": "Syncade 배포",
         "icon": "🚀",
-        "description": "Syncade 배포 전문 에이전트입니다.\n배포 절차 안내, 배포 상태 확인,\n오류 대응을 도와드립니다.",
+        "description": (
+            "Syncade 배포 전문 에이전트입니다.\n"
+            "배포 절차 안내, 배포 상태 확인, 오류 대응을 담당합니다.\n\n"
+            "워크플로우: 빌드 확인 → 환경 접속 → 패키지 업로드\n"
+            "→ 배포 실행 → 서비스 기동 확인 → 결과 기록"
+        ),
         "system_prompt": (
             "너는 Syncade 배포 전문 에이전트야. "
             "Syncade는 회사 내부 시스템의 소프트웨어 배포 플랫폼이야. "
             "배포 절차 안내, 배포 상태 확인, 오류 대응을 담당해. "
-            "단계별로 명확하게 안내하고, 오류 발생 시 원인 분석과 해결책을 제시해. "
-            "배포 진행 상황을 체계적으로 기록하고 추적해."
-        ),
+            "오류 발생 시 원인 분석과 해결책을 제시하고 배포 진행 상황을 추적해. "
+            "작업 시작 시 반드시 workflow_init으로 6단계 배포 절차를 정의해라: "
+            "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록."
+        ) + _AUTO_EXEC,
     },
     "obsidian-rag": {
         "label": "Obsidian RAG",
         "icon": "🧠",
-        "description": "Obsidian 지식베이스 관리 에이전트입니다.\nVault에서 관련 노트를 찾고,\n정보를 정리하고 새 노트를 작성합니다.",
+        "description": (
+            "Obsidian 지식베이스 관리 에이전트입니다.\n"
+            "Vault에서 관련 노트를 찾고, 정보를 종합하고 새 노트를 작성합니다.\n\n"
+            "워크플로우: 키워드 검색 → 노트 읽기·링크 탐색\n"
+            "→ 정보 종합 → 새 인사이트 저장"
+        ),
         "system_prompt": (
             "너는 Obsidian 지식베이스 관리 에이전트야. "
             "사용자의 Obsidian Vault를 지식 베이스로 활용해 질문에 답하고 정보를 정리한다. "
             "답변 전 반드시 obsidian_search로 Vault에서 관련 노트를 먼저 검색해. "
             "검색 결과가 있으면 obsidian_read_note로 해당 노트를 읽어 맥락을 파악한 뒤 답변해. "
+            "[[wikilink]] 연결 노트가 중요해 보이면 obsidian_follow_links로 다중 뎁스 탐색해. "
             "새로운 인사이트나 분석 결과는 obsidian_write_note 또는 obsidian_append_note로 기록해. "
-            "태그로 분류가 필요하면 obsidian_get_tags를 활용해. "
             "Vault에 없는 내용이면 솔직히 말하고, 필요 시 새 노트를 생성해 지식을 축적해."
-        ),
+        ) + _AUTO_EXEC,
     },
     "unscript": {
         "label": "Unscript 테스트",
         "icon": "🤖",
-        "description": "Unscript 테스트 에이전트입니다.\n테스트 계획 수립, 케이스 작성,\n실행 결과 분석을 도와드립니다.",
+        "description": (
+            "Unscript 테스트 에이전트입니다.\n"
+            "테스트 계획 수립, 케이스 작성, 실행 결과 분석을 도와드립니다.\n\n"
+            "워크플로우: 화면 확인(OCR) → 케이스 설계\n"
+            "→ 자동화 실행 → 결과 비교 → 버그 리포트"
+        ),
         "system_prompt": (
             "너는 Unscript 테스트 에이전트야. "
             "업무 자동화 스크립트의 테스트 계획 수립, 테스트 케이스 작성, 실행 결과 분석을 담당해. "
             "테스트 시나리오를 체계적으로 관리하고 버그를 명확히 문서화해. "
-            "화면 OCR(capture_screen_ocr)과 데스크탑 제어 툴을 활용해 UI 동작을 검증해."
-        ),
+            "화면 OCR(capture_screen_ocr)과 compare_screenshots로 UI 동작을 검증해. "
+            "작업 시작 시 workflow_init으로 테스트 절차를 정의해라."
+        ) + _AUTO_EXEC,
     },
     "knox": {
         "label": "Knox 자동 수집",
         "icon": "📥",
-        "description": "Knox 데이터 수집 에이전트입니다.\nKnox Chat, Knox Mail 등 사내 시스템에서\n필요한 데이터를 수집하고 정리합니다.",
+        "description": (
+            "Knox 데이터 수집 에이전트입니다.\n"
+            "Knox Chat, Knox Mail 등 사내 시스템에서 데이터를 수집하고 정리합니다.\n\n"
+            "워크플로우: Knox 접속 확인 → 수집 대상 지정\n"
+            "→ 데이터 수집 → 정리·중복 제거 → 결과 저장"
+        ),
         "system_prompt": (
             "너는 Knox 데이터 수집 에이전트야. "
             "Knox Chat, Knox Mail 등 사내 시스템에서 필요한 데이터를 수집하고 정리하는 역할이야. "
             "수집 대상, 방법, 결과를 명확히 보고하고 수집 현황을 추적해. "
-            "화면 캡처(capture_screen_ocr)를 활용해 데이터를 추출하고 정리해."
-        ),
+            "화면 캡처(capture_screen_ocr)와 브라우저 자동화를 활용해 데이터를 추출하고 정리해. "
+            "작업 시작 시 workflow_init으로 수집 절차를 정의해라."
+        ) + _AUTO_EXEC,
     },
 }
 
