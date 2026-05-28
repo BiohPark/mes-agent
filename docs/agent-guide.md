@@ -5,13 +5,14 @@
 새 툴을 추가하거나 기존 기능을 수정할 때마다 아래를 확인한다.
 
 ```
-□ agent/tools/<name>.py       — 툴 함수 작성
-□ agent/tools/__init__.py     — TOOLS 스키마, TOOL_LABELS, _TOOL_MAP 등록
-□ CLAUDE.md                   — 현재 상태 표의 해당 항목 ✅ 변경
-□ README.md                   — 기능 현황 표 상태 업데이트
+□ agent/tools/<name>.py        — 툴 함수 작성 + MANIFEST 정의 (이것만으로 자동 등록)
+□ CLAUDE.md                    — 현재 상태 표의 해당 항목 ✅ 변경
+□ README.md                    — 기능 현황 표 상태 업데이트
 □ electron/renderer/index.html — (워크플로우인 경우) 사이드바 버튼 추가
-□ docs/agent-guide.md         — 아래 "구현된 툴 목록" 업데이트
+□ docs/agent-guide.md          — 아래 "구현된 툴 목록" 업데이트
 ```
+
+> **__init__.py는 수정하지 않아도 된다.** MANIFEST가 있는 파일을 tools/ 폴더에 넣으면 서버 시작 시 자동 등록된다.
 
 ---
 
@@ -128,56 +129,61 @@ agent/
 ├── server.py            — FastAPI 라우터
 ├── llm.py               — LLM 클라이언트 팩토리
 ├── config.py            — LLM 프로파일 (openai / internal)
-├── obsidian_session.py  — Obsidian 세션·노트·스레드 관리
+├── obsidian_session.py  — Obsidian 세션·노트·스레드 관리 + MANIFEST(4종)
 └── tools/
-    ├── __init__.py      — 툴 레지스트리 (70종) ← 새 툴 등록 여기
-    ├── ocr.py           — 전체화면 OCR
-    ├── desktop.py       — 마우스·키보드·클립보드·창 (pyautogui + pynput + pyperclip + pywin32)
-    ├── screen.py        — 화면 인텔리전스 (OpenCV + mss + pytesseract)
-    ├── browser.py       — 브라우저 자동화 (Playwright)
-    ├── process.py       — 프로세스·시스템 (psutil + subprocess)
-    └── document.py      — Excel·Word·PDF·텍스트 (openpyxl + python-docx + pdfplumber)
+    ├── __init__.py      — 자동 디스커버리 레지스트리 (수정 불필요)
+    ├── ocr.py           — 전체화면 OCR + MANIFEST(1종)
+    ├── desktop.py       — 마우스·키보드·클립보드·창 + MANIFEST(18종)
+    ├── screen.py        — 화면 인텔리전스 (OpenCV + mss + pytesseract) + MANIFEST(9종)
+    ├── browser.py       — 브라우저 자동화 (Playwright) + MANIFEST(20종)
+    ├── process.py       — 프로세스·시스템 (psutil + subprocess) + MANIFEST(9종)
+    └── document.py      — Excel·Word·PDF·텍스트 + MANIFEST(9종)
 ```
 
 ---
 
 ## 새 툴 추가하는 법
 
-### 1. 툴 함수 작성
+### 1. 툴 함수 + MANIFEST 작성 (이것만으로 끝)
 
 ```python
 # agent/tools/mymodule.py
+
 def my_tool(param: str) -> str:
     # 반환값은 항상 str (LLM과 UI에 노출됨)
     return f"결과: {param}"
+
+
+MANIFEST = [
+    {
+        "name": "my_tool",
+        "label": "나의 툴",          # UI 표시명
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "my_tool",
+                "description": "무엇을 하는 툴인지 LLM이 이해할 수 있도록 설명.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "param": {"type": "string", "description": "파라미터 설명"}
+                    },
+                    "required": ["param"]
+                }
+            }
+        },
+        "handler": lambda a: my_tool(a["param"])
+    }
+]
 ```
 
-**규칙:**
+파일을 `agent/tools/` 에 저장하면 서버 시작 시 자동 등록된다. `__init__.py`는 건드리지 않는다.
+
+**코딩 규칙:**
 - 반환값은 항상 `str`
 - JSON 반환 시 `json.dumps(..., ensure_ascii=False)` 사용
-- 예외는 caller에게 전파 — `__init__.py`에서 잡아 오류 문자열로 변환
+- 예외는 caller에게 전파 — 레지스트리에서 잡아 오류 문자열로 변환
 - 긴 결과는 적절히 잘라서 반환 (LLM 컨텍스트 절약)
-
-### 2. `__init__.py`에 등록
-
-```python
-from agent.tools.mymodule import my_tool
-
-# TOOLS 리스트에 스키마 추가
-{"type": "function", "function": {
-    "name": "my_tool",
-    "description": "무엇을 하는 툴인지 LLM이 이해할 수 있도록 설명.",
-    "parameters": {"type": "object", "properties": {
-        "param": {"type": "string", "description": "파라미터 설명"}
-    }, "required": ["param"]}
-}}
-
-# TOOL_LABELS에 표시명 추가
-"my_tool": "나의 툴"
-
-# _TOOL_MAP에 실행 함수 연결
-"my_tool": lambda a: my_tool(a["param"])
-```
 
 ---
 
@@ -260,5 +266,5 @@ python -c "from agent.tools.process import get_system_info; print(get_system_inf
 python -c "from agent.tools.browser import browser_open, browser_close; print(browser_open('https://google.com')); browser_close()"
 
 # 툴 레지스트리 카운트 확인
-python -c "from agent.tools import TOOLS, TOOL_LABELS, _TOOL_MAP; print(f'TOOLS:{len(TOOLS)} LABELS:{len(TOOL_LABELS)} MAP:{len(_TOOL_MAP)}')"
+python -c "from agent.tools import TOOLS, TOOL_LABELS; print(f'TOOLS:{len(TOOLS)} LABELS:{len(TOOL_LABELS)}')"
 ```

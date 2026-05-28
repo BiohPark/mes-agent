@@ -810,3 +810,88 @@ updated: {today}
 
 ## 완료
 """
+
+
+MANIFEST = [
+    {
+        "name": "add_dev_note",
+        "label": "개발 노트 저장",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "add_dev_note",
+                "description": "Obsidian Vault에 개발 노트를 저장합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "content": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "related_session": {"type": "string"}
+                    },
+                    "required": ["title", "content"]
+                }
+            }
+        },
+        "handler": lambda a: get_session_manager().add_note(
+            a["title"], a["content"], a.get("tags", []), a.get("related_session", "")
+        )
+    },
+    {
+        "name": "add_plan_item",
+        "label": "백로그 항목 추가",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "add_plan_item",
+                "description": "Obsidian 백로그에 할 일 항목을 추가합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"}
+                    },
+                    "required": ["title"]
+                }
+            }
+        },
+        "handler": lambda a: get_session_manager().add_plan_item(
+            a["title"], a.get("description", "")
+        )
+    },
+    {
+        "name": "list_recent_sessions",
+        "label": "최근 세션 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "list_recent_sessions",
+                "description": "최근 업무 세션 목록을 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: get_session_manager().list_recent_sessions(a.get("limit", 5))
+    },
+    {
+        "name": "search_sessions",
+        "label": "세션 검색",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "search_sessions",
+                "description": "Obsidian 세션 내용을 키워드로 검색합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"]
+                }
+            }
+        },
+        "handler": lambda a: get_session_manager().search_sessions(a["query"])
+    },
+]

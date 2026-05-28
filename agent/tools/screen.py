@@ -217,3 +217,184 @@ def capture_window_screenshot(title: str, save_path: str = "") -> str:
     cv2.imwrite(save_path, img)
     return json.dumps({"path": save_path, "title": win.title,
                        "region": {"x": x, "y": y, "w": w, "h": h}})
+
+
+MANIFEST = [
+    {
+        "name": "capture_region_ocr",
+        "label": "영역 OCR",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "capture_region_ocr",
+                "description": "지정 영역만 캡처하고 OCR로 텍스트를 추출합니다. 특정 영역에 집중할 때 전체 화면 OCR보다 정확합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "integer"}, "y": {"type": "integer"},
+                        "width": {"type": "integer"}, "height": {"type": "integer"}
+                    },
+                    "required": ["x", "y", "width", "height"]
+                }
+            }
+        },
+        "handler": lambda a: capture_region_ocr(a["x"], a["y"], a["width"], a["height"])
+    },
+    {
+        "name": "find_image_on_screen",
+        "label": "이미지 위치 탐색",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "find_image_on_screen",
+                "description": "화면에서 템플릿 이미지를 찾아 중심 좌표를 반환합니다. 버튼·아이콘 위치를 찾을 때 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "template_path": {"type": "string", "description": "찾을 이미지 파일 경로"},
+                        "confidence": {"type": "number", "description": "매칭 정확도 임계값 0~1 (기본 0.8)"}
+                    },
+                    "required": ["template_path"]
+                }
+            }
+        },
+        "handler": lambda a: find_image_on_screen(a["template_path"], a.get("confidence", 0.8))
+    },
+    {
+        "name": "find_text_location",
+        "label": "텍스트 위치 탐색",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "find_text_location",
+                "description": "화면에서 특정 텍스트의 좌표를 찾습니다. 반환된 x, y로 바로 클릭할 수 있습니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "찾을 텍스트"}
+                    },
+                    "required": ["text"]
+                }
+            }
+        },
+        "handler": lambda a: find_text_location(a["text"])
+    },
+    {
+        "name": "wait_for_image",
+        "label": "이미지 대기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "wait_for_image",
+                "description": "지정한 이미지가 화면에 나타날 때까지 기다립니다. 배포 완료 버튼, 로딩 화면 감지에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "template_path": {"type": "string"},
+                        "timeout": {"type": "integer", "description": "최대 대기 초 (기본 10)"},
+                        "confidence": {"type": "number"}
+                    },
+                    "required": ["template_path"]
+                }
+            }
+        },
+        "handler": lambda a: wait_for_image(a["template_path"], a.get("timeout", 10), a.get("confidence", 0.8))
+    },
+    {
+        "name": "wait_for_text",
+        "label": "텍스트 대기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "wait_for_text",
+                "description": "지정한 텍스트가 화면에 나타날 때까지 기다립니다. '완료', '오류' 메시지 감지에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "timeout": {"type": "integer", "description": "최대 대기 초 (기본 10)"}
+                    },
+                    "required": ["text"]
+                }
+            }
+        },
+        "handler": lambda a: wait_for_text(a["text"], a.get("timeout", 10))
+    },
+    {
+        "name": "compare_screenshots",
+        "label": "스크린샷 비교",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "compare_screenshots",
+                "description": "두 스크린샷 파일을 비교하여 화면 변화를 감지합니다. 배포 전후 검증에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "before_path": {"type": "string"},
+                        "after_path": {"type": "string"}
+                    },
+                    "required": ["before_path", "after_path"]
+                }
+            }
+        },
+        "handler": lambda a: compare_screenshots(a["before_path"], a["after_path"])
+    },
+    {
+        "name": "save_screenshot",
+        "label": "스크린샷 저장",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "save_screenshot",
+                "description": "현재 전체 화면을 이미지 파일로 저장합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "save_path": {"type": "string", "description": "저장 경로 (생략 시 임시 파일 자동 생성)"}
+                    }
+                }
+            }
+        },
+        "handler": lambda a: save_screenshot(a.get("save_path", ""))
+    },
+    {
+        "name": "get_pixel_color",
+        "label": "픽셀 색상 확인",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_pixel_color",
+                "description": "지정 좌표의 픽셀 색상(RGB, HEX)을 반환합니다. 상태 표시등 색으로 정상/오류 여부를 판단할 때 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "integer"}, "y": {"type": "integer"}
+                    },
+                    "required": ["x", "y"]
+                }
+            }
+        },
+        "handler": lambda a: get_pixel_color(a["x"], a["y"])
+    },
+    {
+        "name": "capture_window_screenshot",
+        "label": "창 캡처",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "capture_window_screenshot",
+                "description": "특정 창만 캡처하여 이미지 파일로 저장합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "창 제목의 일부"},
+                        "save_path": {"type": "string"}
+                    },
+                    "required": ["title"]
+                }
+            }
+        },
+        "handler": lambda a: capture_window_screenshot(a["title"], a.get("save_path", ""))
+    },
+]

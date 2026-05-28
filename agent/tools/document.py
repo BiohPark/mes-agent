@@ -210,3 +210,182 @@ def write_file(path: str, content: str, append: bool = False,
                            "mode": "append" if append else "write"})
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+MANIFEST = [
+    {
+        "name": "get_excel_sheet_names",
+        "label": "Excel 시트 목록",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_excel_sheet_names",
+                "description": "Excel 파일의 시트 이름 목록을 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: get_excel_sheet_names(a["path"])
+    },
+    {
+        "name": "read_excel",
+        "label": "Excel 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_excel",
+                "description": "Excel 파일을 읽어 JSON 데이터로 반환합니다. 첫 행이 헤더입니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "sheet": {"description": "시트 번호(0부터) 또는 시트 이름"},
+                        "max_rows": {"type": "integer", "description": "최대 행 수 (기본 200)"}
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_excel(a["path"], a.get("sheet", 0), a.get("max_rows", 200))
+    },
+    {
+        "name": "write_excel",
+        "label": "Excel 쓰기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "write_excel",
+                "description": "딕셔너리 리스트를 Excel 파일로 저장합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "data": {"type": "array", "items": {"type": "object"}},
+                        "sheet_name": {"type": "string"}
+                    },
+                    "required": ["path", "data"]
+                }
+            }
+        },
+        "handler": lambda a: write_excel(a["path"], a["data"], a.get("sheet_name", "Sheet1"))
+    },
+    {
+        "name": "append_excel_row",
+        "label": "Excel 행 추가",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "append_excel_row",
+                "description": "Excel 파일의 마지막에 행을 추가합니다. 파일이 없으면 새로 생성합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "row_data": {"type": "object", "description": "헤더: 값 딕셔너리"}
+                    },
+                    "required": ["path", "row_data"]
+                }
+            }
+        },
+        "handler": lambda a: append_excel_row(a["path"], a["row_data"], a.get("sheet", 0))
+    },
+    {
+        "name": "read_word",
+        "label": "Word 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_word",
+                "description": "Word(.docx) 파일의 텍스트를 추출합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_word(a["path"])
+    },
+    {
+        "name": "append_word",
+        "label": "Word 내용 추가",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "append_word",
+                "description": "Word 파일에 내용을 추가합니다. 파일이 없으면 새로 생성합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "text": {"type": "string"},
+                        "heading": {"type": "string", "description": "섹션 제목 (선택)"}
+                    },
+                    "required": ["path", "text"]
+                }
+            }
+        },
+        "handler": lambda a: append_word(a["path"], a["text"], a.get("heading", ""))
+    },
+    {
+        "name": "read_pdf",
+        "label": "PDF 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_pdf",
+                "description": "PDF 파일에서 텍스트를 추출합니다. pages 예: '1', '1-3', '2,4'",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "pages": {"type": "string", "description": "페이지 범위 (생략 시 전체)"}
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_pdf(a["path"], a.get("pages", ""))
+    },
+    {
+        "name": "read_file",
+        "label": "파일 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "텍스트 파일을 읽어 내용을 반환합니다. 로그, 설정 파일, CSV 등에 사용합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_file(a["path"])
+    },
+    {
+        "name": "write_file",
+        "label": "파일 쓰기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "텍스트 파일에 내용을 씁니다. append=true 시 기존 내용 뒤에 추가합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                        "append": {"type": "boolean"}
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        "handler": lambda a: write_file(a["path"], a["content"], a.get("append", False))
+    },
+]
