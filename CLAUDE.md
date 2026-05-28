@@ -55,10 +55,10 @@
 | 에이전트 루프 + 중단 | `agent/server.py` | `_MAX_STEPS=20`, `POST /stop/{request_id}`, `_stop_flags` 딕셔너리 |
 | 에이전트 상태 바 | `electron/renderer/chat.js` + `style.css` | thinking/running/waiting/idle 상태 표시, 중단 버튼 |
 | 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` | 토큰 추정치 헤더 바 표시 |
-| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기 |
-| 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장 |
+| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기, **단계 카드 클릭 시 상세(상태·유형·메모) 펼침** |
+| 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장, **기본 템플릿 최초 1회 영속화로 단계 id 고정** |
 | 워크플로우 API | `agent/server.py` | `GET/POST /threads/{type}/{id}/workflow` |
-| 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일·브라우저·타이핑 프롬프트 삽입 |
+| 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
 | SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
 
 **총 툴 수: 83종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)

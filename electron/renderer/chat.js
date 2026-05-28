@@ -890,13 +890,19 @@ taskBtns.forEach(btn => {
   btn.addEventListener('click', () => openTask(btn.dataset.task))
 })
 
-// 빠른 작업 버튼 — 프롬프트를 입력창에 삽입 (자동 전송 없음)
+// 빠른 작업 버튼 — 완성형(data-autosend)은 즉시 실행, 템플릿은 삽입 후 포커스
 document.querySelectorAll('.quick-action-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (inputEl.disabled) return  // 스레드 미선택/읽기전용이면 무시
     const prompt = btn.dataset.prompt || ''
-    inputEl.value = prompt
-    inputEl.focus()
-    inputEl.setSelectionRange(prompt.length, prompt.length)
+    if (btn.dataset.autosend === 'true') {
+      inputEl.value = ''
+      sendMessage(prompt)
+    } else {
+      inputEl.value = prompt
+      inputEl.focus()
+      inputEl.setSelectionRange(prompt.length, prompt.length)
+    }
   })
 })
 

@@ -1029,15 +1029,39 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  cursor: pointer;
 }
 .wf-step-num  { color: #334455; font-size: 10px; min-width: 14px; text-align: right; }
 .wf-step-icon { font-size: 13px; flex-shrink: 0; }
 .wf-step-title { flex: 1; color: #b0c8e8; line-height: 1.4; }
 .wf-step-type { font-size: 12px; flex-shrink: 0; opacity: 0.6; }
+.wf-step-caret {
+  font-size: 10px;
+  color: #44607f;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.wf-step.expanded .wf-step-caret { transform: rotate(90deg); }
 
 .wf-step.running .wf-step-title { color: #f0c040; }
 .wf-step.done    .wf-step-title { color: #80d880; }
 .wf-step.error   .wf-step-title { color: #e94560; }
+
+.wf-step-detail {
+  display: none;
+  margin-top: 6px;
+  padding: 6px 8px 4px 20px;
+  border-top: 1px dashed #1a3a5a;
+}
+.wf-step.expanded .wf-step-detail { display: block; }
+.wf-step-detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.wf-detail-key { color: #44607f; min-width: 32px; flex-shrink: 0; }
+.wf-detail-val { color: #889cb5; white-space: pre-wrap; word-break: break-word; }
 
 .wf-step-notes {
   margin-top: 5px;

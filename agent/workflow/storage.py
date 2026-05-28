@@ -79,7 +79,11 @@ def _workflow_dir() -> Path | None:
 
 
 def load_workflow(task_type: str, thread_id: str) -> Workflow:
-    """저장된 워크플로우가 없으면 태스크별 기본 템플릿을 반환한다."""
+    """저장된 워크플로우가 없으면 기본 템플릿을 만들어 저장 후 반환한다.
+
+    기본 템플릿을 최초 1회 영속화해야 단계 id가 고정된다.
+    그래야 우측 패널이 보여주는 id와 workflow_set_step이 찾는 id가 일치한다.
+    """
     d = _workflow_dir()
     if d:
         path = d / task_type / f"{thread_id}.json"
@@ -89,7 +93,9 @@ def load_workflow(task_type: str, thread_id: str) -> Workflow:
                 return Workflow.from_dict(data)
             except Exception:
                 pass
-    return _make_default(task_type, thread_id)
+    wf = _make_default(task_type, thread_id)
+    save_workflow(wf)
+    return wf
 
 
 def save_workflow(workflow: Workflow) -> None:

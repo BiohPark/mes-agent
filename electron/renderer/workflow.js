@@ -116,9 +116,17 @@ function renderWorkflow(wf) {
         <span class="wf-step-icon">${sm.icon}</span>
         <span class="wf-step-title">${escapeWf(step.title)}</span>
         <span class="wf-step-type" title="${tm.label}">${tm.icon}</span>
+        <span class="wf-step-caret">▸</span>
       </div>
-      ${step.notes ? `<div class="wf-step-notes">${escapeWf(step.notes)}</div>` : ''}
+      <div class="wf-step-detail">
+        <div class="wf-step-detail-row"><span class="wf-detail-key">상태</span><span class="wf-detail-val">${sm.icon} ${sm.label}</span></div>
+        <div class="wf-step-detail-row"><span class="wf-detail-key">유형</span><span class="wf-detail-val">${tm.icon} ${tm.label}</span></div>
+        <div class="wf-step-detail-row"><span class="wf-detail-key">메모</span><span class="wf-detail-val">${step.notes ? escapeWf(step.notes) : '—'}</span></div>
+      </div>
     `
+    card.querySelector('.wf-step-header').addEventListener('click', () => {
+      card.classList.toggle('expanded')
+    })
     workflowStepsEl.appendChild(card)
   })
 }
