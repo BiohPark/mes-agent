@@ -115,7 +115,7 @@ mes-agent/
 │   ├── config.py            — LLM 프로파일 관리 (openai/internal)
 │   ├── obsidian_session.py  — Obsidian 세션·스레드 관리 (TASK_CONFIGS 5종)
 │   └── tools/
-│       ├── __init__.py      — 툴 레지스트리 (70종) + run_tool()
+│       ├── __init__.py      — 자동 디스커버리 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 전체화면 OCR (1종) ✅
 │       ├── screen.py        — 화면 인텔리전스 (9종) ✅
 │       ├── desktop.py       — 마우스/키보드/창 관리 (18종) ✅
