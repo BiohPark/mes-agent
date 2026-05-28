@@ -141,9 +141,9 @@ async function loadWorkflowForThread(taskType, threadId) {
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
     const res = await fetch(`${base}/threads/${taskType}/${threadId}/workflow`)
-    if (!res.ok || res.status === 204) { clearWorkflow(); return }
+    if (!res.ok) { clearWorkflow(); return }
     const wf = await res.json()
-    if (wf) renderWorkflow(wf)
+    if (wf && wf.steps) renderWorkflow(wf)
     else clearWorkflow()
   } catch {
     clearWorkflow()

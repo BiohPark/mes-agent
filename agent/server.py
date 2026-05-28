@@ -408,8 +408,6 @@ async def close_thread(task_type: str, thread_id: str):
 async def get_workflow(task_type: str, thread_id: str):
     loop = asyncio.get_event_loop()
     wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
-    if not wf:
-        return None
     return wf.to_dict()
 
 
