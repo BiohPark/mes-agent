@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (83종)
+## 구현된 툴 목록 (87종)
 
 ### 화면 인식 (10종)
 
@@ -184,19 +184,23 @@ Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 �
 **타임아웃:** 300초 (5분) — 초과 시 자동 중단  
 **사용 시점:** 중요한 비가역적 작업 직전 (파일 삭제, 배포 실행, 대량 입력 등)
 
-### 워크플로우 (2종)
+### 워크플로우 (6종)
 
 | 툴 이름 | 기능 |
 |---------|------|
-| `workflow_init` | 스레드 워크플로우 초기화 (단계 정의, 우측 패널에 표시) |
-| `workflow_set_step` | 특정 단계 상태 업데이트 (pending/running/waiting/done/error/skipped) |
+| `workflow_init` | 스레드 워크플로우 초기화 (단계 전체 정의/교체, 우측 패널에 표시) |
+| `workflow_set_step` | 특정 단계의 **진행 상태** 업데이트 (pending/running/waiting/done/error/skipped) |
+| `workflow_add_step` | 단계 **추가** (기존 단계 상태 유지, `after_step_id`로 삽입 위치 지정 가능) |
+| `workflow_update_step` | 단계의 **구조 수정** (제목·유형). 상태는 `set_step`이 담당 |
+| `workflow_remove_step` | 단계 **삭제** |
+| `workflow_reorder` | 단계 **순서 재배치** (`ordered_step_ids`에 원하는 순서대로 id 나열) |
 
 **단계 타입:**
 - `auto` 🤖 — 에이전트가 자동 실행
 - `semi_auto` 👁️ — 사용자 확인 후 실행
 - `manual` ✋ — 사용자가 직접 수행
 
-**사용 패턴:**
+**사용 패턴 (진행 추적):**
 ```
 1. workflow_init(task_type, thread_id, title, steps=[...])
    → 우측 패널에 단계 카드 표시, step_id 반환
@@ -210,7 +214,12 @@ Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 �
    workflow_set_step(task_type, thread_id, step_id, status="done", notes="결과 요약")
 ```
 
+**사용 패턴 (AI 코웍 편집):** 사용자가 "단계 추가/수정/삭제/순서변경 해줘" 라고 하면
+`workflow_add_step`·`update_step`·`remove_step`·`reorder`로 **진행 상태를 보존한 채** 구조만 편집한다.
+init은 전체 교체이므로 진행 중 워크플로우 수정에는 단위 툴을 쓴다.
+
 > `task_type`·`thread_id`는 시스템 메시지의 `[현재 세션]` 섹션에서 자동 주입된다. LLM이 직접 알아낼 필요 없다.
+> 우측 패널 ✏️ 편집모드에서 사용자가 수동으로 편집하면 `POST /workflow`로 전체 저장된다.
 
 ---
 
@@ -310,7 +319,7 @@ agent/
     ├── document.py      — MANIFEST(9종)
     ├── obsidian_rag.py  — MANIFEST(7종)
     ├── interaction.py   — MANIFEST(1종) ask_user
-    └── workflow.py      — MANIFEST(2종) workflow_init·workflow_set_step
+    └── workflow.py      — MANIFEST(6종) init·set_step·add_step·update_step·remove_step·reorder
 ```
 
 ---

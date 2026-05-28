@@ -78,6 +78,12 @@
 - **단계 유형**(type): 🤖 자동(auto) · 👁️ 반자동(semi_auto) · ✋ 수동(manual)
 - **에이전트 상태**: thinking(생각 중) · running(도구 실행 중) · waiting(사용자 확인 대기) · idle(대기)
 
+### 워크플로우 편집 용어
+
+- **편집모드**: 우측 패널 ✏️ 버튼으로 진입. 단계 제목·유형 수정, 추가(`+ 단계 추가`), 삭제(✕), 드래그앤드롭 순서변경 후 `💾 저장`. **진행 상태(status)는 편집 대상이 아님** — 진행도는 에이전트·실행이 관리.
+- **AI 코웍 편집**: 편집모드 없이도 채팅으로 "단계 추가/삭제/순서변경 해줘" 하면 에이전트가 `workflow_add_step`·`update_step`·`remove_step`·`reorder` 툴로 같은 JSON을 편집.
+- **워크플로우 삭제**(🗑️): 스레드의 워크플로우 파일을 삭제 → 다시 열면 업무 기본 템플릿으로 초기화.
+
 ---
 
 ## 기능 현황
@@ -101,11 +107,12 @@
 | Obsidian 저장 | ✅ | 스레드 전체 메시지 `agent/threads/{type}/{id}.md` 저장 |
 | 스레드 관리 | ✅ | 완료·보관·복원·영구 삭제 |
 | 워크플로우 패널 | ✅ | 단계 카드(pending/running/waiting/done/error), 클릭 시 상세 펼침, 드래그 리사이즈 |
+| 워크플로우 편집모드 | ✅ | 제목·단계 CUD, 드래그앤드롭 순서변경, AI 코웍 편집, 삭제(초기화) |
 | 워크플로우 저장 | ✅ | `agent/workflows/{type}/{id}.json` Obsidian 저장 |
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (83종)
+### 툴 (87종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -117,7 +124,7 @@
 | Obsidian RAG (검색·읽기·쓰기·링크 탐색) | 7 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
-| 워크플로우 (init·set_step) | 2 | ✅ |
+| 워크플로우 (init·set_step·add·update·remove·reorder) | 6 | ✅ |
 
 > 상세 툴 목록 → **[docs/agent-guide.md](docs/agent-guide.md)**
 
@@ -203,7 +210,7 @@ mes-agent/
 │   ├── workflow/
 │   │   ├── model.py         — Workflow·WorkflowStep 데이터클래스
 │   │   └── storage.py       — Obsidian JSON 저장 + 기본 템플릿
-│   └── tools/               — 83종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 87종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)
@@ -213,7 +220,7 @@ mes-agent/
 │       ├── document.py      — Excel·Word·PDF·텍스트 (9종)
 │       ├── obsidian_rag.py  — Obsidian Vault RAG (7종)
 │       ├── interaction.py   — 사용자 확인 팝업 ask_user (1종)
-│       └── workflow.py      — 워크플로우 관리 (2종)
+│       └── workflow.py      — 워크플로우 관리 (6종: init·set_step·add·update·remove·reorder)
 ├── docs/
 │   └── agent-guide.md       — 툴 추가 가이드 + 전체 툴 목록
 ├── start.ps1                — 개발 환경 시작 (conda + nvm PATH 설정)
@@ -267,7 +274,7 @@ Vault/
 | GET | `/threads/{type}/{id}/messages` | 스레드 메시지 |
 | DELETE | `/threads/{type}/{id}` | 스레드 보관 |
 | POST | `/threads/{type}/{id}/close` | 스레드 완료 |
-| GET/POST | `/threads/{type}/{id}/workflow` | 워크플로우 조회/저장 |
+| GET/POST/DELETE | `/threads/{type}/{id}/workflow` | 워크플로우 조회/저장/삭제 |
 | POST | `/confirm/{confirm_id}` | 사용자 확인 응답 |
 | POST | `/tool/test` | 툴 직접 테스트 |
 
@@ -287,6 +294,8 @@ Vault/
 - [x] 워크플로우 단계 클릭 → 결과 상세 드로어
 - [x] 실행 로그 스레드 전환 시 초기화
 - [x] 빠른 작업 버튼 — 완성형 원클릭 실행 / 템플릿 삽입 구분
+- [x] 워크플로우 편집모드 — 단계 CUD·드래그앤드롭·AI 코웍 편집
+- [ ] 워크플로우를 업무 표준 템플릿으로 저장 (후속)
 
 ### Phase 2 — 2주 내 (안정성)
 - [ ] 실제 토큰 수 (LLM 응답 usage 필드)

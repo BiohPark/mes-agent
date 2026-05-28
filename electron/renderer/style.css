@@ -1093,6 +1093,90 @@ body {
 }
 .wf-action-btn:hover { background: #0f2030; color: #99bbcc; }
 .wf-action-btn.danger:hover { background: #200808; color: #e94560; border-color: #4a1a1a; }
+.wf-action-btn.primary { border-color: #1f4068; color: #6ea8e0; }
+.wf-action-btn.primary:hover { background: #102844; color: #9cc8ff; }
+
+/* ── 워크플로우 편집모드 ──────────────────────────────────────── */
+
+.wf-title-input {
+  width: 100%;
+  background: #0a1828;
+  border: 1px solid #1f4068;
+  color: #cfe2ff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 4px 6px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.wf-step-edit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 4px;
+  margin-bottom: 4px;
+  background: #0b1a2b;
+  border: 1px solid #14283f;
+  border-radius: 5px;
+}
+.wf-step-edit.dragging { opacity: 0.4; }
+.wf-drag-handle {
+  cursor: grab;
+  color: #3a5170;
+  font-size: 13px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.wf-drag-handle:active { cursor: grabbing; }
+.wf-edit-title {
+  flex: 1;
+  min-width: 0;
+  background: #0a1828;
+  border: 1px solid #1a3050;
+  color: #b0c8e8;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 5px;
+  border-radius: 3px;
+}
+.wf-edit-type {
+  flex-shrink: 0;
+  background: #0a1828;
+  border: 1px solid #1a3050;
+  color: #889cb5;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 2px;
+  border-radius: 3px;
+}
+.wf-edit-del {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #44607f;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.wf-edit-del:hover { color: #e94560; background: #200808; }
+
+.wf-add-step-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px dashed #1f4068;
+  color: #5a7da8;
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 2px;
+  transition: all 0.12s;
+}
+.wf-add-step-btn:hover { background: #0f2030; color: #9cc8ff; border-color: #2a558a; }
 
 /* ── 실행 로그 패널 ──────────────────────────────────────────── */
 

@@ -119,7 +119,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         system_content = cfg.get("system_prompt", _AUTONOMOUS_INSTRUCTION) + (
             f"\n\n[현재 세션]\n"
             f"task_type={task_type}  thread_id={thread_id}\n"
-            f"workflow_init·workflow_set_step 호출 시 이 값을 그대로 사용하라."
+            f"모든 workflow_* 도구(init·set_step·add_step·update_step·remove_step·reorder) 호출 시 이 값을 그대로 사용하라."
         )
         if messages and messages[0].get("role") == "system":
             messages[0]["content"] = system_content
@@ -247,7 +247,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                     pass
 
                 # 워크플로우 도구 결과 → workflow_update SSE
-                if tc["name"] in ("workflow_init", "workflow_set_step"):
+                if tc["name"].startswith("workflow_"):
                     try:
                         robj = json.loads(result)
                         if isinstance(robj, dict) and robj.get("ok") and "workflow" in robj:
@@ -446,6 +446,13 @@ async def save_workflow_endpoint(task_type: str, thread_id: str, body: WorkflowS
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, wf_storage.save_workflow, wf)
     return wf.to_dict()
+
+
+@app.delete("/threads/{task_type}/{thread_id}/workflow")
+async def delete_workflow_endpoint(task_type: str, thread_id: str):
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, wf_storage.delete_workflow, task_type, thread_id)
+    return {"ok": True}
 
 
 # ── 확인 응답 ─────────────────────────────────────────────────

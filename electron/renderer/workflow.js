@@ -12,11 +12,16 @@ const workflowTitleEl = document.getElementById('workflow-title')
 const workflowStepsEl = document.getElementById('workflow-steps')
 const workflowEditBtn = document.getElementById('workflow-edit-btn')
 const workflowClearBtn = document.getElementById('workflow-clear-btn')
+const workflowSaveBtn = document.getElementById('workflow-save-btn')
+const workflowCancelBtn = document.getElementById('workflow-cancel-btn')
 const logEntries = document.getElementById('log-entries')
 
 let _currentWorkflow = null
 let _panelCollapsed = false
 let _panelWidth = 300
+let _editMode = false
+let _editDraft = null
+let _dragIdx = null
 
 // ── 탭 전환 ─────────────────────────────────────────────────
 
@@ -142,9 +147,118 @@ function escapeWf(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function escapeAttr(str) {
+  return escapeWf(str).replace(/"/g, '&quot;')
+}
+
+// ── 편집모드 ─────────────────────────────────────────────────
+
+function renderEditMode() {
+  workflowEmpty.classList.add('hidden')
+  workflowContent.classList.remove('hidden')
+
+  workflowTitleEl.innerHTML =
+    `<input id="wf-title-input" class="wf-title-input" value="${escapeAttr(_editDraft.title)}" />`
+  workflowTitleEl.querySelector('#wf-title-input')
+    .addEventListener('input', e => { _editDraft.title = e.target.value })
+
+  workflowStepsEl.innerHTML = ''
+  _editDraft.steps.forEach((step, idx) => {
+    const row = document.createElement('div')
+    row.className = 'wf-step-edit'
+    row.draggable = true
+    row.dataset.idx = idx
+    row.innerHTML = `
+      <span class="wf-drag-handle" title="드래그하여 순서 변경">⠿</span>
+      <span class="wf-step-num">${idx + 1}</span>
+      <input class="wf-edit-title" value="${escapeAttr(step.title)}" placeholder="단계 설명" />
+      <select class="wf-edit-type" title="단계 유형">
+        <option value="auto" ${step.type === 'auto' ? 'selected' : ''}>🤖 자동</option>
+        <option value="semi_auto" ${step.type === 'semi_auto' ? 'selected' : ''}>👁️ 반자동</option>
+        <option value="manual" ${step.type === 'manual' ? 'selected' : ''}>✋ 수동</option>
+      </select>
+      <button class="wf-edit-del" title="단계 삭제">✕</button>
+    `
+    row.querySelector('.wf-edit-title')
+      .addEventListener('input', e => { _editDraft.steps[idx].title = e.target.value })
+    row.querySelector('.wf-edit-type')
+      .addEventListener('change', e => { _editDraft.steps[idx].type = e.target.value })
+    row.querySelector('.wf-edit-del')
+      .addEventListener('click', () => { _editDraft.steps.splice(idx, 1); renderEditMode() })
+
+    row.addEventListener('dragstart', () => { _dragIdx = idx; row.classList.add('dragging') })
+    row.addEventListener('dragend', () => row.classList.remove('dragging'))
+    row.addEventListener('dragover', e => e.preventDefault())
+    row.addEventListener('drop', e => {
+      e.preventDefault()
+      if (_dragIdx === null || _dragIdx === idx) return
+      const [moved] = _editDraft.steps.splice(_dragIdx, 1)
+      _editDraft.steps.splice(idx, 0, moved)
+      _dragIdx = null
+      renderEditMode()
+    })
+    workflowStepsEl.appendChild(row)
+  })
+
+  const addBtn = document.createElement('button')
+  addBtn.className = 'wf-add-step-btn'
+  addBtn.textContent = '+ 단계 추가'
+  addBtn.addEventListener('click', () => {
+    _editDraft.steps.push({ id: '', title: '새 단계', type: 'auto', status: 'pending', notes: '' })
+    renderEditMode()
+  })
+  workflowStepsEl.appendChild(addBtn)
+}
+
+function _enterEdit() {
+  if (!_currentWorkflow) return
+  _editMode = true
+  _editDraft = JSON.parse(JSON.stringify(_currentWorkflow))
+  workflowEditBtn.classList.add('hidden')
+  workflowClearBtn.classList.add('hidden')
+  workflowSaveBtn.classList.remove('hidden')
+  workflowCancelBtn.classList.remove('hidden')
+  renderEditMode()
+}
+
+function _leaveEdit() {
+  _editMode = false
+  _editDraft = null
+  _dragIdx = null
+  workflowSaveBtn.classList.add('hidden')
+  workflowCancelBtn.classList.add('hidden')
+  workflowEditBtn.classList.remove('hidden')
+  workflowClearBtn.classList.remove('hidden')
+}
+
+async function _saveEdit() {
+  if (!_editDraft || !_currentWorkflow) return
+  const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+  const { task_type, thread_id } = _currentWorkflow
+  try {
+    const res = await fetch(`${base}/threads/${task_type}/${thread_id}/workflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: _editDraft.title, steps: _editDraft.steps }),
+    })
+    const saved = await res.json()
+    _leaveEdit()
+    if (saved && saved.steps) renderWorkflow(saved)
+  } catch (e) {
+    console.error('워크플로우 저장 실패', e)
+  }
+}
+
+function _cancelEdit() {
+  const wf = _currentWorkflow
+  _leaveEdit()
+  if (wf) renderWorkflow(wf)
+}
+
 // ── 워크플로우 로드 (스레드 선택 시) ──────────────────────────
 
 async function loadWorkflowForThread(taskType, threadId) {
+  if (_editMode) _leaveEdit()
   if (!taskType || !threadId) { clearWorkflow(); return }
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
@@ -160,6 +274,7 @@ async function loadWorkflowForThread(taskType, threadId) {
 
 // SSE로부터 워크플로우 업데이트 수신 (chat.js에서 호출)
 function handleWorkflowUpdate(wf) {
+  if (_editMode) { _currentWorkflow = wf; return }  // 편집 중에는 화면 갱신 보류
   renderWorkflow(wf)
 }
 
@@ -194,36 +309,22 @@ function clearLog() {
 
 // ── 버튼 ─────────────────────────────────────────────────────
 
-workflowClearBtn.addEventListener('click', () => {
-  if (_currentWorkflow && confirm('워크플로우를 삭제하겠습니까?')) {
-    clearWorkflow()
-  }
-})
+workflowEditBtn.addEventListener('click', _enterEdit)
+workflowSaveBtn.addEventListener('click', _saveEdit)
+workflowCancelBtn.addEventListener('click', _cancelEdit)
 
-workflowEditBtn.addEventListener('click', () => {
+workflowClearBtn.addEventListener('click', async () => {
   if (!_currentWorkflow) return
-  const newTitle = prompt('워크플로우 제목 변경:', _currentWorkflow.title)
-  if (newTitle && newTitle !== _currentWorkflow.title) {
-    _currentWorkflow.title = newTitle
-    renderWorkflow(_currentWorkflow)
-    _saveWorkflow()
-  }
-})
-
-async function _saveWorkflow() {
-  if (!_currentWorkflow) return
+  if (!confirm('이 스레드의 워크플로우를 삭제할까요?\n(다시 열면 기본 템플릿으로 초기화됩니다)')) return
+  const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+  const { task_type, thread_id } = _currentWorkflow
   try {
-    const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
-    const { task_type, thread_id } = _currentWorkflow
-    await fetch(`${base}/threads/${task_type}/${thread_id}/workflow`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(_currentWorkflow),
-    })
+    await fetch(`${base}/threads/${task_type}/${thread_id}/workflow`, { method: 'DELETE' })
+    loadWorkflowForThread(task_type, thread_id)  // 서버가 기본 템플릿 재생성
   } catch (e) {
-    console.error('워크플로우 저장 실패', e)
+    console.error('워크플로우 삭제 실패', e)
   }
-}
+})
 
 // 공개 API (chat.js에서 사용)
 window.workflowPanel = {

@@ -55,13 +55,14 @@
 | 에이전트 루프 + 중단 | `agent/server.py` | `_MAX_STEPS=20`, `POST /stop/{request_id}`, `_stop_flags` 딕셔너리 |
 | 에이전트 상태 바 | `electron/renderer/chat.js` + `style.css` | thinking/running/waiting/idle 상태 표시, 중단 버튼 |
 | 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` | 토큰 추정치 헤더 바 표시 |
-| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기, **단계 카드 클릭 시 상세(상태·유형·메모) 펼침** |
+| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기, **단계 카드 클릭 시 상세 펼침**, **편집모드(제목·단계 CUD·드래그앤드롭 순서변경)** |
+| 워크플로우 편집 툴 | `agent/tools/workflow.py` | `workflow_init`·`set_step`·**`add_step`·`update_step`·`remove_step`·`reorder`** (6종), AI 코웍 편집 |
 | 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장, **기본 템플릿 최초 1회 영속화로 단계 id 고정** |
-| 워크플로우 API | `agent/server.py` | `GET/POST /threads/{type}/{id}/workflow` |
+| 워크플로우 API | `agent/server.py` | `GET/POST/DELETE /threads/{type}/{id}/workflow` |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
 | SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
 
-**총 툴 수: 83종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 87종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -73,7 +74,7 @@
 | `document.py` | 9 |
 | `obsidian_rag.py` | 7 |
 | `interaction.py` | 1 |
-| `workflow.py` | 2 |
+| `workflow.py` | 6 |
 | `obsidian_session.py` | 4 |
 
 ---
@@ -88,7 +89,7 @@
 | 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian-rag(4)/unscript(5)/knox(5) 단계 |
 | 워크플로우 데이터 모델 | `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스, StepType·StepStatus Literal |
 | 워크플로우 스토리지 | `agent/workflow/storage.py` — Vault `agent/workflows/{type}/{id}.json` 저장/로드/삭제 |
-| 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종) |
+| 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder` (6종) |
 | 워크플로우 API | `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` |
 | 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` — 탭 전환, 드래그 리사이즈, 접기/펼치기 |
 | 에이전트 상태 바 + 중단 버튼 | `electron/renderer/chat.js` — thinking/running/waiting/idle, `POST /stop/{request_id}` |
@@ -145,7 +146,7 @@ agent/server.py 내 generate() 수정
 **구현 완료** (2026-05-29):
 - `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스
 - `agent/workflow/storage.py` — Vault JSON 저장 + 태스크별 기본 템플릿
-- `agent/tools/workflow.py` — `workflow_init`·`workflow_set_step` (2종)
+- `agent/tools/workflow.py` — `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder` (6종)
 - `electron/renderer/workflow.js` — 우측 패널 렌더링·리사이즈·탭
 - `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` API
 - Phase 0: task_type/thread_id 시스템 프롬프트 주입으로 LLM이 툴 호출 가능
@@ -287,7 +288,7 @@ mes-agent/
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
 │       ├── document.py     ← Excel·Word·PDF·텍스트 처리 (9종) ✅
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
-│       └── workflow.py     ← 워크플로우 초기화·단계 업데이트 (2종) ✅
+│       └── workflow.py     ← 워크플로우 init·set_step·add/update/remove_step·reorder (6종) ✅
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)
 ├── .env                    ← 로컬 설정 (git 제외)
 ├── .env.example            ← 설정 템플릿
