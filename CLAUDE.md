@@ -130,18 +130,21 @@ agent/workflows/
 
 ---
 
-#### 4. Obsidian RAG 연동
+#### 4. ✅ Obsidian RAG 연동
 
 **무엇**: Obsidian Vault를 지식 베이스로 활용해 에이전트가 업무 도메인 지식을 참조한다.
 
-**왜 필요**: 사내 시스템 명세, 프로세스, 과거 분석 내용을 LLM이 검색해서 더 정확한 자동화 수행.
+**구현 완료**: `agent/tools/obsidian_rag.py` (6종 툴)
+- `obsidian_search` — Vault 전체 키워드 검색
+- `obsidian_read_note` — 노트 읽기
+- `obsidian_list_notes` — 폴더 목록
+- `obsidian_write_note` — 노트 생성/덮어쓰기
+- `obsidian_append_note` — 노트에 내용 추가
+- `obsidian_get_tags` — 태그 조회
 
-**구현 계획**:
-- `OBSIDIAN_HOST` MCP 서버 사용 (Local REST API 기반)
-- `.env`의 `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_HOST` 설정
-- 폐쇄망 주의: `npm pack`으로 `mcp-obsidian` 패키지 사전 준비
+접근: Local REST API (`OBSIDIAN_HOST`) → 직접 파일 fallback (`OBSIDIAN_VAULT_PATH`)
 
-완료 시 `CLAUDE.md` + `README.md` + `SETUP.md` Obsidian 섹션 업데이트.
+> **TODO**: `docs/agent-guide.md` Vault 접근 패턴 상세 문서화 필요
 
 ---
 
@@ -262,22 +265,23 @@ mes-agent/
 
 ### 개요
 Obsidian Vault를 로컬 RAG로 활용한다.
-Claude가 개발 작업 중 업무 도메인 지식, 시스템 명세, 기존 분석 노트를 참조하기 위해 Vault를 오간다.
+에이전트가 업무 도메인 지식, 시스템 명세, 기존 분석 노트를 참조하기 위해 Vault를 오간다.
 
 ### Vault 경로 설정
 Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽어온다.
 
 ### 검색 및 접근 방식
-**MCP를 우선 사용한다. glob/grep 같은 파일 직접 접근은 사용하지 않는다.**
 
-MCP 서버: `OBSIDIAN_HOST` (Obsidian Local REST API 기반)
+**`obsidian_rag.py` 툴을 사용한다.** 직접 파일 접근(glob/grep)은 하지 않는다.
 
-MCP가 동작하지 않는 경우에만 파일 직접 접근을 fallback으로 허용한다.
+접근 우선순위: `OBSIDIAN_HOST` (Local REST API) → `OBSIDIAN_VAULT_PATH` (직접 파일, fallback)
 
-### Claude 작업 시 Obsidian 활용 방식
-- **분석 시작 전** — Vault에서 관련 도메인 노트 먼저 검색해서 맥락 파악
-- **설계 결정 시** — 기존 시스템 명세, 이전 분석 노트 참조해서 일관성 유지
-- **작업 중 인사이트** — 사용자 요청 시 Vault에 노트로 정리해서 저장
+> **상세 문서**: `docs/agent-guide.md` — "Obsidian RAG" 섹션 참조
+
+### 에이전트 작업 시 Obsidian 활용 방식
+- **분석 시작 전** — `obsidian_search`로 관련 도메인 노트 먼저 검색
+- **설계 결정 시** — `obsidian_read_note`로 시스템 명세, 이전 분석 참조
+- **작업 중 인사이트** — `obsidian_write_note` / `obsidian_append_note`로 기록
 
 ---
 

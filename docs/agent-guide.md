@@ -111,14 +111,49 @@
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 |
 
+### Obsidian RAG — Vault 접근 (6종)
+
+> **TODO**: Vault 구조·접근 패턴 상세 문서화 필요 (아래는 기본사항)
+
+**환경 설정 (`.env`):**
+```ini
+OBSIDIAN_VAULT_PATH=D:/archive/obsidian/brain   # Vault 루트 경로
+OBSIDIAN_HOST=https://127.0.0.1:27124           # Local REST API 주소
+OBSIDIAN_API_KEY=발급받은-API-키                 # Obsidian 플러그인에서 발급
+```
+
+**Vault 폴더 구조 (에이전트 관련):**
+```
+Vault/
+├── agent/               ← 에이전트 전용 폴더
+│   ├── sessions/        ← 대화 세션 자동 저장
+│   ├── notes/           ← 개발 노트 (add_dev_note)
+│   ├── plans/backlog.md ← 할 일 목록 (add_plan_item)
+│   └── threads/         ← 스레드별 대화 이력
+└── (나머지)             ← 사용자 지식베이스 → RAG 검색 대상
+```
+
+**접근 우선순위:** REST API (`OBSIDIAN_HOST`) → 직접 파일 접근 (`OBSIDIAN_VAULT_PATH`) 순 fallback.
+
+| 툴 이름 | 대상 | 기능 |
+|---------|------|------|
+| `obsidian_search` | Vault 전체 | 키워드 검색 |
+| `obsidian_read_note` | Vault 전체 | 경로로 노트 읽기 |
+| `obsidian_list_notes` | Vault 전체 | 폴더 내 목록 조회 |
+| `obsidian_write_note` | Vault 전체 | 노트 생성/덮어쓰기 |
+| `obsidian_append_note` | Vault 전체 | 노트에 내용 추가 |
+| `obsidian_get_tags` | Vault 전체 | 태그 조회 |
+
 ### Obsidian 세션 (4종)
+
+> 에이전트 자신의 작업 이력 전용 (`agent/` 폴더만 접근)
 
 | 툴 이름 | 기능 |
 |---------|------|
-| `add_dev_note` | Vault에 개발 노트 저장 |
-| `add_plan_item` | 백로그에 할 일 추가 |
-| `list_recent_sessions` | 최근 세션 목록 |
-| `search_sessions` | 세션 키워드 검색 |
+| `add_dev_note` | `agent/notes/`에 개발 노트 저장 |
+| `add_plan_item` | `agent/plans/backlog.md`에 할 일 추가 |
+| `list_recent_sessions` | `agent/sessions/` 최근 세션 목록 |
+| `search_sessions` | `agent/sessions/` 키워드 검색 |
 
 ---
 
