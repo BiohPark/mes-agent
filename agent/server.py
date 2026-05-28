@@ -53,13 +53,24 @@ def sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+# 비스레드 모드(system_prompt 없음)용 기본 자율 실행 지시
+_AUTONOMOUS_INSTRUCTION = (
+    "너는 사내 업무자동화 데스크탑 에이전트야. "
+    "도구 호출 전에 '~하겠습니다', '~할게요' 같은 예고 문구를 절대 쓰지 마라. "
+    "바로 도구를 호출해 실행하고, 여러 단계가 필요하면 사용자 확인 없이 연속으로 실행해라. "
+    "모든 작업이 완료된 뒤에만 결과를 간략히 보고해라."
+)
+
+_MAX_STEPS = 20  # 무한 루프 방지
+
+
 async def generate(message: str, thread_id: str = "", task_type: str = ""):
     client = get_client()
     model = get_model()
     session_mgr = get_session_manager()
     loop = asyncio.get_event_loop()
 
-    # 스레드 모드 vs 일반 세션 모드
+    # 메시지 초기화
     if thread_id and task_type:
         messages = await loop.run_in_executor(
             None, session_mgr.get_thread_messages, task_type, thread_id
@@ -67,96 +78,88 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         messages.append({"role": "user", "content": message})
         session_id = None
     else:
-        messages = [{"role": "user", "content": message}]
+        # 스레드 없는 일반 채팅: 자율 실행 지시를 system으로 삽입
+        messages = [
+            {"role": "system", "content": _AUTONOMOUS_INSTRUCTION},
+            {"role": "user", "content": message},
+        ]
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
 
-    tool_calls_raw: dict[int, dict] = {}
-    text_chunks: list[str] = []
-    text_chunks2: list[str] = []
-    finish_reason = None
-
     try:
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOLS,
-            stream=True
-        )
+        # ── 에이전트 루프 ──────────────────────────────────────
+        for _step in range(_MAX_STEPS):
+            tool_calls_raw: dict[int, dict] = {}
+            text_chunks: list[str] = []
+            finish_reason = None
 
-        for chunk in stream:
-            choice = chunk.choices[0]
-            delta = choice.delta
-            finish_reason = choice.finish_reason or finish_reason
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=TOOLS,
+                stream=True,
+            )
 
-            if delta.content:
-                text_chunks.append(delta.content)
-                yield sse({"type": "text", "content": delta.content})
+            for chunk in stream:
+                choice = chunk.choices[0]
+                delta = choice.delta
+                finish_reason = choice.finish_reason or finish_reason
 
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_raw:
-                        tool_calls_raw[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.id:
-                        tool_calls_raw[idx]["id"] = tc.id
-                    if tc.function and tc.function.name:
-                        tool_calls_raw[idx]["name"] += tc.function.name
-                    if tc.function and tc.function.arguments:
-                        tool_calls_raw[idx]["arguments"] += tc.function.arguments
+                if delta.content:
+                    text_chunks.append(delta.content)
+                    yield sse({"type": "text", "content": delta.content})
+
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_raw:
+                            tool_calls_raw[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.id:
+                            tool_calls_raw[idx]["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            tool_calls_raw[idx]["name"] += tc.function.name
+                        if tc.function and tc.function.arguments:
+                            tool_calls_raw[idx]["arguments"] += tc.function.arguments
+
+            # 텍스트 응답이 있으면 messages에 추가
+            if text_chunks:
+                messages.append({"role": "assistant", "content": "".join(text_chunks)})
+
+            # 종료 조건: 도구 호출 없으면 루프 종료
+            if finish_reason != "tool_calls" or not tool_calls_raw:
+                break
+
+            # 도구 실행 후 결과를 messages에 추가하고 루프 계속
+            assistant_tool_calls = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                }
+                for tc in tool_calls_raw.values()
+            ]
+            messages.append({"role": "assistant", "tool_calls": assistant_tool_calls})
+
+            for tc in tool_calls_raw.values():
+                label = TOOL_LABELS.get(tc["name"], tc["name"])
+                yield sse({"type": "tool_start", "tool": tc["name"], "label": label})
+
+                await asyncio.sleep(0)
+                try:
+                    result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
+                except Exception as e:
+                    result = f"툴 실행 오류: {e}"
+
+                yield sse({"type": "tool_done", "tool": tc["name"], "result": result[:1000]})
+
+                if session_id:
+                    await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
+
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
     except Exception as e:
         yield sse({"type": "error", "message": str(e)})
         yield sse({"type": "done"})
         return
-
-    # 툴 호출이 있으면 실행 후 두 번째 응답
-    if finish_reason == "tool_calls" and tool_calls_raw:
-        assistant_tool_calls = [
-            {
-                "id": tc["id"],
-                "type": "function",
-                "function": {"name": tc["name"], "arguments": tc["arguments"]}
-            }
-            for tc in tool_calls_raw.values()
-        ]
-        messages.append({"role": "assistant", "tool_calls": assistant_tool_calls})
-
-        for tc in tool_calls_raw.values():
-            label = TOOL_LABELS.get(tc["name"], tc["name"])
-            yield sse({"type": "tool_start", "tool": tc["name"], "label": label})
-
-            await asyncio.sleep(0)
-            try:
-                result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
-            except Exception as e:
-                result = f"툴 실행 오류: {e}"
-
-            yield sse({"type": "tool_done", "tool": tc["name"], "result": result[:1000]})
-
-            if session_id:
-                await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
-
-            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
-
-        # 두 번째 스트리밍 응답
-        try:
-            stream2 = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=True
-            )
-            for chunk in stream2:
-                content = chunk.choices[0].delta.content
-                if content:
-                    text_chunks2.append(content)
-                    yield sse({"type": "text", "content": content})
-        except Exception as e:
-            yield sse({"type": "error", "message": str(e)})
-
-    # 최종 assistant 응답을 messages에 추가
-    final_text = "".join(text_chunks2) if text_chunks2 else "".join(text_chunks)
-    if final_text:
-        messages.append({"role": "assistant", "content": final_text})
 
     # 스레드 또는 세션 종료
     if thread_id and task_type:
@@ -164,8 +167,12 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
             None, session_mgr.save_thread_messages, task_type, thread_id, messages
         )
     else:
-        summary = "".join(text_chunks)[:500]
-        await loop.run_in_executor(None, session_mgr.close_session, session_id, summary)
+        final_text = next(
+            (m["content"][:500] for m in reversed(messages)
+             if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
+            ""
+        )
+        await loop.run_in_executor(None, session_mgr.close_session, session_id, final_text)
 
     yield sse({"type": "done"})
 
