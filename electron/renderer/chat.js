@@ -194,6 +194,10 @@ function handleEvent(event, agentEl, bubble) {
       break
     }
 
+    case 'confirm':
+      showConfirmDialog(event).catch(console.error)
+      break
+
     case 'done':
       if (!bubble.textContent) bubble.textContent = '완료되었습니다.'
       break
@@ -202,6 +206,102 @@ function handleEvent(event, agentEl, bubble) {
       bubble.textContent = `오류: ${event.message}`
       break
   }
+}
+
+// ── 사용자 확인 팝업 ─────────────────────────────────────────
+
+function getOptionIcon(label) {
+  if (label.includes('계속') || label.includes('진행')) return '✅'
+  if (label.includes('중단') || label.includes('취소')) return '❌'
+  if (label.includes('방법') || label.includes('제안') || label.includes('변경')) return '💡'
+  if (label.includes('의견') || label.includes('입력') || label.includes('전달')) return '✏️'
+  return '•'
+}
+
+// 텍스트 입력이 필요한 옵션인지 판단
+const TEXT_INPUT_KEYWORDS = ['방법 변경', '제안', '의견', '입력', '전달', '기타']
+function needsTextInput(label) {
+  return TEXT_INPUT_KEYWORDS.some(k => label.includes(k))
+}
+
+async function showConfirmDialog({ confirm_id, question, options }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.className = 'confirm-overlay'
+
+    const optBtns = options.map((opt, i) => `
+      <button class="confirm-opt-btn" data-index="${i}" data-label="${escapeHtml(opt)}">
+        <span class="confirm-opt-icon">${getOptionIcon(opt)}</span>
+        <span>${escapeHtml(opt)}</span>
+      </button>
+    `).join('')
+
+    overlay.innerHTML = `
+      <div class="confirm-dialog">
+        <div class="confirm-header">⚠ 에이전트 확인 요청</div>
+        <div class="confirm-question">${escapeHtml(question)}</div>
+        <div class="confirm-options">${optBtns}</div>
+        <div class="confirm-textarea-wrap hidden">
+          <textarea class="confirm-textarea" placeholder="내용을 입력하세요..."></textarea>
+          <div class="confirm-actions">
+            <button class="confirm-cancel-text-btn">취소</button>
+            <button class="confirm-send-btn">전송</button>
+          </div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+
+    const textWrap = overlay.querySelector('.confirm-textarea-wrap')
+    const textarea  = overlay.querySelector('.confirm-textarea')
+    let selectedLabel = null
+
+    async function submit(choice, customText = '') {
+      overlay.remove()
+      try {
+        await fetch(`${BASE_URL}/confirm/${confirm_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ choice, custom_text: customText }),
+        })
+      } catch (e) { console.error('confirm submit error', e) }
+      resolve()
+    }
+
+    overlay.querySelectorAll('.confirm-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const label = btn.dataset.label
+        if (needsTextInput(label)) {
+          overlay.querySelectorAll('.confirm-opt-btn').forEach(b => b.classList.remove('selected'))
+          btn.classList.add('selected')
+          selectedLabel = label
+          textWrap.classList.remove('hidden')
+          textarea.focus()
+        } else {
+          submit(label)
+        }
+      })
+    })
+
+    overlay.querySelector('.confirm-send-btn').addEventListener('click', () => {
+      submit(selectedLabel || options[0], textarea.value.trim())
+    })
+
+    overlay.querySelector('.confirm-cancel-text-btn').addEventListener('click', () => {
+      textWrap.classList.add('hidden')
+      overlay.querySelectorAll('.confirm-opt-btn').forEach(b => b.classList.remove('selected'))
+      selectedLabel = null
+    })
+
+    // Esc로 닫기 (중단으로 처리)
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        document.removeEventListener('keydown', onKey)
+        submit('중단')
+      }
+    }
+    document.addEventListener('keydown', onKey)
+  })
 }
 
 function appendUserMessage(text) {

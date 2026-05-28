@@ -31,6 +31,10 @@ from agent.obsidian_session import get_session_manager
 
 app = FastAPI()
 
+# ── 사용자 확인 요청 대기 상태 ─────────────────────────────────
+_pending_confirms: dict[str, asyncio.Event] = {}
+_confirm_results: dict[str, dict] = {}
+
 @app.on_event("startup")
 async def startup():
     get_session_manager().setup_vault()
@@ -148,6 +152,32 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                     result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
                 except Exception as e:
                     result = f"툴 실행 오류: {e}"
+
+                # ask_user 툴의 __confirm__ 응답 처리
+                try:
+                    robj = json.loads(result)
+                    if isinstance(robj, dict) and robj.get("__confirm__"):
+                        cid = robj["confirm_id"]
+                        ev = asyncio.Event()
+                        _pending_confirms[cid] = ev
+                        yield sse({
+                            "type": "confirm",
+                            "confirm_id": cid,
+                            "question": robj["question"],
+                            "options": robj["options"],
+                        })
+                        try:
+                            await asyncio.wait_for(ev.wait(), timeout=300)
+                            cr = _confirm_results.pop(cid, {"choice": "타임아웃", "custom_text": ""})
+                        except asyncio.TimeoutError:
+                            cr = {"choice": "타임아웃으로 자동 중단", "custom_text": ""}
+                        finally:
+                            _pending_confirms.pop(cid, None)
+                        choice = cr["choice"]
+                        custom = cr.get("custom_text", "")
+                        result = f"[사용자 응답] 선택: {choice}" + (f"\n추가 의견: {custom}" if custom else "")
+                except (json.JSONDecodeError, AttributeError, KeyError):
+                    pass
 
                 yield sse({"type": "tool_done", "tool": tc["name"], "result": result[:1000]})
 
@@ -295,6 +325,19 @@ async def close_thread(task_type: str, thread_id: str):
         None, mgr.close_thread, task_type, thread_id
     )
     return {"status": "completed"}
+
+
+class ConfirmResponse(BaseModel):
+    choice: str
+    custom_text: str = ""
+
+
+@app.post("/confirm/{confirm_id}")
+async def submit_confirm(confirm_id: str, body: ConfirmResponse):
+    _confirm_results[confirm_id] = {"choice": body.choice, "custom_text": body.custom_text}
+    if confirm_id in _pending_confirms:
+        _pending_confirms[confirm_id].set()
+    return {"ok": True}
 
 
 class ToolTestRequest(BaseModel):

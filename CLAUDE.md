@@ -53,7 +53,7 @@
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
 
-**총 툴 수: 77종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 78종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -64,6 +64,7 @@
 | `process.py` | 9 |
 | `document.py` | 9 |
 | `obsidian_rag.py` | 7 |
+| `interaction.py` | 1 |
 | `obsidian_session.py` | 4 |
 
 ---
