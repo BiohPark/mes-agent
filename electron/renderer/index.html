@@ -10,6 +10,12 @@
   <div id="app">
     <header id="header">
       <span id="title">MES Agent</span>
+      <div id="header-center">
+        <div id="context-bar" class="hidden">
+          <div id="context-fill"></div>
+          <span id="context-label"></span>
+        </div>
+      </div>
       <div id="header-right">
         <div id="profile-switcher" class="hidden">
           <button id="profile-btn" class="profile-btn" title="LLM 프로파일 전환"></button>
@@ -36,6 +42,21 @@
         </button>
         <button class="quick-btn task-btn" data-task="knox">
           📥 Knox 자동 수집
+        </button>
+
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-label">빠른 작업</div>
+        <button class="quick-btn secondary quick-action-btn" data-prompt="화면 전체를 OCR해서 텍스트를 추출해줘">
+          📷 화면 OCR
+        </button>
+        <button class="quick-btn secondary quick-action-btn" data-prompt="파일 탐색기를 열어줘">
+          📂 파일 열기
+        </button>
+        <button class="quick-btn secondary quick-action-btn" data-prompt="브라우저를 열고 ">
+          🌐 브라우저
+        </button>
+        <button class="quick-btn secondary quick-action-btn" data-prompt="다음 텍스트를 키보드로 입력해줘: ">
+          ⌨️ 타이핑
         </button>
 
         <div class="sidebar-divider"></div>
@@ -76,6 +97,15 @@
         </div>
 
         <div id="messages"></div>
+
+        <!-- 에이전트 상태 바 -->
+        <div id="agent-state-bar" class="hidden">
+          <span id="agent-state-icon">⏳</span>
+          <span id="agent-state-text">처리 중...</span>
+          <div class="agent-state-spacer"></div>
+          <button id="stop-btn" title="에이전트 중단">■ 중단</button>
+        </div>
+
         <div id="input-area">
           <textarea
             id="input"
@@ -86,6 +116,38 @@
           <button id="send-btn" disabled>전송</button>
         </div>
       </section>
+
+      <!-- 우측 패널 리사이즈 핸들 -->
+      <div id="right-resize-handle"></div>
+
+      <!-- 우측 패널 -->
+      <aside id="right-panel">
+        <div id="right-panel-tabs">
+          <button class="rp-tab active" data-tab="workflow">📋 워크플로우</button>
+          <button class="rp-tab" data-tab="log">🗒️ 실행 로그</button>
+          <button id="right-panel-toggle" title="패널 닫기/열기">›</button>
+        </div>
+        <div id="right-panel-body">
+          <div id="workflow-panel" class="rp-content active">
+            <div id="workflow-empty" class="rp-empty">
+              <div class="rp-empty-icon">📋</div>
+              <div class="rp-empty-title">워크플로우 없음</div>
+              <div class="rp-empty-desc">에이전트가 작업을 시작하면<br>워크플로우가 여기에 표시됩니다.</div>
+            </div>
+            <div id="workflow-content" class="hidden">
+              <div id="workflow-title"></div>
+              <div id="workflow-steps"></div>
+              <div id="workflow-actions">
+                <button id="workflow-edit-btn" class="wf-action-btn">✏️ 편집</button>
+                <button id="workflow-clear-btn" class="wf-action-btn danger">🗑️ 삭제</button>
+              </div>
+            </div>
+          </div>
+          <div id="log-panel" class="rp-content">
+            <div id="log-entries"></div>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 
@@ -101,6 +163,7 @@
   </div>
 
   <script src="chat.js"></script>
+  <script src="workflow.js"></script>
   <script src="tool-test.js"></script>
 </body>
 </html>

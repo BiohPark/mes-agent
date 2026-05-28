@@ -2,12 +2,12 @@ import sys
 import json
 import asyncio
 import os
+import uuid
 from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
 # 'python agent/server.py' 직접 실행 시 프로젝트 루트를 sys.path에 추가
-# 'python -m agent.server' 실행 시에는 이미 추가되어 있으므로 중복 없음
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
@@ -20,6 +20,7 @@ if _env_path.exists():
         if line and not line.startswith('#') and '=' in line:
             k, _, v = line.partition('=')
             os.environ.setdefault(k.strip(), v.strip())
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -28,21 +29,26 @@ from agent.config import get_active, active_llm, list_profiles, set_active_profi
 from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
 from agent.obsidian_session import get_session_manager
+from agent.workflow import storage as wf_storage
+from agent.core import events as ev
 
 app = FastAPI()
 
-# ── 사용자 확인 요청 대기 상태 ─────────────────────────────────
+# ── 상태 테이블 ───────────────────────────────────────────────
 _pending_confirms: dict[str, asyncio.Event] = {}
 _confirm_results: dict[str, dict] = {}
+_stop_flags: dict[str, bool] = {}
+
 
 @app.on_event("startup")
 async def startup():
     get_session_manager().setup_vault()
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "GET"],
+    allow_methods=["POST", "GET", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -57,7 +63,24 @@ def sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-# 비스레드 모드(system_prompt 없음)용 기본 자율 실행 지시
+def _estimate_tokens(messages: list) -> int:
+    """메시지 전체 텍스트 길이로 토큰 수를 추정한다 (4 chars ≈ 1 token)."""
+    total = 0
+    for m in messages:
+        content = m.get("content") or ""
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    total += len(block.get("text", ""))
+        tool_calls = m.get("tool_calls") or []
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            total += len(fn.get("arguments", ""))
+    return total // 4
+
+
 _AUTONOMOUS_INSTRUCTION = (
     "너는 사내 업무자동화 데스크탑 에이전트야. "
     "도구 호출 전에 '~하겠습니다', '~할게요' 같은 예고 문구를 절대 쓰지 마라. "
@@ -69,7 +92,8 @@ _AUTONOMOUS_INSTRUCTION = (
     "selector 실패 시 같은 것을 반복하지 말고 즉시 다른 전략으로 전환해라."
 )
 
-_MAX_STEPS = 20  # 무한 루프 방지
+_MAX_STEPS = 20
+_CONTEXT_MAX_TOKENS = 128_000
 
 
 async def generate(message: str, thread_id: str = "", task_type: str = ""):
@@ -77,6 +101,10 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
     model = get_model()
     session_mgr = get_session_manager()
     loop = asyncio.get_event_loop()
+
+    request_id = uuid.uuid4().hex[:12]
+    _stop_flags[request_id] = False
+    yield sse({ev.REQUEST_ID: request_id})
 
     # 메시지 초기화
     if thread_id and task_type:
@@ -86,7 +114,6 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         messages.append({"role": "user", "content": message})
         session_id = None
     else:
-        # 스레드 없는 일반 채팅: 자율 실행 지시를 system으로 삽입
         messages = [
             {"role": "system", "content": _AUTONOMOUS_INSTRUCTION},
             {"role": "user", "content": message},
@@ -94,8 +121,22 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
 
     try:
-        # ── 에이전트 루프 ──────────────────────────────────────
         for _step in range(_MAX_STEPS):
+            # 중단 플래그 확인
+            if _stop_flags.get(request_id):
+                yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                break
+
+            # 컨텍스트 사용량 전송
+            tokens_used = _estimate_tokens(messages)
+            yield sse({
+                "type": ev.CONTEXT_USAGE,
+                "tokens_used": tokens_used,
+                "tokens_total": _CONTEXT_MAX_TOKENS,
+            })
+
+            yield sse({"type": ev.AGENT_STATE, "state": "thinking"})
+
             tool_calls_raw: dict[int, dict] = {}
             text_chunks: list[str] = []
             finish_reason = None
@@ -108,13 +149,17 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
             )
 
             for chunk in stream:
+                # 스트림 도중 중단 요청 처리
+                if _stop_flags.get(request_id):
+                    break
+
                 choice = chunk.choices[0]
                 delta = choice.delta
                 finish_reason = choice.finish_reason or finish_reason
 
                 if delta.content:
                     text_chunks.append(delta.content)
-                    yield sse({"type": "text", "content": delta.content})
+                    yield sse({"type": ev.TEXT, "content": delta.content})
 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
@@ -128,15 +173,14 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                         if tc.function and tc.function.arguments:
                             tool_calls_raw[idx]["arguments"] += tc.function.arguments
 
-            # 텍스트 응답이 있으면 messages에 추가
             if text_chunks:
                 messages.append({"role": "assistant", "content": "".join(text_chunks)})
 
-            # 종료 조건: 도구 호출 없으면 루프 종료
-            if finish_reason != "tool_calls" or not tool_calls_raw:
+            # 중단 또는 종료
+            if _stop_flags.get(request_id) or finish_reason != "tool_calls" or not tool_calls_raw:
+                yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
 
-            # 도구 실행 후 결과를 messages에 추가하고 루프 계속
             assistant_tool_calls = [
                 {
                     "id": tc["id"],
@@ -147,9 +191,14 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
             ]
             messages.append({"role": "assistant", "tool_calls": assistant_tool_calls})
 
+            yield sse({"type": ev.AGENT_STATE, "state": "running"})
+
             for tc in tool_calls_raw.values():
+                if _stop_flags.get(request_id):
+                    break
+
                 label = TOOL_LABELS.get(tc["name"], tc["name"])
-                yield sse({"type": "tool_start", "tool": tc["name"], "label": label})
+                yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
 
                 await asyncio.sleep(0)
                 try:
@@ -162,16 +211,17 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                     robj = json.loads(result)
                     if isinstance(robj, dict) and robj.get("__confirm__"):
                         cid = robj["confirm_id"]
-                        ev = asyncio.Event()
-                        _pending_confirms[cid] = ev
+                        ev_obj = asyncio.Event()
+                        _pending_confirms[cid] = ev_obj
                         yield sse({
-                            "type": "confirm",
+                            "type": ev.CONFIRM,
                             "confirm_id": cid,
                             "question": robj["question"],
                             "options": robj["options"],
                         })
+                        yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
                         try:
-                            await asyncio.wait_for(ev.wait(), timeout=300)
+                            await asyncio.wait_for(ev_obj.wait(), timeout=300)
                             cr = _confirm_results.pop(cid, {"choice": "타임아웃", "custom_text": ""})
                         except asyncio.TimeoutError:
                             cr = {"choice": "타임아웃으로 자동 중단", "custom_text": ""}
@@ -180,10 +230,20 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                         choice = cr["choice"]
                         custom = cr.get("custom_text", "")
                         result = f"[사용자 응답] 선택: {choice}" + (f"\n추가 의견: {custom}" if custom else "")
+                        yield sse({"type": ev.AGENT_STATE, "state": "running"})
                 except (json.JSONDecodeError, AttributeError, KeyError):
                     pass
 
-                yield sse({"type": "tool_done", "tool": tc["name"], "result": result[:1000]})
+                # 워크플로우 도구 결과 → workflow_update SSE
+                if tc["name"] in ("workflow_init", "workflow_set_step"):
+                    try:
+                        robj = json.loads(result)
+                        if isinstance(robj, dict) and robj.get("ok") and "workflow" in robj:
+                            yield sse({"type": ev.WORKFLOW_UPDATE, "workflow": robj["workflow"]})
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+
+                yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result[:1000]})
 
                 if session_id:
                     await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
@@ -191,9 +251,12 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
     except Exception as e:
-        yield sse({"type": "error", "message": str(e)})
-        yield sse({"type": "done"})
+        yield sse({"type": ev.ERROR, "message": str(e)})
+        yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+        yield sse({"type": ev.DONE})
         return
+    finally:
+        _stop_flags.pop(request_id, None)
 
     # 스레드 또는 세션 종료
     if thread_id and task_type:
@@ -208,8 +271,10 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         )
         await loop.run_in_executor(None, session_mgr.close_session, session_id, final_text)
 
-    yield sse({"type": "done"})
+    yield sse({"type": ev.DONE})
 
+
+# ── 기본 엔드포인트 ───────────────────────────────────────────
 
 @app.get("/health")
 async def health():
@@ -218,10 +283,7 @@ async def health():
 
 @app.get("/profile")
 async def get_profile():
-    return {
-        "active": get_active(),
-        "profiles": list_profiles()
-    }
+    return {"active": get_active(), "profiles": list_profiles()}
 
 
 @app.post("/profile/{name}")
@@ -235,8 +297,14 @@ async def chat(body: ChatRequest):
     return StreamingResponse(
         generate(body.message, body.thread_id, body.task_type),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/stop/{request_id}")
+async def stop_agent(request_id: str):
+    _stop_flags[request_id] = True
+    return {"ok": True}
 
 
 # ── 스레드 엔드포인트 ─────────────────────────────────────────
@@ -244,7 +312,10 @@ async def chat(body: ChatRequest):
 @app.get("/task-config")
 async def task_config():
     from agent.obsidian_session import TASK_CONFIGS
-    return {k: {"label": v["label"], "icon": v["icon"], "description": v.get("description", "")} for k, v in TASK_CONFIGS.items()}
+    return {
+        k: {"label": v["label"], "icon": v["icon"], "description": v.get("description", "")}
+        for k, v in TASK_CONFIGS.items()
+    }
 
 
 @app.get("/threads")
@@ -331,6 +402,44 @@ async def close_thread(task_type: str, thread_id: str):
     return {"status": "completed"}
 
 
+# ── 워크플로우 엔드포인트 ─────────────────────────────────────
+
+@app.get("/threads/{task_type}/{thread_id}/workflow")
+async def get_workflow(task_type: str, thread_id: str):
+    loop = asyncio.get_event_loop()
+    wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
+    if not wf:
+        return None
+    return wf.to_dict()
+
+
+class WorkflowSaveRequest(BaseModel):
+    title: str
+    steps: list
+
+
+@app.post("/threads/{task_type}/{thread_id}/workflow")
+async def save_workflow_endpoint(task_type: str, thread_id: str, body: WorkflowSaveRequest):
+    from agent.workflow.model import Workflow, WorkflowStep
+    import uuid as _uuid
+    steps = [
+        WorkflowStep(
+            id=s.get("id") or _uuid.uuid4().hex[:8],
+            title=s["title"],
+            type=s.get("type", "auto"),
+            status=s.get("status", "pending"),
+            notes=s.get("notes", ""),
+        )
+        for s in body.steps
+    ]
+    wf = Workflow(thread_id=thread_id, task_type=task_type, title=body.title, steps=steps)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, wf_storage.save_workflow, wf)
+    return wf.to_dict()
+
+
+# ── 확인 응답 ─────────────────────────────────────────────────
+
 class ConfirmResponse(BaseModel):
     choice: str
     custom_text: str = ""
@@ -344,6 +453,8 @@ async def submit_confirm(confirm_id: str, body: ConfirmResponse):
     return {"ok": True}
 
 
+# ── 툴 직접 테스트 ─────────────────────────────────────────────
+
 class ToolTestRequest(BaseModel):
     tool: str
     arguments: dict = {}
@@ -351,7 +462,6 @@ class ToolTestRequest(BaseModel):
 
 @app.post("/tool/test")
 async def tool_test(body: ToolTestRequest):
-    import json
     try:
         result = await asyncio.get_event_loop().run_in_executor(
             None, run_tool, body.tool, json.dumps(body.arguments)
