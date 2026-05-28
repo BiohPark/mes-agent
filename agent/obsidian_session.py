@@ -21,6 +21,10 @@ _AUTO_EXEC = (
     " 도구 호출 전에 '~하겠습니다', '~할게요' 같은 예고 문구를 절대 쓰지 마라."
     " 바로 도구를 호출해 실행하고, 여러 단계가 필요하면 사용자 확인 없이 연속으로 실행해라."
     " 모든 작업이 완료된 뒤에만 결과를 간략히 보고해라."
+    " [브라우저 조작] browser_open 후 browser_get_interactive_elements로 실제 selector를 먼저 확인해라."
+    " CSS id/class보다 aria-label·placeholder·텍스트 기반 selector(예: input[aria-label='검색'], button:has-text('로그인'))를 우선 사용해라."
+    " 폼 제출은 버튼 클릭 대신 browser_press_key('Enter')를 사용해라."
+    " selector 실패 시 같은 것을 반복하지 말고 즉시 다른 전략으로 전환해라."
 )
 
 TASK_CONFIGS = {
