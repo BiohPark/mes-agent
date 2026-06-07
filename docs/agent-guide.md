@@ -117,6 +117,26 @@
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 (`.docx`/`.xlsx` 금지 — 깨짐) |
 
+### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (7종)
+
+> **기존 Office 문서를 열고·편집·저장**하는 고품질 경로. 설치된 Word/Excel을 COM으로 구동(서식·수식·수정추적·메모·PDF 완전 충실도)하고, COM 불가 시 `python-docx`/`openpyxl`로 자동 폴백한다.
+>
+> - 모든 호출은 전용 **STA 단일 스레드**(`office_com._com_executor`)에서 실행 — COM 스레드 제약 해결.
+> - **편집 전 자동 백업**(`.bak`), 입력 **OOXML(zip) 검증**, 결과에 사용 엔진(`com`/`docx`/`openpyxl`)·백업 경로 명시.
+> - `append_word`/`write_word`(추가·새작성)와 구분: **기존 문서 실제 편집**은 아래 도구 사용.
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `word_edit_text(path, find, replace)` | 기존 Word 찾아바꾸기(서식 보존). COM→python-docx 폴백 |
+| `word_export_pdf(path, pdf_path)` | Word→PDF 내보내기 (COM 필요) |
+| `word_accept_all_changes(path)` | 모든 수정추적 수락 후 저장 (COM 필요) |
+| `word_add_comment(path, anchor_text, comment)` | 특정 텍스트에 검토 메모 추가 (COM 필요) |
+| `excel_set_cells(path, cells, sheet)` | 셀/수식 편집 후 저장. `{"B2":"=A1+A2"}`. COM→openpyxl 폴백 |
+| `excel_get_range(path, cell_range, sheet)` | 범위 값 읽기(`'A1:C10'`). COM→openpyxl 폴백 |
+| `office_close()` | Word/Excel COM 세션 종료(좀비 프로세스 정리) |
+
+> COM은 `win32com` 동적 디스패치에서 `Find.Execute`의 키워드 인자(특히 `Replace`)가 바인딩되지 않으므로 **완전 위치 인자**로 호출한다(`office_com.py` 참조). 편집 후 좀비 프로세스 방지를 위해 작업 종료 시 `office_close()`를 호출한다.
+
 ### Obsidian PKM — Vault 탐색·편집·정리 (16종)
 
 **환경 설정 (`.env`):**
