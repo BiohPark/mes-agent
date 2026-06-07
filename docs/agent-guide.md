@@ -112,9 +112,10 @@
 | `get_excel_sheet_names(path)` | 시트 목록 |
 | `read_word(path)` | Word 텍스트 추출 |
 | `append_word(path, text)` | Word 내용 추가 |
+| `write_word(path, content, title)` | **마크다운→진짜 docx** (제목·목록·굵게·표 변환). `.docx`는 `write_file` 대신 반드시 이것 사용 |
 | `read_pdf(path, pages)` | PDF 텍스트 추출 |
 | `read_file(path)` | 텍스트 파일 읽기 |
-| `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 |
+| `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 (`.docx`/`.xlsx` 금지 — 깨짐) |
 
 ### Obsidian PKM — Vault 탐색·편집·정리 (16종)
 
@@ -365,7 +366,7 @@ agent/
     ├── desktop.py       — MANIFEST(19종)
     ├── browser.py       — MANIFEST(22종)
     ├── process.py       — MANIFEST(9종)
-    ├── document.py      — MANIFEST(9종)
+    ├── document.py      — MANIFEST(14종)
     ├── obsidian_rag.py  — MANIFEST(16종) 탐색·편집·이동·고급검색
     ├── interaction.py   — MANIFEST(1종) ask_user
     └── workflow.py      — MANIFEST(8종) init·set_step·add_step·update_step·remove_step·reorder·add_connection·remove_connection

@@ -28,6 +28,51 @@ body {
 /* 프로파일 전환 */
 #profile-switcher { position: relative; }
 
+/* 헤더 공통 드롭다운 (창 모드 C / 모델 선택 D) */
+#busymode-switcher, #model-switcher { position: relative; }
+.hdr-btn {
+  background: #0f3460;
+  border: 1px solid #1a4a8a;
+  color: #c0d8ff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.hdr-btn:hover { background: #1a4a8a; }
+.hdr-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 100;
+  min-width: 150px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.hdr-menu-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #c0d8ff;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+.hdr-menu-item:hover { background: #0f3460; }
+.hdr-menu-item.active { color: #4caf50; }
+.hdr-menu-group-label {
+  padding: 6px 14px 2px;
+  font-size: 10px;
+  color: #5a7aa0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .profile-btn {
   background: #0f3460;
   border: 1px solid #1a4a8a;
@@ -121,6 +166,58 @@ body {
 }
 
 /* 현재 스레드 바 (간소화) */
+/* IDE식 스레드 탭 바 (개선 아이디어 A) */
+#thread-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  background: #0a1422;
+  border-bottom: 1px solid #0f3460;
+  padding: 4px 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+#thread-tabs::-webkit-scrollbar { height: 5px; }
+#thread-tabs::-webkit-scrollbar-thumb { background: #1a4a8a; border-radius: 3px; }
+.thread-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 6px 8px 6px 10px;
+  background: #11203a;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: 12px;
+  color: #9bb3d4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.thread-tab:hover { background: #16294a; color: #c0d8ff; }
+.thread-tab.active {
+  background: #1a3358;
+  color: #fff;
+  border-color: #2a5fa0;
+}
+.thread-tab.archived { font-style: italic; opacity: 0.8; }
+.thread-tab .tt-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.thread-tab .tt-close {
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: #6b85a8;
+}
+.thread-tab .tt-close:hover { background: #e94560; color: #fff; }
+
 #current-thread-bar {
   display: flex;
   align-items: center;
@@ -1361,6 +1458,48 @@ body {
 }
 
 /* 그래프 노드 */
+/* 컴팩트 카드 목록 (개선 아이디어 B) */
+.wf-compact-list { display: flex; flex-direction: column; gap: 5px; padding: 4px 8px 12px; }
+.wf-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-left: 3px solid #374151;
+  border-radius: 7px;
+  transition: background 0.12s;
+}
+.wf-compact-row.collapsed { padding: 4px 8px; opacity: 0.72; }
+.wf-compact-row.running { border-left-color: #f0a500; background: #1a1607; }
+.wf-compact-row.done    { border-left-color: #22c55e; }
+.wf-compact-row.error   { border-left-color: #ef4444; background: #1c0f0f; }
+.wf-compact-row.waiting { border-left-color: #3b82f6; }
+.wf-compact-row.skipped { border-left-color: #6b7280; }
+.wf-c-num {
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  font-size: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: #0f3460; color: #9bb3d4;
+  border-radius: 50%;
+}
+.wf-c-icon { flex-shrink: 0; font-size: 14px; }
+.wf-c-body { flex: 1; min-width: 0; }
+.wf-c-title {
+  font-size: 12px; color: #e0e8f5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wf-c-meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 10px; color: #6b85a8; }
+.wf-c-status { color: #8aa3c8; }
+.wf-compact-row .wf-node-menu-btn {
+  flex-shrink: 0;
+  background: transparent; border: none; color: #6b85a8;
+  cursor: pointer; font-size: 15px; padding: 0 3px; border-radius: 4px;
+}
+.wf-compact-row .wf-node-menu-btn:hover { background: #1f3a5f; color: #fff; }
+
 .wf-graph-node {
   position: absolute;
   border-radius: 10px;

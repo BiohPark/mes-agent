@@ -17,6 +17,20 @@
         </div>
       </div>
       <div id="header-right">
+        <!-- 실행 중 창 모드 (개선 아이디어 C) -->
+        <div id="busymode-switcher">
+          <button id="busymode-btn" class="hdr-btn" title="에이전트 실행 중 창 동작">🪟 최소화</button>
+          <div id="busymode-menu" class="hdr-menu hidden">
+            <div class="hdr-menu-item" data-mode="minimize">🪟 자동 최소화</div>
+            <div class="hdr-menu-item" data-mode="translucent">👻 반투명</div>
+            <div class="hdr-menu-item" data-mode="off">🚫 끄기</div>
+          </div>
+        </div>
+        <!-- 모델 선택 (개선 아이디어 D) -->
+        <div id="model-switcher" class="hidden">
+          <button id="model-btn" class="hdr-btn" title="AI 모델 선택"></button>
+          <div id="model-menu" class="hdr-menu hidden"></div>
+        </div>
         <div id="profile-switcher" class="hidden">
           <button id="profile-btn" class="profile-btn" title="LLM 프로파일 전환"></button>
           <div id="profile-menu" class="profile-menu hidden"></div>
@@ -119,6 +133,9 @@
       <div id="toast-container"></div>
 
       <section id="chat-area">
+        <!-- IDE식 열린 스레드 탭 바 (개선 아이디어 A) -->
+        <div id="thread-tabs" class="hidden"></div>
+
         <!-- 현재 스레드 정보 바 -->
         <div id="current-thread-bar" class="hidden">
           <span id="current-thread-info"></span>

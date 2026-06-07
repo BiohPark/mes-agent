@@ -89,6 +89,17 @@ document.addEventListener('mouseup', () => {
   }
 })
 
+// 패널 너비가 컴팩트 임계값을 넘나들면 그래프 ↔ 컴팩트 카드 전환 (개선 아이디어 B)
+let _lastCompact = null
+const _panelResizeObserver = new ResizeObserver(() => {
+  const c = _isCompact()
+  if (c !== _lastCompact) {
+    _lastCompact = c
+    if (_currentWorkflow && !_editMode && !_templateMode) renderWorkflow(_currentWorkflow)
+  }
+})
+_panelResizeObserver.observe(rightPanel)
+
 // ── 워크플로우 렌더링 ────────────────────────────────────────
 
 const STATUS_META = {
@@ -182,6 +193,55 @@ function renderWorkflow(wf) {
   workflowStepsEl.innerHTML = ''
   if (!steps.length) return
 
+  // 반응형: 좁은 패널은 세로 컴팩트 카드, 넓으면 2D 그래프 (개선 아이디어 B)
+  if (_isCompact()) { _renderCompactList(wf, steps); return }
+  _renderGraph(wf, steps, connections)
+}
+
+// ── 좁은 패널: 세로 컴팩트 카드 목록 (개선 아이디어 B) ──────────
+const COMPACT_THRESHOLD = 360  // px 미만이면 컴팩트 모드
+
+function _isCompact() {
+  return (rightPanel.offsetWidth || _panelWidth) < COMPACT_THRESHOLD
+}
+
+function _renderCompactList(wf, steps) {
+  const list = document.createElement('div')
+  list.className = 'wf-compact-list'
+
+  steps.forEach((step, idx) => {
+    const sm = STATUS_META[step.status] || STATUS_META.pending
+    const tm = TYPE_META[step.type] || TYPE_META.auto
+    // 완료/건너뜀 단계는 접어서 한 줄로만 표시
+    const collapsed = step.status === 'done' || step.status === 'skipped'
+
+    const row = document.createElement('div')
+    row.className = `wf-compact-row ${sm.cls}${collapsed ? ' collapsed' : ''}`
+    row.dataset.stepId = step.id
+    row.innerHTML = `
+      <span class="wf-c-num">${idx + 1}</span>
+      <span class="wf-c-icon">${sm.icon}</span>
+      <div class="wf-c-body">
+        <div class="wf-c-title">${escapeWf(step.title)}</div>
+        ${collapsed ? '' : `<div class="wf-c-meta">
+          <span>${tm.icon} ${tm.label}</span>
+          <span class="wf-c-status">${sm.label}</span>
+          ${step.notes ? `<span class="wf-node-notes-dot" title="${escapeAttr(step.notes)}">📝</span>` : ''}
+        </div>`}
+      </div>
+      <button class="wf-node-menu-btn" title="작업">⋮</button>
+    `
+    row.querySelector('.wf-node-menu-btn').addEventListener('click', e => {
+      e.stopPropagation()
+      _showNodeActions(row, step, wf)
+    })
+    list.appendChild(row)
+  })
+
+  workflowStepsEl.appendChild(list)
+}
+
+function _renderGraph(wf, steps, connections) {
   const { positions, canvasW, canvasH } = _computeLayout(steps, connections)
   const { NODE_W, NODE_H } = GRAPH
 

@@ -44,10 +44,10 @@
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
-| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
+| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결** |
 | Obsidian PKM (Phase 7 ✅) | `agent/tools/obsidian_rag.py` | 2-tier 탐색(preview/scan/backlinks/section), 편집(edit/replace_section/update_frontmatter), 이동, 고급검색 (16종) |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
-| 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기** (13종) |
+| 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **마크다운→진짜 docx 변환(write_word)**, Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기 (14종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
@@ -86,8 +86,15 @@
 | 멀티모달 비전 분석 ✅ | `agent/tools/vision.py` | `analyze_screen`·`analyze_region` — VISION_ENABLED=true + 멀티모달 LLM 필요, 사용 전 유저 확인 |
 | Windows UI Automation ✅ | `agent/tools/ui_automation.py` | `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` — 접근성 트리 읽기, OCR 없이 Win32 컨트롤 구조 파악 |
 | 스레드 사이드바 접이식 그룹 ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 탭 → 그룹 접기/펼치기, 스레드 인라인 표시, 그룹별 보관 서브섹션, 빨간 배지 |
+| 브라우저 greenlet 스레드 버그 수정 ✅ | `agent/tools/browser.py` | 전용 단일 스레드 executor(`_on_pw_thread`)로 모든 Playwright 핸들러 위임 → "Cannot switch to a different thread" 해결 (웹 조사 실패 수정) |
+| 마크다운→진짜 docx 변환 ✅ | `agent/tools/document.py` | `write_word` — 제목·목록·굵게·표를 Word 서식으로 변환한 OOXML .docx 저장. write_file 스키마에 .docx 경고 추가 |
+| 긴 호흡·자가복구 에이전트 ✅ | `agent/obsidian_session.py` + `agent/server.py` | `_AUTO_EXEC`/`_AUTONOMOUS_INSTRUCTION`에 끈질긴 문제해결·근본원인 조사·선택지 제시 지침, `_MAX_STEPS` 20→40, 단계 상한 도달 시 '계속' 안내 |
+| 실행 중 창 최소화 UX (백로그 C) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `index.html` | agentState=running 시 자동 최소화/반투명/끄기 (헤더 토글, localStorage 저장), idle 시 원복 |
+| 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
+| IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화 |
+| 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<360px) 세로 컴팩트 카드(완료 단계 접기), 넓으면 2D 그래프 |
 
-**총 툴 수: 109종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 110종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -96,7 +103,7 @@
 | `desktop.py` | 19 |
 | `browser.py` | 22 |
 | `process.py` | 9 |
-| `document.py` | 13 |
+| `document.py` | 14 |
 | `obsidian_rag.py` | 18 |
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
@@ -345,7 +352,9 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 > 우선순위 없음. 설계 전 타당성 검토 필요. README.md에도 동일 내용 기재.
 
-### A. IDE식 탭 + 스레드 관리 개선 🖥️
+> ✅ **A·B·C·D 완료 (2026-06-08)** — 아래 항목들은 구현되었습니다. 기록 보존을 위해 원문을 남겨둡니다.
+
+### A. IDE식 탭 + 스레드 관리 개선 🖥️ — ✅ 완료
 
 **배경**: 스레드가 조금만 쌓여도 사이드바 관리 어려움. 상단 채팅 탭 영역이 사이드바로 이전된 뒤 빈 공간으로 방치 중.
 
@@ -359,7 +368,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ---
 
-### B. 워크플로우 패널 컴팩트 + 반응형 레이아웃 📋
+### B. 워크플로우 패널 컴팩트 + 반응형 레이아웃 📋 — ✅ 완료
 
 **배경**: 그래프 캔버스 화살표·노드가 커서 좁은 사이드바(300px)에 정보량이 너무 적음. 초기 선형 플로우가 좌우로 그려져 공간 낭비.
 
@@ -371,7 +380,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ---
 
-### C. 에이전트 실행 중 창 최소화 UX 🪟
+### C. 에이전트 실행 중 창 최소화 UX 🪟 — ✅ 완료 (자동최소화·반투명·끄기 토글)
 
 **배경**: 에이전트가 화면 OCR/이미지 매칭을 수행하는 동안 앱 창이 화면을 가려 심각한 동작 실패. 현재 회피책 없음.
 
@@ -386,7 +395,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ---
 
-### D. AI 모델 다중 선택 UI 🤖
+### D. AI 모델 다중 선택 UI 🤖 — ✅ 완료 (헤더 드롭다운, 동적/프리셋)
 
 **배경**: LLM 전환이 "프로파일" 단위만 가능. 같은 엔드포인트에서 모델명만 바꾸려면 `.env` 직접 수정 필요.
 

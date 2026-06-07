@@ -31,6 +31,92 @@ let currentRequestId = ''
 const showingArchiveGroups = new Set()
 const expandedGroups = new Set()
 
+// ── IDE식 열린 스레드 탭 (개선 아이디어 A) ────────────────────
+// openTabs: { key, taskType, threadId, status, archived } 의 배열. X=닫기(탭에서만 제거).
+const threadTabsEl = document.getElementById('thread-tabs')
+let openTabs = []
+const tabKey = (taskType, threadId) => `${taskType}::${threadId}`
+
+function openOrFocusTab(taskType, threadId, status, archived = false) {
+  const key = tabKey(taskType, threadId)
+  let tab = openTabs.find(t => t.key === key)
+  if (tab) {
+    tab.status = status
+    tab.archived = archived
+  } else {
+    tab = { key, taskType, threadId, status, archived }
+    openTabs.push(tab)
+  }
+  renderTabs()
+}
+
+function closeTab(key) {
+  const idx = openTabs.findIndex(t => t.key === key)
+  if (idx === -1) return
+  const wasActive = openTabs[idx].key === tabKey(currentTaskType, currentThreadId)
+  openTabs.splice(idx, 1)
+
+  if (wasActive) {
+    const next = openTabs[idx] || openTabs[idx - 1]
+    if (next) {
+      if (next.archived) selectArchivedThread(next.taskType, next.threadId)
+      else selectThread(next.taskType, next.threadId, next.status)
+    } else {
+      // 남은 탭 없음 — 메시지 영역 비우고 안내
+      currentThreadId = ''
+      messagesEl.innerHTML = ''
+      updateCurrentThreadBar('', '', '')
+      inputEl.placeholder = '스레드를 선택하거나 새로 시작하세요'
+      setInputEnabled(false)
+      renderTabs()
+    }
+  } else {
+    renderTabs()
+  }
+}
+
+function dropTab(taskType, threadId) {
+  // 탭만 제거 (삭제/보관 등 상위 로직이 선택 전환을 직접 처리하는 경우 사용)
+  const key = tabKey(taskType, threadId)
+  const before = openTabs.length
+  openTabs = openTabs.filter(t => t.key !== key)
+  if (openTabs.length !== before) renderTabs()
+}
+
+function renderTabs() {
+  if (!threadTabsEl) return
+  if (openTabs.length === 0) {
+    threadTabsEl.classList.add('hidden')
+    threadTabsEl.innerHTML = ''
+    return
+  }
+  threadTabsEl.classList.remove('hidden')
+  threadTabsEl.innerHTML = ''
+  const activeKey = tabKey(currentTaskType, currentThreadId)
+  openTabs.forEach(tab => {
+    const cfg = taskConfigs[tab.taskType] || {}
+    const el = document.createElement('div')
+    el.className = 'thread-tab' + (tab.key === activeKey ? ' active' : '') + (tab.archived ? ' archived' : '')
+    el.title = `${cfg.label || tab.taskType} · ${formatThreadLabel(tab.threadId)}`
+    const icon = tab.archived ? '🗑' : tab.status === 'completed' ? '✓' : (cfg.icon || '💬')
+    el.innerHTML =
+      `<span class="tt-icon">${icon}</span>` +
+      `<span class="tt-label">${escapeHtml(cfg.label || tab.taskType)} ${escapeHtml(formatThreadLabel(tab.threadId))}</span>` +
+      `<span class="tt-close" title="탭 닫기">×</span>`
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('tt-close')) {
+        e.stopPropagation()
+        closeTab(tab.key)
+        return
+      }
+      if (tab.key === activeKey) return
+      if (tab.archived) selectArchivedThread(tab.taskType, tab.threadId)
+      else selectThread(tab.taskType, tab.threadId, tab.status)
+    })
+    threadTabsEl.appendChild(el)
+  })
+}
+
 // ── 에이전트 상태 바 ─────────────────────────────────────────
 
 const STATE_META = {
@@ -46,10 +132,46 @@ function setAgentState(state) {
   agentStateText.textContent = meta.text
   if (state === 'idle') {
     setTimeout(() => agentStateBar.classList.add('hidden'), 800)
+    // 실행 종료 → 창 원복 (개선 아이디어 C)
+    window.electronAPI?.agentIdle?.()
   } else {
     agentStateBar.classList.remove('hidden')
+    // 화면 제어가 시작되는 running 상태에서만 창을 비킨다
+    if (state === 'running') {
+      window.electronAPI?.agentBusy?.(busyMode)
+    } else if (state === 'waiting') {
+      // 사용자 확인 팝업이 보이도록 창을 원복 (응답 후 다시 running 되면 재최소화)
+      window.electronAPI?.agentIdle?.()
+    }
+    // thinking 상태는 running 사이의 짧은 단계 — 창을 건드리지 않아 깜빡임 방지
   }
 }
+
+// ── 실행 중 창 모드 (개선 아이디어 C) ─────────────────────────
+let busyMode = localStorage.getItem('busyMode') || 'minimize'
+const BUSYMODE_LABELS = { minimize: '🪟 최소화', translucent: '👻 반투명', off: '🚫 끄기' }
+const busymodeBtn = document.getElementById('busymode-btn')
+const busymodeMenu = document.getElementById('busymode-menu')
+
+function renderBusyMode() {
+  if (busymodeBtn) busymodeBtn.textContent = BUSYMODE_LABELS[busyMode] || '🪟 최소화'
+  busymodeMenu?.querySelectorAll('.hdr-menu-item').forEach(it =>
+    it.classList.toggle('active', it.dataset.mode === busyMode))
+}
+busymodeBtn?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  busymodeMenu.classList.toggle('hidden')
+})
+busymodeMenu?.querySelectorAll('.hdr-menu-item').forEach(item => {
+  item.addEventListener('click', () => {
+    busyMode = item.dataset.mode
+    localStorage.setItem('busyMode', busyMode)
+    busymodeMenu.classList.add('hidden')
+    renderBusyMode()
+  })
+})
+document.addEventListener('click', () => busymodeMenu?.classList.add('hidden'))
+renderBusyMode()
 
 function setContextUsage(tokensUsed, tokensTotal) {
   const pct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100))
@@ -101,6 +223,7 @@ function renderProfileMenu(active, profiles) {
       try {
         await fetch(`${BASE_URL}/profile/${name}`, { method: 'POST' })
         await loadProfile()
+        await loadModels()  // 프로파일 전환 시 모델 목록도 갱신
       } catch (e) {
         statusEl.textContent = `● 전환 실패: ${e.message}`
       }
@@ -114,6 +237,51 @@ profileBtn.addEventListener('click', (e) => {
 })
 document.addEventListener('click', () => profileMenu.classList.add('hidden'))
 
+// ── 모델 선택 (개선 아이디어 D) ───────────────────────────────
+const modelSwitcher = document.getElementById('model-switcher')
+const modelBtn = document.getElementById('model-btn')
+const modelMenu = document.getElementById('model-menu')
+
+function shortModelName(name) {
+  return name.length > 22 ? '…' + name.slice(-21) : name
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch(`${BASE_URL}/models`)
+    const { current, default: dflt, models, source } = await res.json()
+    modelBtn.textContent = '🤖 ' + shortModelName(current)
+    modelBtn.title = `현재 모델: ${current}\n목록 출처: ${source === 'dynamic' ? '서버 동적 조회' : '.env 프리셋'}`
+
+    const srcLabel = source === 'dynamic' ? '서버 모델' : '프리셋 (.env)'
+    let html = `<div class="hdr-menu-group-label">${srcLabel}</div>`
+    html += models.map(m => `
+      <div class="hdr-menu-item ${m === current ? 'active' : ''}" data-model="${escapeHtml(m)}">
+        ${m === current ? '✓ ' : ''}${escapeHtml(m)}
+      </div>`).join('')
+    html += `<div class="hdr-menu-group-label">기타</div>`
+    html += `<div class="hdr-menu-item" data-model="__default__">↺ 기본값 (${escapeHtml(shortModelName(dflt))})</div>`
+    modelMenu.innerHTML = html
+
+    modelMenu.querySelectorAll('.hdr-menu-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        modelMenu.classList.add('hidden')
+        try {
+          await fetch(`${BASE_URL}/models/${encodeURIComponent(item.dataset.model)}`, { method: 'POST' })
+          await loadModels()
+        } catch (e) { console.error('모델 전환 실패', e) }
+      })
+    })
+    modelSwitcher.classList.remove('hidden')
+  } catch { modelSwitcher.classList.add('hidden') }
+}
+
+modelBtn?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  modelMenu.classList.toggle('hidden')
+})
+document.addEventListener('click', () => modelMenu.classList.add('hidden'))
+
 // 서버가 뜰 때까지 직접 폴링 (IPC 타이밍 문제 회피)
 async function initWhenReady() {
   for (let i = 0; i < 40; i++) {
@@ -123,7 +291,7 @@ async function initWhenReady() {
         statusEl.textContent = '● 준비됨'
         statusEl.className = 'status ready'
         setInputEnabled(true)
-        await Promise.all([loadProfile(), loadTaskConfig()])
+        await Promise.all([loadProfile(), loadModels(), loadTaskConfig()])
         await openTask('general')
         return
       }
@@ -628,6 +796,7 @@ async function archiveThread(taskType, threadId) {
   const wasActive = currentThreadId === threadId && currentTaskType === taskType
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}`, { method: 'DELETE' })
+    dropTab(taskType, threadId)
     const threads = await renderSidebarThreads(taskType)
     if (wasActive) {
       currentThreadId = ''
@@ -653,6 +822,7 @@ async function selectArchivedThread(taskType, threadId) {
     item.classList.toggle('selected', item.dataset.threadId === threadId && item.classList.contains('archived'))
   })
   updateCurrentThreadBar(taskType, threadId, 'archived')
+  openOrFocusTab(taskType, threadId, 'archived', true)
   messagesEl.innerHTML = ''
   try {
     const res = await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/messages?archived=true`)
@@ -694,6 +864,7 @@ async function deleteThreadFromSidebar(taskType, threadId, isArchived) {
   const qs = isArchived ? '?archived=true' : ''
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/permanent${qs}`, { method: 'DELETE' })
+    dropTab(taskType, threadId)
     const threads = await renderSidebarThreads(taskType)
     if (wasActive) {
       currentThreadId = ''
@@ -774,6 +945,7 @@ async function permanentDeleteThread(taskType, threadId, isArchived) {
   const qs = isArchived ? '?archived=true' : ''
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/permanent${qs}`, { method: 'DELETE' })
+    dropTab(taskType, threadId)
     if (currentThreadId === threadId && currentTaskType === taskType) {
       currentThreadId = ''
       messagesEl.innerHTML = ''
@@ -811,6 +983,7 @@ async function selectThread(taskType, threadId, status) {
   })
 
   updateCurrentThreadBar(taskType, threadId, status)
+  openOrFocusTab(taskType, threadId, status, false)
 
   messagesEl.innerHTML = ''
   try {

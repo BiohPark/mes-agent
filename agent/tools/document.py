@@ -150,6 +150,119 @@ def append_word(path: str, text: str, heading: str = "") -> str:
         return json.dumps({"error": str(e)})
 
 
+def _add_markdown_runs(paragraph, text: str) -> None:
+    """단락에 **굵게**·`코드` 인라인 서식을 반영해 run을 추가한다."""
+    import re
+    # **bold** 와 `code` 를 토큰으로 분리
+    tokens = re.split(r'(\*\*[^*]+\*\*|`[^`]+`)', text)
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok.startswith('**') and tok.endswith('**'):
+            run = paragraph.add_run(tok[2:-2])
+            run.bold = True
+        elif tok.startswith('`') and tok.endswith('`'):
+            run = paragraph.add_run(tok[1:-1])
+            run.font.name = 'Consolas'
+        else:
+            paragraph.add_run(tok)
+
+
+def write_word(path: str, content: str, title: str = "") -> str:
+    """마크다운 텍스트를 받아 서식이 살아있는 진짜 Word(.docx) 파일로 저장합니다.
+    제목(#)·목록(-, 1.)·굵게(**)·표(|)를 Word 서식으로 변환합니다.
+    경고: .docx 파일을 만들 때는 write_file 대신 반드시 이 도구를 사용해야 합니다.
+    write_file로 .docx 경로에 텍스트를 쓰면 깨진 파일이 됩니다."""
+    try:
+        import docx
+        doc = docx.Document()
+        if title:
+            doc.add_heading(title, level=0)
+
+        lines = content.replace('\r\n', '\n').split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # 빈 줄
+            if not stripped:
+                i += 1
+                continue
+
+            # 코드 펜스 ```
+            if stripped.startswith('```'):
+                i += 1
+                code_lines = []
+                while i < len(lines) and not lines[i].strip().startswith('```'):
+                    code_lines.append(lines[i])
+                    i += 1
+                p = doc.add_paragraph()
+                run = p.add_run('\n'.join(code_lines))
+                run.font.name = 'Consolas'
+                i += 1  # 닫는 ``` 건너뛰기
+                continue
+
+            # 표 (| a | b |) — 연속 행 수집
+            if stripped.startswith('|') and stripped.endswith('|'):
+                table_rows = []
+                while i < len(lines) and lines[i].strip().startswith('|'):
+                    cells = [c.strip() for c in lines[i].strip().strip('|').split('|')]
+                    # 구분선(---) 행은 건너뜀
+                    if not all(set(c) <= set('-: ') and c for c in cells):
+                        table_rows.append(cells)
+                    i += 1
+                if table_rows:
+                    cols = max(len(r) for r in table_rows)
+                    table = doc.add_table(rows=0, cols=cols)
+                    table.style = 'Light Grid Accent 1'
+                    for ri, row in enumerate(table_rows):
+                        wcells = table.add_row().cells
+                        for ci in range(cols):
+                            cell_text = row[ci] if ci < len(row) else ''
+                            wp = wcells[ci].paragraphs[0]
+                            _add_markdown_runs(wp, cell_text)
+                            if ri == 0:
+                                for r in wp.runs:
+                                    r.bold = True
+                continue
+
+            # 제목 (#, ##, ###)
+            if stripped.startswith('#'):
+                level = len(stripped) - len(stripped.lstrip('#'))
+                doc.add_heading(stripped.lstrip('#').strip(), level=min(level, 4))
+                i += 1
+                continue
+
+            # 순서 없는 목록 (-, *)
+            if stripped[:2] in ('- ', '* '):
+                p = doc.add_paragraph(style='List Bullet')
+                _add_markdown_runs(p, stripped[2:])
+                i += 1
+                continue
+
+            # 순서 있는 목록 (1. 2. ...)
+            import re as _re
+            m = _re.match(r'^(\d+)\.\s+(.*)', stripped)
+            if m:
+                p = doc.add_paragraph(style='List Number')
+                _add_markdown_runs(p, m.group(2))
+                i += 1
+                continue
+
+            # 일반 단락
+            p = doc.add_paragraph()
+            _add_markdown_runs(p, stripped)
+            i += 1
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        doc.save(path)
+        return json.dumps({"path": path, "message": "Word 문서 저장 완료 (서식 변환됨)",
+                           "chars": len(content)}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # ── PDF ───────────────────────────────────────────────────────
 
 def read_pdf(path: str, pages: str = "") -> str:
@@ -446,6 +559,32 @@ MANIFEST = [
         "handler": lambda a: append_word(a["path"], a["text"], a.get("heading", ""))
     },
     {
+        "name": "write_word",
+        "label": "Word 문서 작성",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "write_word",
+                "description": (
+                    "마크다운 텍스트를 서식이 살아있는 진짜 Word(.docx) 문서로 저장합니다. "
+                    "제목(#)·목록(-, 1.)·굵게(**)·표(|)를 Word 서식으로 변환합니다. "
+                    "★ .docx 파일을 만들 때는 반드시 이 도구를 사용하세요. "
+                    "write_file로 .docx 경로에 텍스트를 쓰면 열 수 없는 깨진 파일이 됩니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".docx 파일 경로"},
+                        "content": {"type": "string", "description": "마크다운 형식의 본문"},
+                        "title": {"type": "string", "description": "문서 제목 (선택)"}
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        "handler": lambda a: write_word(a["path"], a["content"], a.get("title", ""))
+    },
+    {
         "name": "read_pdf",
         "label": "PDF 읽기",
         "schema": {
@@ -489,7 +628,7 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "텍스트 파일에 내용을 씁니다. append=true 시 기존 내용 뒤에 추가합니다.",
+                "description": "텍스트 파일(.txt, .md, .csv, .log 등)에 내용을 씁니다. append=true 시 기존 내용 뒤에 추가합니다. ★ .docx는 write_word, .xlsx는 write_excel을 사용하세요 — 이 도구로 쓰면 깨집니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {

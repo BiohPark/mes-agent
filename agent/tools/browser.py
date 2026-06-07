@@ -7,6 +7,8 @@
 import json
 import tempfile
 import os
+import functools
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from playwright.sync_api import sync_playwright, Browser, Page, Playwright
@@ -16,6 +18,22 @@ from playwright.sync_api import sync_playwright, Browser, Page, Playwright
 _pw: Optional[Playwright] = None
 _browser: Optional[Browser] = None
 _page: Optional[Page] = None
+
+# ── 전용 단일 스레드 ──────────────────────────────────────────
+# Playwright sync API 객체(greenlet)는 자신을 생성한 스레드에만 묶인다.
+# 서버는 매 툴 호출을 기본 ThreadPool의 임의 워커 스레드에서 실행하므로,
+# 브라우저 작업을 항상 동일한 단일 스레드로 보내지 않으면
+# "Cannot switch to a different thread" 오류가 발생한다.
+# 모든 공개 핸들러를 이 executor에 위임해 한 스레드에서만 Playwright를 다룬다.
+_pw_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="playwright")
+
+
+def _on_pw_thread(fn):
+    """핸들러를 전용 Playwright 스레드에서 실행하고 결과를 동기적으로 반환한다."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return _pw_executor.submit(fn, *args, **kwargs).result()
+    return wrapper
 
 
 def _get_page(headless: bool = False) -> Page:
@@ -691,3 +709,7 @@ MANIFEST = [
         "handler": lambda a: browser_close()
     },
 ]
+
+# 모든 브라우저 핸들러를 전용 Playwright 스레드로 위임해 greenlet 스레드 충돌을 방지한다.
+for _tool in MANIFEST:
+    _tool["handler"] = _on_pw_thread(_tool["handler"])

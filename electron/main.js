@@ -67,6 +67,37 @@ function createWindow() {
   if (process.env.DEV_TOOLS === '1') mainWindow.webContents.openDevTools()
 }
 
+// ── 실행 중 창 가림 회피 (개선 아이디어 C) ──────────────────────
+// 렌더러가 agentState=running 일 때 'agent-busy', idle 일 때 'agent-idle' 를 보낸다.
+// mode: 'minimize'(자동 최소화) | 'translucent'(반투명) | 'off'(끄기)
+let _busyMode = 'minimize'
+let _wasMinimizedByAgent = false
+
+ipcMain.on('agent-busy', (_e, mode) => {
+  _busyMode = mode || 'minimize'
+  if (!mainWindow || _busyMode === 'off') return
+  if (_busyMode === 'minimize') {
+    if (!mainWindow.isMinimized()) {
+      _wasMinimizedByAgent = true
+      mainWindow.minimize()
+    }
+  } else if (_busyMode === 'translucent') {
+    mainWindow.setOpacity(0.15)
+    mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
+})
+
+ipcMain.on('agent-idle', () => {
+  if (!mainWindow) return
+  // 어떤 모드였든 화면 간섭 상태를 원복
+  if (_wasMinimizedByAgent && mainWindow.isMinimized()) {
+    mainWindow.restore()
+    _wasMinimizedByAgent = false
+  }
+  mainWindow.setOpacity(1)
+  mainWindow.setIgnoreMouseEvents(false)
+})
+
 app.whenReady().then(async () => {
   startPythonServer()
   createWindow()

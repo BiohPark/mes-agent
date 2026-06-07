@@ -86,14 +86,21 @@ _AUTONOMOUS_INSTRUCTION = (
     "너는 사내 업무자동화 데스크탑 에이전트야. "
     "도구 호출 전에 '~하겠습니다', '~할게요' 같은 예고 문구를 절대 쓰지 마라. "
     "바로 도구를 호출해 실행하고, 여러 단계가 필요하면 사용자 확인 없이 연속으로 실행해라. "
-    "모든 작업이 완료된 뒤에만 결과를 간략히 보고해라. "
     "브라우저 조작 시 browser_open 후 browser_get_interactive_elements로 실제 selector를 먼저 확인해라. "
     "CSS id/class보다 aria-label·placeholder·텍스트 기반 selector를 우선 사용해라. "
     "폼 제출은 버튼 클릭 대신 browser_press_key('Enter')를 사용해라. "
-    "selector 실패 시 같은 것을 반복하지 말고 즉시 다른 전략으로 전환해라."
+    "selector 실패 시 같은 것을 반복하지 말고 즉시 다른 전략으로 전환해라. "
+    "[끈질긴 문제 해결] 첫 시도가 실패해도 멈추거나 사용자에게 떠넘기지 마라. "
+    "도구가 오류를 반환하면 오류 메시지로 원인을 추론하고, 화면 OCR·UI Automation·read_file 등으로 "
+    "현재 상태를 직접 조사한 뒤, 원인에 맞는 다른 방법으로 재시도해라. 정보가 부족하면 직접 조사·검색해 해결책을 찾아라. "
+    "단순 보고로 끝내지 말고 근본 원인을 찾아 실제로 고치는 것을 목표로 해라. "
+    "[사용자 선택] 되돌릴 수 없거나 사용자 의도가 필요한 분기에서만 ask_user로 명확한 선택지를 제시해라. "
+    "스스로 조사해 알 수 있는 것은 묻지 말고 먼저 조사해라. "
+    "[종료 기준] 작업이 진짜 끝났거나 사용자 입력 없이는 더 진행할 수 없을 때만 멈추고, "
+    "그때는 시도한 것·막힌 지점·다음 선택지를 명확히 보고해라."
 )
 
-_MAX_STEPS = 20
+_MAX_STEPS = 40
 _CONTEXT_MAX_TOKENS = 128_000
 
 
@@ -334,6 +341,12 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                     await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
 
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+        else:
+            # for 루프가 break 없이 끝남 = 최대 단계 도달 (자연 종료 아님)
+            yield sse({"type": ev.TEXT, "content":
+                "\n\n[알림] 최대 실행 단계에 도달해 잠시 멈췄습니다. "
+                "계속 진행하려면 '계속'이라고 입력해 주세요."})
+            yield sse({"type": ev.AGENT_STATE, "state": "idle"})
 
     except Exception as e:
         yield sse({"type": ev.ERROR, "message": str(e)})
@@ -375,6 +388,22 @@ async def get_profile():
 async def switch_profile(name: str):
     set_active_profile(name)
     return {"active": name}
+
+
+# ── 모델 선택 (개선 아이디어 D) ───────────────────────────────
+
+@app.get("/models")
+async def get_models():
+    from agent.llm import list_available_models
+    return await asyncio.get_event_loop().run_in_executor(None, list_available_models)
+
+
+@app.post("/models/{name}")
+async def switch_model(name: str):
+    from agent.config import set_model
+    # "__default__" 은 오버라이드 해제(프로파일 기본 모델로 복귀)
+    set_model(None if name == "__default__" else name)
+    return {"model": get_model()}
 
 
 @app.post("/chat")
