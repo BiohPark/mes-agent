@@ -117,7 +117,7 @@
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 (`.docx`/`.xlsx` 금지 — 깨짐) |
 
-### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (7종)
+### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (11종)
 
 > **기존 Office 문서를 열고·편집·저장**하는 고품질 경로. 설치된 Word/Excel을 COM으로 구동(서식·수식·수정추적·메모·PDF 완전 충실도)하고, COM 불가 시 `python-docx`/`openpyxl`로 자동 폴백한다.
 >
@@ -128,14 +128,26 @@
 | 툴 이름 | 기능 |
 |---------|------|
 | `word_edit_text(path, find, replace)` | 기존 Word 찾아바꾸기(서식 보존). COM→python-docx 폴백 |
+| `word_insert_text(path, text, after_anchor)` | 기존 Word에 텍스트 삽입(앵커 뒤/문서 끝). RAG/URL 조사 내용 채우기. COM→docx 폴백 |
 | `word_export_pdf(path, pdf_path)` | Word→PDF 내보내기 (COM 필요) |
 | `word_accept_all_changes(path)` | 모든 수정추적 수락 후 저장 (COM 필요) |
 | `word_add_comment(path, anchor_text, comment)` | 특정 텍스트에 검토 메모 추가 (COM 필요) |
 | `excel_set_cells(path, cells, sheet)` | 셀/수식 편집 후 저장. `{"B2":"=A1+A2"}`. COM→openpyxl 폴백 |
 | `excel_get_range(path, cell_range, sheet)` | 범위 값 읽기(`'A1:C10'`). COM→openpyxl 폴백 |
-| `office_close()` | Word/Excel COM 세션 종료(좀비 프로세스 정리) |
+| `ppt_add_slide(path, title, body, layout)` | 슬라이드 추가(제목+본문). 파일 없으면 생성 (python-pptx) |
+| `ppt_replace_text(path, find, replace)` | 모든 슬라이드 찾아바꾸기 (python-pptx) |
+| `ppt_export_pdf(path, pdf_path)` | PPT→PDF 내보내기 (PowerPoint COM 필요) |
+| `office_close()` | Word/Excel/PowerPoint COM 세션 종료(좀비 프로세스 정리) |
 
+> **클라우드 문서**(SharePoint/OneDrive/365)는 `office_web_open(url)`(browser.py)로 편집화면을 연 뒤 키보드(Ctrl+H/Ctrl+S)+UI Automation으로 편집한다. 로컬 파일은 위 COM 도구가 더 정확하다. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동.
+>
 > COM은 `win32com` 동적 디스패치에서 `Find.Execute`의 키워드 인자(특히 `Replace`)가 바인딩되지 않으므로 **완전 위치 인자**로 호출한다(`office_com.py` 참조). 편집 후 좀비 프로세스 방지를 위해 작업 종료 시 `office_close()`를 호출한다.
+
+### 보안 (S1~S5)
+
+- **인증**: 서버는 `AGENT_AUTH_TOKEN`이 설정되면 모든 요청에 `X-Auth-Token` 헤더(또는 `?token=`)를 요구한다. Electron(main.js)이 실행마다 토큰을 생성·주입하므로 패키지 앱에서는 항상 강제된다. 미설정(직접 실행/테스트) 시 미강제.
+- **Origin 차단**: 원격 http(s) Origin의 요청은 403. 악성 웹페이지發 조종을 차단한다.
+- **파괴적 작업**: `run_command`/`start_process`의 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료)은 차단되고, 사용자 확인 후 `force=true`로만 실행한다. `write_file`은 시스템 보호경로 쓰기를 막고, 기존 파일 덮어쓰기 전 자동 백업한다(`agent/tools/_safety.py`).
 
 ### Obsidian PKM — Vault 탐색·편집·정리 (16종)
 

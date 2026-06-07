@@ -87,3 +87,31 @@ class TestComRoundtrip:
         oc.office_close()
         # COM이면 수식이 계산되어 6, openpyxl 폴백이면 '=A2-B2' 문자열
         assert got["values"][0][0] in (6, 6.0, "=A2-B2")
+
+    def test_word_insert_text_com(self, tmp_path):
+        path = tmp_path / "ins.docx"
+        write_word(str(path), "# 제목\n\n결론 부분", "T")
+        res = json.loads(oc.word_insert_text(str(path), "삽입된 문장입니다"))
+        assert res.get("backup")
+        assert "삽입된 문장입니다" in read_word(str(path))
+        oc.office_close()
+
+
+# ── PowerPoint (python-pptx — Office 설치 불필요) ─────────────
+
+class TestPpt:
+    def test_ppt_add_and_replace(self, tmp_path):
+        path = tmp_path / "deck.pptx"
+        r1 = json.loads(oc.ppt_add_slide(str(path), "제목", "본문 PLACEHOLDER 줄"))
+        assert "error" not in r1
+        assert zipfile.is_zipfile(path)
+        r2 = json.loads(oc.ppt_replace_text(str(path), "PLACEHOLDER", "확정값"))
+        assert r2["occurrences"] >= 1
+        from agent.tools.document import read_ppt_content
+        assert "확정값" in read_ppt_content(str(path))
+
+    def test_ppt_validates_fake(self, tmp_path):
+        fake = tmp_path / "fake.pptx"
+        fake.write_text("not a real pptx", encoding="utf-8")
+        res = json.loads(oc.ppt_replace_text(str(fake), "a", "b"))
+        assert "error" in res

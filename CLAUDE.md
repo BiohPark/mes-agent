@@ -93,16 +93,19 @@
 | 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
 | IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화 |
 | 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<360px) 세로 컴팩트 카드(완료 단계 접기), 넓으면 2D 그래프 |
-| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | 설치된 Word/Excel을 COM으로 구동(서식·수식·수정추적·메모·PDF 완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl 자동 폴백, 편집 전 자동 백업, OOXML 검증 (7종) |
+| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증 (11종) |
+| Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
+| 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
+| 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
 
-**총 툴 수: 117종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 122종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
 | `ocr.py` | 1 |
 | `screen.py` | 9 |
 | `desktop.py` | 19 |
-| `browser.py` | 22 |
+| `browser.py` | 23 |
 | `process.py` | 9 |
 | `document.py` | 14 |
 | `obsidian_rag.py` | 18 |
@@ -111,7 +114,7 @@
 | `obsidian_session.py` | 4 |
 | `vision.py` | 2 |
 | `ui_automation.py` | 3 |
-| `office_com.py` | 7 |
+| `office_com.py` | 11 |
 
 ---
 
@@ -315,7 +318,8 @@ mes-agent/
 │       ├── browser.py      ← Playwright 브라우저 자동화 (22종) ✅
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
 │       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx (14종) ✅
-│       ├── office_com.py    ← MS Office COM 편집(찾아바꾸기·셀편집·수식·메모·PDF) + 폴백 (7종) ✅
+│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT 찾아바꾸기·삽입·셀/수식·메모·PDF) + 폴백 (11종) ✅
+│       ├── _safety.py       ← 파괴적 작업 가드(위험명령·보호경로·백업) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
 │       └── workflow.py     ← 워크플로우 init·set_step·add/update/remove_step·reorder (6종) ✅
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)

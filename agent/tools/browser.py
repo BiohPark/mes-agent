@@ -42,10 +42,15 @@ def _get_page(headless: bool = False) -> Page:
         if _browser is None or not _browser.is_connected():
             if _pw is None:
                 _pw = sync_playwright().start()
-            _browser = _pw.chromium.launch(
+            # BROWSER_CHANNEL=msedge 로 실제 Edge를 구동(사내 SSO·Office Online 호환 ↑)
+            _channel = os.environ.get("BROWSER_CHANNEL", "").strip()
+            _launch_kwargs = dict(
                 headless=headless,
-                args=["--disable-blink-features=AutomationControlled"]
+                args=["--disable-blink-features=AutomationControlled"],
             )
+            if _channel:
+                _launch_kwargs["channel"] = _channel
+            _browser = _pw.chromium.launch(**_launch_kwargs)
         context = _browser.new_context(
             viewport={"width": 1280, "height": 900},
             locale="ko-KR",
@@ -71,6 +76,37 @@ def browser_open(url: str, headless: bool = False) -> str:
     page.goto(url, wait_until="domcontentloaded", timeout=30_000)
     return json.dumps({"url": page.url, "title": page.title(),
                        "message": f"페이지 로드 완료: {page.title()}"})
+
+
+def office_web_open(url: str, timeout: int = 60000) -> str:
+    """Office Online(SharePoint/OneDrive/365) 문서를 브라우저로 열고 편집 화면이
+    뜰 때까지 기다린 뒤 스크린샷을 저장합니다(클라우드 문서 편집의 진입점).
+    이후 편집은 키보드 단축키(Ctrl+H 찾아바꾸기, Ctrl+S 저장)와 UI Automation/OCR로 진행하세요.
+    환경변수 BROWSER_CHANNEL=msedge 로 실제 Edge에서 열 수 있습니다(사내 SSO 호환)."""
+    def _do():
+        page = _get_page()
+        page.goto(url, wait_until="load", timeout=timeout)
+        try:
+            page.wait_for_load_state("networkidle", timeout=timeout)
+        except Exception:
+            pass  # Office Online은 지속 연결로 networkidle이 안 올 수 있음 — 무시
+        # Office 편집 캔버스가 보통 iframe 안에 있음을 알린다
+        fd, shot = tempfile.mkstemp(suffix=".png", prefix="office_web_")
+        os.close(fd)
+        try:
+            page.screenshot(path=shot, full_page=False)
+        except Exception:
+            shot = ""
+        return json.dumps({
+            "url": page.url,
+            "title": page.title(),
+            "screenshot": shot,
+            "frames": len(page.frames),
+            "hint": ("편집 화면 진입 완료. 찾아바꾸기는 Ctrl+H, 저장은 Ctrl+S(자동저장이면 불필요). "
+                     "정확한 클릭이 필요하면 ui_inspect_window/analyze_screen으로 좌표를 먼저 확인하세요. "
+                     "로컬 파일이면 웹 대신 word_edit_text(COM)가 더 정확합니다."),
+        }, ensure_ascii=False)
+    return _safe_call(_do)
 
 
 def browser_navigate(url: str) -> str:
@@ -707,6 +743,31 @@ MANIFEST = [
             }
         },
         "handler": lambda a: browser_close()
+    },
+    {
+        "name": "office_web_open",
+        "label": "Office Online 열기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "office_web_open",
+                "description": (
+                    "Office Online(SharePoint/OneDrive/365) 문서를 브라우저로 열고 편집 화면 준비 후 "
+                    "스크린샷을 저장합니다. 이후 편집은 키보드(Ctrl+H 찾아바꾸기, Ctrl+S 저장)와 "
+                    "UI Automation/OCR로 진행하세요. ★ 로컬 파일은 word_edit_text(COM)가 더 정확합니다. "
+                    "BROWSER_CHANNEL=msedge 환경변수로 실제 Edge에서 열 수 있습니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Office Online 문서 URL"},
+                        "timeout": {"type": "integer", "description": "ms (기본 60000)"},
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
+        "handler": lambda a: office_web_open(a["url"], a.get("timeout", 60000)),
     },
 ]
 

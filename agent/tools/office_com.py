@@ -59,6 +59,7 @@ def _on_com_thread(fn):
 # ── COM 앱 싱글턴 (전용 스레드에서만 접근) ────────────────────
 _word_app = None
 _excel_app = None
+_ppt_app = None
 
 
 def _get_word():
@@ -84,10 +85,23 @@ def _get_excel():
     return _excel_app
 
 
+def _get_ppt():
+    global _ppt_app
+    import win32com.client as win32
+    if _ppt_app is None:
+        _ppt_app = win32.dynamic.Dispatch("PowerPoint.Application")
+        # PowerPoint는 일부 작업에서 비가시 상태를 거부하므로 최소화로 띄운다
+        try:
+            _ppt_app.WindowState = 2  # ppWindowMinimized
+        except Exception:
+            pass
+    return _ppt_app
+
+
 def _quit_apps():
-    """프로세스 종료 시 좀비 WINWORD.EXE/EXCEL.EXE 방지."""
-    global _word_app, _excel_app
-    for app in (_word_app, _excel_app):
+    """프로세스 종료 시 좀비 WINWORD.EXE/EXCEL.EXE/POWERPNT.EXE 방지."""
+    global _word_app, _excel_app, _ppt_app
+    for app in (_word_app, _excel_app, _ppt_app):
         try:
             if app is not None:
                 app.Quit()
@@ -95,6 +109,7 @@ def _quit_apps():
             pass
     _word_app = None
     _excel_app = None
+    _ppt_app = None
 
 
 def _close_apps_on_com_thread():
@@ -217,6 +232,62 @@ def word_edit_text(path: str, find: str, replace: str,
             "occurrences": n, "com_error": com_err,
             "message": "Word 찾아바꾸기 완료(python-docx 폴백 — 일부 서식은 단순화될 수 있음)",
         }, ensure_ascii=False)
+    except Exception as e2:
+        return json.dumps({"error": f"COM/라이브러리 모두 실패: {com_err} | {e2}",
+                           "backup": backup}, ensure_ascii=False)
+
+
+def word_insert_text(path: str, text: str, after_anchor: str = "") -> str:
+    """기존 Word 문서에 텍스트를 삽입하고 저장합니다.
+    after_anchor가 있으면 그 텍스트 뒤에, 없으면 문서 끝에 삽입합니다.
+    RAG/URL로 조사한 내용을 기존 보고서에 채워 넣을 때 사용. 편집 전 자동 백업."""
+    path = _abspath(path)
+    err = _validate_ooxml(path)
+    if err:
+        return json.dumps({"error": err}, ensure_ascii=False)
+    backup = _backup(path)
+
+    # 1) COM 경로
+    if _HAS_PYWIN32:
+        try:
+            word = _get_word()
+            doc = word.Documents.Open(path)
+            try:
+                if after_anchor:
+                    rng = doc.Content
+                    f = rng.Find
+                    f.ClearFormatting()
+                    found = f.Execute(after_anchor, False, False, False, False, False, True, 1)
+                    if not found:
+                        doc.Close(SaveChanges=0)
+                        return json.dumps({"error": f"앵커 텍스트를 찾지 못했습니다: {after_anchor[:50]}",
+                                           "backup": backup}, ensure_ascii=False)
+                    rng.InsertAfter("\n" + text)
+                else:
+                    rng = doc.Content
+                    rng.Collapse(0)  # wdCollapseEnd
+                    rng.InsertAfter("\n" + text)
+                doc.Save()
+            finally:
+                doc.Close()
+            return json.dumps({"path": path, "engine": "com", "backup": backup,
+                               "inserted_chars": len(text),
+                               "message": "Word 텍스트 삽입 완료"}, ensure_ascii=False)
+        except Exception as e:
+            com_err = str(e)
+    else:
+        com_err = "pywin32/COM 미사용"
+
+    # 2) python-docx 폴백 (문서 끝에만 추가)
+    try:
+        import docx
+        doc = docx.Document(path)
+        doc.add_paragraph(text)
+        doc.save(path)
+        return json.dumps({"path": path, "engine": "docx", "backup": backup,
+                           "inserted_chars": len(text), "com_error": com_err,
+                           "note": "폴백은 문서 끝에만 삽입합니다(after_anchor 미지원)",
+                           "message": "Word 텍스트 삽입 완료(python-docx 폴백)"}, ensure_ascii=False)
     except Exception as e2:
         return json.dumps({"error": f"COM/라이브러리 모두 실패: {com_err} | {e2}",
                            "backup": backup}, ensure_ascii=False)
@@ -389,8 +460,109 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
+# ── PowerPoint 편집 ───────────────────────────────────────────
+
+def ppt_replace_text(path: str, find: str, replace: str) -> str:
+    """PowerPoint(.pptx) 모든 슬라이드에서 텍스트를 찾아 바꾸고 저장합니다(python-pptx).
+    편집 전 자동 백업."""
+    path = _abspath(path)
+    err = _validate_ooxml(path)
+    if err:
+        return json.dumps({"error": err}, ensure_ascii=False)
+    backup = _backup(path)
+    try:
+        from pptx import Presentation
+        prs = Presentation(path)
+        n = 0
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if not shape.has_text_frame:
+                    continue
+                for para in shape.text_frame.paragraphs:
+                    # 1) run 단위 치환(서식 보존)
+                    for run in para.runs:
+                        if find in run.text:
+                            n += run.text.count(find)
+                            run.text = run.text.replace(find, replace)
+                    # 2) run 경계에 걸친 경우: 단락 전체에서 치환(서식 단순화)
+                    joined = "".join(r.text for r in para.runs)
+                    if find in joined and para.runs:
+                        n += joined.count(find)
+                        para.runs[0].text = joined.replace(find, replace)
+                        for r in para.runs[1:]:
+                            r.text = ""
+        prs.save(path)
+        return json.dumps({"path": path, "engine": "python-pptx", "backup": backup,
+                           "occurrences": n, "message": "PPT 찾아바꾸기 완료"}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e), "backup": backup}, ensure_ascii=False)
+
+
+def ppt_add_slide(path: str, title: str = "", body: str = "", layout: int = 1) -> str:
+    """PowerPoint에 슬라이드를 추가합니다(제목 + 줄바꿈 구분 본문). 파일이 없으면 새로 생성.
+    layout: 0=제목, 1=제목+내용(기본), 5=제목만, 6=빈 화면."""
+    path = _abspath(path)
+    if os.path.exists(path):
+        err = _validate_ooxml(path)
+        if err:
+            return json.dumps({"error": err}, ensure_ascii=False)
+    backup = _backup(path)
+    try:
+        from pptx import Presentation
+        prs = Presentation(path) if os.path.exists(path) else Presentation()
+        layout = max(0, min(layout, len(prs.slide_layouts) - 1))
+        slide = prs.slides.add_slide(prs.slide_layouts[layout])
+        if title and slide.shapes.title is not None:
+            slide.shapes.title.text = title
+        if body:
+            # 본문 플레이스홀더 탐색
+            ph = None
+            for shape in slide.placeholders:
+                if shape.placeholder_format.idx != 0 and shape.has_text_frame:
+                    ph = shape
+                    break
+            if ph is not None:
+                lines = body.split("\n")
+                tf = ph.text_frame
+                tf.text = lines[0]
+                for line in lines[1:]:
+                    p = tf.add_paragraph()
+                    p.text = line
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        prs.save(path)
+        return json.dumps({"path": path, "engine": "python-pptx", "backup": backup,
+                           "slides": len(prs.slides),
+                           "message": "슬라이드 추가 완료"}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e), "backup": backup}, ensure_ascii=False)
+
+
+def ppt_export_pdf(path: str, pdf_path: str = "") -> str:
+    """PowerPoint를 PDF로 내보냅니다. (설치된 PowerPoint 필요)"""
+    path = _abspath(path)
+    err = _validate_ooxml(path)
+    if err:
+        return json.dumps({"error": err}, ensure_ascii=False)
+    if not _HAS_PYWIN32:
+        return _no_com_msg("PPT PDF 내보내기")
+    if not pdf_path:
+        pdf_path = str(Path(path).with_suffix(".pdf"))
+    pdf_path = _abspath(pdf_path)
+    try:
+        ppt = _get_ppt()
+        pres = ppt.Presentations.Open(path, ReadOnly=True, WithWindow=False)
+        try:
+            pres.SaveAs(pdf_path, 32)  # ppSaveAsPDF=32
+        finally:
+            pres.Close()
+        return json.dumps({"path": pdf_path, "engine": "com",
+                           "message": "PPT→PDF 내보내기 완료"}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e), "engine": "com"}, ensure_ascii=False)
+
+
 def office_close() -> str:
-    """열려있는 Word/Excel COM 세션을 종료합니다(좀비 프로세스 정리)."""
+    """열려있는 Word/Excel/PowerPoint COM 세션을 종료합니다(좀비 프로세스 정리)."""
     if not _HAS_PYWIN32:
         return json.dumps({"message": "COM 세션 없음"}, ensure_ascii=False)
     _quit_apps()
@@ -427,6 +599,31 @@ MANIFEST = [
         },
         "handler": lambda a: word_edit_text(a["path"], a["find"], a["replace"],
                                             a.get("match_case", False), a.get("whole_word", False)),
+    },
+    {
+        "name": "word_insert_text",
+        "label": "Word 텍스트 삽입",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "word_insert_text",
+                "description": (
+                    "기존 Word 문서에 텍스트를 삽입하고 저장합니다. after_anchor가 있으면 그 텍스트 뒤에, "
+                    "없으면 문서 끝에 삽입. RAG/URL 조사 내용을 기존 보고서에 채워 넣을 때 사용. "
+                    "삽입할 때 출처(URL/노트 경로)를 함께 적으면 좋습니다. COM 우선, python-docx 폴백(끝에만)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".docx 경로"},
+                        "text": {"type": "string", "description": "삽입할 텍스트"},
+                        "after_anchor": {"type": "string", "description": "이 텍스트 뒤에 삽입(생략 시 문서 끝)"},
+                    },
+                    "required": ["path", "text"],
+                },
+            },
+        },
+        "handler": lambda a: word_insert_text(a["path"], a["text"], a.get("after_anchor", "")),
     },
     {
         "name": "word_export_pdf",
@@ -531,6 +728,70 @@ MANIFEST = [
             },
         },
         "handler": lambda a: excel_get_range(a["path"], a["cell_range"], a.get("sheet", "")),
+    },
+    {
+        "name": "ppt_replace_text",
+        "label": "PPT 찾아바꾸기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "ppt_replace_text",
+                "description": "PowerPoint(.pptx) 모든 슬라이드에서 텍스트를 찾아 바꾸고 저장합니다. 편집 전 자동 백업.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".pptx 경로"},
+                        "find": {"type": "string"},
+                        "replace": {"type": "string"},
+                    },
+                    "required": ["path", "find", "replace"],
+                },
+            },
+        },
+        "handler": lambda a: ppt_replace_text(a["path"], a["find"], a["replace"]),
+    },
+    {
+        "name": "ppt_add_slide",
+        "label": "PPT 슬라이드 추가",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "ppt_add_slide",
+                "description": ("PowerPoint에 슬라이드를 추가합니다(제목 + 줄바꿈 구분 본문). "
+                                "파일이 없으면 새로 생성. layout: 1=제목+내용(기본)."),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".pptx 경로"},
+                        "title": {"type": "string", "description": "슬라이드 제목"},
+                        "body": {"type": "string", "description": "본문(줄바꿈으로 단락 구분)"},
+                        "layout": {"type": "integer", "description": "0=제목,1=제목+내용,5=제목만,6=빈화면"},
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        "handler": lambda a: ppt_add_slide(a["path"], a.get("title", ""), a.get("body", ""), a.get("layout", 1)),
+    },
+    {
+        "name": "ppt_export_pdf",
+        "label": "PPT→PDF 내보내기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "ppt_export_pdf",
+                "description": "PowerPoint(.pptx)를 PDF로 내보냅니다. 설치된 PowerPoint(COM) 필요.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".pptx 경로"},
+                        "pdf_path": {"type": "string", "description": "출력 PDF 경로(생략 시 같은 이름)"},
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        "handler": lambda a: ppt_export_pdf(a["path"], a.get("pdf_path", "")),
     },
     {
         "name": "office_close",
