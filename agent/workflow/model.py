@@ -25,7 +25,8 @@ class Workflow:
     thread_id: str
     task_type: str
     title: str
-    steps: list = field(default_factory=list)  # list[WorkflowStep]
+    steps: list = field(default_factory=list)       # list[WorkflowStep]
+    connections: list = field(default_factory=list) # list[dict] — 프론트엔드 전달용 (그래프 포맷 로드 시 채워짐)
 
     def to_dict(self) -> dict:
         return {
@@ -43,6 +44,7 @@ class Workflow:
                 }
                 for s in self.steps
             ],
+            "connections": list(self.connections),
         }
 
     @classmethod
@@ -62,6 +64,7 @@ class Workflow:
             task_type=data["task_type"],
             title=data["title"],
             steps=steps,
+            connections=data.get("connections", []),
         )
 
 

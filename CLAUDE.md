@@ -58,7 +58,7 @@
 | 에이전트 상태 바 | `electron/renderer/chat.js` + `style.css` | thinking/running/waiting/idle 상태 표시, 중단 버튼 |
 | 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` | 토큰 추정치 헤더 바 표시 |
 | 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기, **단계 카드 클릭 시 상세 펼침**, **편집모드(제목·단계 CUD·드래그앤드롭 순서변경)** |
-| 워크플로우 편집 툴 | `agent/tools/workflow.py` | `workflow_init`·`set_step`·**`add_step`·`update_step`·`remove_step`·`reorder`** (6종), AI 코웍 편집, **내부적으로 그래프 모델 사용 (Phase 1 완결)** |
+| 워크플로우 편집 툴 | `agent/tools/workflow.py` | `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder`·**`add_connection`·`remove_connection`** (8종), AI 코웍 편집, 내부 그래프 모델 |
 | 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장, **기본 템플릿 최초 1회 영속화로 단계 id 고정** |
 | 워크플로우 그래프 모델 (Phase 1 ✅) | `agent/workflow/model.py` | `WorkflowNode`·`WorkflowConnection`·`WorkflowDefinition`(불변)·`NodeState`·`WorkflowRunState`(가변), `migrate_linear_to_graph()` |
 | 그래프 스토리지 + 마이그레이션 | `agent/workflow/storage.py` | `detect_format`·`load_definition`·`save_definition`·`load_run_state`·`save_run_state`, 구 포맷 자동 마이그레이션, 하위 호환 |
@@ -70,7 +70,7 @@
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
 
-**총 툴 수: 87종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 89종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -82,7 +82,7 @@
 | `document.py` | 9 |
 | `obsidian_rag.py` | 7 |
 | `interaction.py` | 1 |
-| `workflow.py` | 6 |
+| `workflow.py` | 8 |
 | `obsidian_session.py` | 4 |
 
 ---

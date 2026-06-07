@@ -297,3 +297,149 @@ class TestWorkflowReorder:
         assert ids[1] == result_ids[0]
         assert ids[0] in result_ids
         assert ids[2] in result_ids
+
+
+# ── workflow_add_connection ───────────────────────────────────────────
+
+def _call_add_conn(task_type, thread_id, from_node, to_node, from_output=0):
+    from agent.tools.workflow import _workflow_add_connection
+    return json.loads(_workflow_add_connection(task_type, thread_id, from_node, to_node, from_output))
+
+
+def _call_remove_conn(task_type, thread_id, from_node, to_node):
+    from agent.tools.workflow import _workflow_remove_connection
+    return json.loads(_workflow_remove_connection(task_type, thread_id, from_node, to_node))
+
+
+class TestWorkflowAddConnection:
+    def _init(self, vault):
+        """노드 3개, 연결 없는 Definition 생성."""
+        from agent.workflow.model import WorkflowDefinition, WorkflowNode
+        defn = WorkflowDefinition(
+            id=_TID, task_type=_TT, title="연결 테스트",
+            nodes=[
+                WorkflowNode(id="nA", title="A"),
+                WorkflowNode(id="nB", title="B"),
+                WorkflowNode(id="nC", title="C"),
+            ],
+            connections=[],
+        )
+        wf_storage.save_definition(defn)
+
+    def test_returns_ok(self, vault):
+        self._init(vault)
+        r = _call_add_conn(_TT, _TID, "nA", "nB")
+        assert r["ok"] is True
+
+    def test_connection_added_to_definition(self, vault):
+        self._init(vault)
+        _call_add_conn(_TT, _TID, "nA", "nB")
+        defn = wf_storage.load_definition(_TT, _TID)
+        conns = [(c.from_node, c.to_node) for c in defn.connections]
+        assert ("nA", "nB") in conns
+
+    def test_from_output_stored(self, vault):
+        self._init(vault)
+        _call_add_conn(_TT, _TID, "nA", "nB", from_output=1)
+        defn = wf_storage.load_definition(_TT, _TID)
+        conn = next(c for c in defn.connections if c.from_node == "nA" and c.to_node == "nB")
+        assert conn.from_output == 1
+
+    def test_multiple_connections_from_same_node(self, vault):
+        """분기: 같은 노드에서 두 갈래 연결이 가능해야 한다."""
+        self._init(vault)
+        _call_add_conn(_TT, _TID, "nA", "nB", from_output=0)
+        _call_add_conn(_TT, _TID, "nA", "nC", from_output=1)
+        defn = wf_storage.load_definition(_TT, _TID)
+        from_a = [c for c in defn.connections if c.from_node == "nA"]
+        assert len(from_a) == 2
+
+    def test_duplicate_connection_rejected(self, vault):
+        self._init(vault)
+        _call_add_conn(_TT, _TID, "nA", "nB", from_output=0)
+        r = _call_add_conn(_TT, _TID, "nA", "nB", from_output=0)
+        assert r["ok"] is False
+
+    def test_unknown_from_node_rejected(self, vault):
+        self._init(vault)
+        r = _call_add_conn(_TT, _TID, "nX", "nB")
+        assert r["ok"] is False
+
+    def test_unknown_to_node_rejected(self, vault):
+        self._init(vault)
+        r = _call_add_conn(_TT, _TID, "nA", "nZ")
+        assert r["ok"] is False
+
+    def test_connections_in_returned_workflow(self, vault):
+        """반환된 workflow dict에 connections 배열이 포함되어야 한다."""
+        self._init(vault)
+        r = _call_add_conn(_TT, _TID, "nA", "nB")
+        assert "connections" in r["workflow"]
+        assert len(r["workflow"]["connections"]) == 1
+
+
+# ── workflow_remove_connection ────────────────────────────────────────
+
+class TestWorkflowRemoveConnection:
+    def _init(self, vault):
+        from agent.workflow.model import WorkflowDefinition, WorkflowNode, WorkflowConnection
+        defn = WorkflowDefinition(
+            id=_TID, task_type=_TT, title="삭제 테스트",
+            nodes=[
+                WorkflowNode(id="nA", title="A"),
+                WorkflowNode(id="nB", title="B"),
+                WorkflowNode(id="nC", title="C"),
+            ],
+            connections=[
+                WorkflowConnection(from_node="nA", to_node="nB"),
+                WorkflowConnection(from_node="nB", to_node="nC"),
+            ],
+        )
+        wf_storage.save_definition(defn)
+
+    def test_returns_ok(self, vault):
+        self._init(vault)
+        r = _call_remove_conn(_TT, _TID, "nA", "nB")
+        assert r["ok"] is True
+
+    def test_connection_removed(self, vault):
+        self._init(vault)
+        _call_remove_conn(_TT, _TID, "nA", "nB")
+        defn = wf_storage.load_definition(_TT, _TID)
+        conns = [(c.from_node, c.to_node) for c in defn.connections]
+        assert ("nA", "nB") not in conns
+
+    def test_other_connections_preserved(self, vault):
+        self._init(vault)
+        _call_remove_conn(_TT, _TID, "nA", "nB")
+        defn = wf_storage.load_definition(_TT, _TID)
+        conns = [(c.from_node, c.to_node) for c in defn.connections]
+        assert ("nB", "nC") in conns
+
+    def test_nonexistent_connection_rejected(self, vault):
+        self._init(vault)
+        r = _call_remove_conn(_TT, _TID, "nA", "nC")
+        assert r["ok"] is False
+
+    def test_connections_in_returned_workflow(self, vault):
+        self._init(vault)
+        r = _call_remove_conn(_TT, _TID, "nA", "nB")
+        assert "connections" in r["workflow"]
+        assert len(r["workflow"]["connections"]) == 1
+
+
+# ── connections 필드가 merged_dict에 포함되는지 ───────────────────────
+
+class TestConnectionsInWorkflowDict:
+    def test_init_result_has_connections(self, vault):
+        r = _call_init(_TT, _TID, "제목", [{"title": "A"}, {"title": "B"}])
+        assert "connections" in r["workflow"]
+
+    def test_connections_match_sequential_order(self, vault):
+        r = _call_init(_TT, _TID, "제목", [{"title": "A"}, {"title": "B"}, {"title": "C"}])
+        conns = r["workflow"]["connections"]
+        ids = [s["id"] for s in r["workflow"]["steps"]]
+        assert conns[0]["from_node"] == ids[0]
+        assert conns[0]["to_node"] == ids[1]
+        assert conns[1]["from_node"] == ids[1]
+        assert conns[1]["to_node"] == ids[2]
