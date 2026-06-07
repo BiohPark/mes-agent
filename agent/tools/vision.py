@@ -45,8 +45,7 @@ def _call_llm(prompt: str, image_bytes: bytes) -> str:
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}}
             ]
-        }],
-        max_tokens=2048
+        }]
     )
     return resp.choices[0].message.content or ""
 
