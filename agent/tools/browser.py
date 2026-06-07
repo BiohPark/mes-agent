@@ -78,14 +78,34 @@ def browser_open(url: str, headless: bool = False) -> str:
                        "message": f"페이지 로드 완료: {page.title()}"})
 
 
+def _resolve_doc_url(url: str) -> str:
+    """절대 URL이면 그대로, 상대경로면 .env의 SHAREPOINT_BASE_URL 기준으로 합성한다."""
+    u = (url or "").strip()
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    base = os.environ.get("SHAREPOINT_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return f"{base}/{u.lstrip('/')}"
+    return u  # 베이스 미설정 — 그대로 두면 goto가 명확히 실패
+
+
 def office_web_open(url: str, timeout: int = 60000) -> str:
     """Office Online(SharePoint/OneDrive/365) 문서를 브라우저로 열고 편집 화면이
     뜰 때까지 기다린 뒤 스크린샷을 저장합니다(클라우드 문서 편집의 진입점).
+    url이 상대경로면 .env의 SHAREPOINT_BASE_URL을 앞에 붙입니다.
     이후 편집은 키보드 단축키(Ctrl+H 찾아바꾸기, Ctrl+S 저장)와 UI Automation/OCR로 진행하세요.
     환경변수 BROWSER_CHANNEL=msedge 로 실제 Edge에서 열 수 있습니다(사내 SSO 호환)."""
+    resolved = _resolve_doc_url(url)
+    if not (resolved.startswith("http://") or resolved.startswith("https://")):
+        return json.dumps({
+            "error": "절대 URL이 아니고 SHAREPOINT_BASE_URL도 설정돼 있지 않습니다. "
+                     ".env에 SHAREPOINT_BASE_URL을 넣거나 전체 URL을 전달하세요.",
+            "given": url,
+        }, ensure_ascii=False)
+
     def _do():
         page = _get_page()
-        page.goto(url, wait_until="load", timeout=timeout)
+        page.goto(resolved, wait_until="load", timeout=timeout)
         try:
             page.wait_for_load_state("networkidle", timeout=timeout)
         except Exception:
