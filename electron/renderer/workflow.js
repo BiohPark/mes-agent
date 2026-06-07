@@ -22,6 +22,7 @@ let _panelWidth = 300
 let _editMode = false
 let _editDraft = null
 let _dragIdx = null
+let _watcherES = null   // 파일 변경 감지 EventSource
 
 // ── 탭 전환 ─────────────────────────────────────────────────
 
@@ -231,10 +232,44 @@ function _isLinearConnections(steps, conns) {
 }
 
 function clearWorkflow() {
+  _stopFileWatcher()
   _currentWorkflow = null
   workflowContent.classList.add('hidden')
   workflowEmpty.classList.remove('hidden')
   workflowStepsEl.innerHTML = ''
+}
+
+// ── 파일 변경 감지 (SSE) ──────────────────────────────────────
+
+function _startFileWatcher(taskType, threadId) {
+  _stopFileWatcher()
+  if (!taskType || !threadId) return
+  const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+  _watcherES = new EventSource(`${base}/threads/${taskType}/${threadId}/workflow/events`)
+  _watcherES.onmessage = e => {
+    try {
+      const evt = JSON.parse(e.data)
+      if (evt.type === 'workflow_update' && evt.workflow) {
+        if (_editMode) {
+          _currentWorkflow = evt.workflow  // 편집 중에는 캐시만 갱신
+        } else {
+          renderWorkflow(evt.workflow)
+        }
+      }
+    } catch {}
+  }
+  _watcherES.onerror = () => {
+    if (_watcherES && _watcherES.readyState === EventSource.CLOSED) {
+      _watcherES = null
+    }
+  }
+}
+
+function _stopFileWatcher() {
+  if (_watcherES) {
+    _watcherES.close()
+    _watcherES = null
+  }
 }
 
 function escapeWf(str) {
@@ -415,14 +450,19 @@ function _cancelEdit() {
 
 async function loadWorkflowForThread(taskType, threadId) {
   if (_editMode) _leaveEdit()
+  _stopFileWatcher()
   if (!taskType || !threadId) { clearWorkflow(); return }
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
     const res = await fetch(`${base}/threads/${taskType}/${threadId}/workflow`)
     if (!res.ok) { clearWorkflow(); return }
     const wf = await res.json()
-    if (wf && wf.steps) renderWorkflow(wf)
-    else clearWorkflow()
+    if (wf && wf.steps) {
+      renderWorkflow(wf)
+      _startFileWatcher(taskType, threadId)
+    } else {
+      clearWorkflow()
+    }
   } catch {
     clearWorkflow()
   }

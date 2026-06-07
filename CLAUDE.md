@@ -35,7 +35,7 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
-| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 171개 테스트, `.\test.ps1` 으로 실행 |
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 235개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
@@ -64,6 +64,10 @@
 | 그래프 스토리지 + 마이그레이션 | `agent/workflow/storage.py` | `detect_format`·`load_definition`·`save_definition`·`load_run_state`·`save_run_state`, 구 포맷 자동 마이그레이션, 하위 호환 |
 | RunState 동기화 | `agent/server.py` | workflow 툴 결과 + 툴 실패 auto-error 시 RunState 파일(`*_state.json`) 자동 동기화 |
 | 워크플로우 API | `agent/server.py` | `GET/POST/DELETE /threads/{type}/{id}/workflow` |
+| SVG 분기 연결선 (Phase 3 ✅) | `electron/renderer/workflow.js` + `style.css` | 비선형 연결만 SVG 오버레이 표시, from_output별 색상 (기본/true/false 분기), 편집모드 연결 CUD UI |
+| YAML frontmatter 스토리지 (Phase 4C ✅) | `agent/workflow/storage.py` | `_def_path()`·`save_definition()`이 `.md` 형식으로 저장, `load_definition()`이 `.md` 우선 로드, `.json` 자동 마이그레이션 후 삭제 |
+| SSE 파일 감지 엔드포인트 (Phase 4B ✅) | `agent/server.py` | `GET /threads/{type}/{id}/workflow/events` — mtime 폴링 SSE, `WF_POLL_INTERVAL` 환경변수(기본 2s), heartbeat 30s 주기 |
+| 워크플로우 파일 감지 (Phase 4 frontend ✅) | `electron/renderer/workflow.js` | `_startFileWatcher()`·`_stopFileWatcher()` EventSource, 스레드 전환 시 자동 연결·해제, 편집 중 캐시 갱신 |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
 | SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |

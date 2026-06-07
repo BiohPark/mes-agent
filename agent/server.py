@@ -496,6 +496,53 @@ async def get_workflow(task_type: str, thread_id: str):
     return wf.to_dict()
 
 
+from fastapi import Request
+from fastapi.responses import StreamingResponse
+
+
+@app.get("/threads/{task_type}/{thread_id}/workflow/events")
+async def workflow_file_events(request: Request, task_type: str, thread_id: str):
+    """파일 mtime 폴링으로 Obsidian 편집을 감지해 프론트엔드에 SSE로 전달한다.
+    새 의존성 없음 — pathlib.stat().st_mtime 폴링 방식.
+    """
+    def _mtime() -> tuple[float, float]:
+        md = wf_storage._def_path(task_type, thread_id)
+        js = wf_storage._wf_path(task_type, thread_id)
+        st = wf_storage._state_path(task_type, thread_id)
+        def _m(p): return p.stat().st_mtime if p and p.exists() else 0.0
+        return (_m(md) or _m(js), _m(st))
+
+    poll_secs = float(os.environ.get("WF_POLL_INTERVAL", "2"))
+
+    async def _generate():
+        loop = asyncio.get_event_loop()
+        # 초기 워크플로우 즉시 전송
+        wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
+        yield f"data: {json.dumps({'type': 'workflow_update', 'workflow': wf.to_dict()}, ensure_ascii=False)}\n\n"
+        last_mtime = _mtime()
+
+        tick = 0
+        try:
+            while not await request.is_disconnected():
+                await asyncio.sleep(poll_secs)
+                tick += 1
+                current_mtime = _mtime()
+                if current_mtime != last_mtime:
+                    last_mtime = current_mtime
+                    wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
+                    yield f"data: {json.dumps({'type': 'workflow_update', 'workflow': wf.to_dict()}, ensure_ascii=False)}\n\n"
+                elif tick % max(1, int(30 / poll_secs)) == 0:
+                    yield ": heartbeat\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 class WorkflowSaveRequest(BaseModel):
     title: str
     steps: list
