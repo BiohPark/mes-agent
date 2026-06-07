@@ -1,14 +1,20 @@
 """
 문서 처리 도구
-- Excel: openpyxl (읽기/쓰기/행 추가)
-- Word: python-docx (읽기/내용 추가)
+- Excel: openpyxl (읽기/쓰기/행 추가/셀 메모)
+- Word: python-docx (읽기/내용 추가) + OpenXML (검토 메모/수정 추적)
 - PDF: pdfplumber (텍스트 추출, 읽기 전용)
+- PowerPoint: OpenXML (슬라이드 텍스트/발표자 노트)
 - 텍스트 파일: 내장 (읽기/쓰기/추가)
 """
 
 import json
 import os
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
+
+_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 
 
 # ── Excel ─────────────────────────────────────────────────────
@@ -179,6 +185,115 @@ def _parse_page_range(pages: str, total: int) -> list:
         else:
             result.append(int(part) - 1)
     return result
+
+
+# ── Office 검토/메모 (OpenXML) ────────────────────────────────
+
+def read_word_comments(path: str) -> str:
+    """Word(.docx) 파일의 검토 메모(Comments)를 읽어 반환합니다.
+    작성자·날짜·내용을 포함합니다."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            if 'word/comments.xml' not in z.namelist():
+                return json.dumps({'comments': [], 'count': 0})
+            ns = {'w': _W}
+            root = ET.parse(z.open('word/comments.xml')).getroot()
+            comments = []
+            for c in root.findall('w:comment', ns):
+                texts = [t.text for t in c.findall('.//w:t', ns) if t.text]
+                comments.append({
+                    'id': c.get(f'{{{_W}}}id'),
+                    'author': c.get(f'{{{_W}}}author', ''),
+                    'date': (c.get(f'{{{_W}}}date', '') or '')[:10],
+                    'text': ''.join(texts)
+                })
+            return json.dumps({'comments': comments, 'count': len(comments)}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({'error': str(e)})
+
+
+def read_word_track_changes(path: str) -> str:
+    """Word(.docx) 파일의 수정 추적(Track Changes) 삽입·삭제 내역을 반환합니다."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            if 'word/document.xml' not in z.namelist():
+                return json.dumps({'error': '문서 파일 없음'})
+            ns = {'w': _W}
+            root = ET.parse(z.open('word/document.xml')).getroot()
+            changes = []
+            for ins in root.findall('.//w:ins', ns):
+                texts = [t.text for t in ins.findall('.//w:t', ns) if t.text]
+                changes.append({
+                    'type': '삽입',
+                    'author': ins.get(f'{{{_W}}}author', ''),
+                    'date': (ins.get(f'{{{_W}}}date', '') or '')[:10],
+                    'text': ''.join(texts)
+                })
+            for d in root.findall('.//w:del', ns):
+                texts = [t.text for t in d.findall('.//w:delText', ns) if t.text]
+                changes.append({
+                    'type': '삭제',
+                    'author': d.get(f'{{{_W}}}author', ''),
+                    'date': (d.get(f'{{{_W}}}date', '') or '')[:10],
+                    'text': ''.join(texts)
+                })
+            return json.dumps({'track_changes': changes, 'count': len(changes)}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({'error': str(e)})
+
+
+def read_excel_comments(path: str, sheet: str = '') -> str:
+    """Excel(.xlsx) 파일의 셀 메모(Comments)를 읽어 반환합니다."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path)
+        sheets_to_check = [wb[sheet]] if sheet and sheet in wb.sheetnames else wb.worksheets
+        results = {}
+        for ws in sheets_to_check:
+            comments = []
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.comment:
+                        comments.append({
+                            'cell': cell.coordinate,
+                            'author': cell.comment.author or '',
+                            'text': cell.comment.text or ''
+                        })
+            if comments:
+                results[ws.title] = comments
+        total = sum(len(v) for v in results.values())
+        return json.dumps({'sheets': results, 'total_comments': total}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({'error': str(e)})
+
+
+def read_ppt_content(path: str) -> str:
+    """PowerPoint(.pptx) 파일의 슬라이드 텍스트와 발표자 노트를 읽어 반환합니다."""
+    try:
+        ns = {'a': _A}
+        with zipfile.ZipFile(path) as z:
+            namelist = z.namelist()
+            slide_files = sorted(
+                [f for f in namelist if f.startswith('ppt/slides/slide') and f.endswith('.xml')]
+            )
+            slides = []
+            for i, sf in enumerate(slide_files):
+                root = ET.parse(z.open(sf)).getroot()
+                texts = [t.text.strip() for t in root.findall('.//a:t', ns)
+                         if t.text and t.text.strip()]
+                num = os.path.basename(sf).replace('slide', '').replace('.xml', '')
+                nf = f'ppt/notesSlides/notesSlide{num}.xml'
+                notes_text = ''
+                if nf in namelist:
+                    nr = ET.parse(z.open(nf)).getroot()
+                    notes_text = ' '.join(
+                        t.text.strip() for t in nr.findall('.//a:t', ns)
+                        if t.text and t.text.strip()
+                    )
+                slides.append({'slide': i + 1, 'content': texts, 'notes': notes_text})
+            return json.dumps({'slides': slides, 'total_slides': len(slides)}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({'error': str(e)})
 
 
 # ── 텍스트 파일 ───────────────────────────────────────────────
@@ -387,5 +502,76 @@ MANIFEST = [
             }
         },
         "handler": lambda a: write_file(a["path"], a["content"], a.get("append", False))
+    },
+    {
+        "name": "read_word_comments",
+        "label": "Word 검토 메모",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_word_comments",
+                "description": "Word(.docx) 파일의 검토 메모(Comments)를 읽어 반환합니다. 작성자·날짜·내용 포함.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string", "description": ".docx 파일 경로"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_word_comments(a["path"])
+    },
+    {
+        "name": "read_word_track_changes",
+        "label": "Word 수정 추적",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_word_track_changes",
+                "description": "Word(.docx) 파일의 수정 추적(Track Changes) 삽입·삭제 내역을 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string", "description": ".docx 파일 경로"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_word_track_changes(a["path"])
+    },
+    {
+        "name": "read_excel_comments",
+        "label": "Excel 셀 메모",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_excel_comments",
+                "description": "Excel(.xlsx) 파일의 셀 메모(Comments)를 읽어 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": ".xlsx 파일 경로"},
+                        "sheet": {"type": "string", "description": "시트 이름 (생략 시 전체)"}
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_excel_comments(a["path"], a.get("sheet", ""))
+    },
+    {
+        "name": "read_ppt_content",
+        "label": "PPT 슬라이드 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "read_ppt_content",
+                "description": "PowerPoint(.pptx) 파일의 슬라이드 텍스트와 발표자 노트를 읽어 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string", "description": ".pptx 파일 경로"}},
+                    "required": ["path"]
+                }
+            }
+        },
+        "handler": lambda a: read_ppt_content(a["path"])
     },
 ]

@@ -47,7 +47,7 @@
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
 | Obsidian PKM (Phase 7 ✅) | `agent/tools/obsidian_rag.py` | 2-tier 탐색(preview/scan/backlinks/section), 편집(edit/replace_section/update_frontmatter), 이동, 고급검색 (16종) |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
-| 문서 처리 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 (9종) |
+| 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기** (13종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
@@ -82,8 +82,12 @@
 | Vault 노트작성 가이드 (Phase 7B ✅) | `D:\_Archives\obsidian\brain\agent\guides\🤖 Agent 노트작성 가이드.md` | frontmatter 스키마·태그·Templater 연동 기준, `🏛 Vault Guides.md` 연결 |
 | Templater 명령 툴 (Phase 7B ✅) | `agent/tools/obsidian_rag.py` | `obsidian_list_commands`·`obsidian_run_command` — REST API `/commands/` 엔드포인트 |
 | RAG-first 지침 전파 (Phase 7B ✅) | `agent/obsidian_session.py` | `_AUTO_EXEC` + syncade/knox/obsidian 시스템 프롬프트에 Obsidian 선조회·결과저장 지시 추가 |
+| Office 문서 검토·메모 읽기 ✅ | `agent/tools/document.py` | Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드+노트 (OpenXML 파싱, 설치 불필요) |
+| 멀티모달 비전 분석 ✅ | `agent/tools/vision.py` | `analyze_screen`·`analyze_region` — VISION_ENABLED=true + 멀티모달 LLM 필요, 사용 전 유저 확인 |
+| Windows UI Automation ✅ | `agent/tools/ui_automation.py` | `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` — 접근성 트리 읽기, OCR 없이 Win32 컨트롤 구조 파악 |
+| 스레드 사이드바 접이식 그룹 ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 탭 → 그룹 접기/펼치기, 스레드 인라인 표시, 그룹별 보관 서브섹션, 빨간 배지 |
 
-**총 툴 수: 100종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 109종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -92,11 +96,13 @@
 | `desktop.py` | 19 |
 | `browser.py` | 22 |
 | `process.py` | 9 |
-| `document.py` | 9 |
+| `document.py` | 13 |
 | `obsidian_rag.py` | 18 |
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
 | `obsidian_session.py` | 4 |
+| `vision.py` | 2 |
+| `ui_automation.py` | 3 |
 
 ---
 

@@ -8,7 +8,7 @@ import pytest
 from agent.tools import _registry, TOOLS, TOOL_LABELS
 
 
-EXPECTED_TOOL_COUNT = 100
+EXPECTED_TOOL_COUNT = 109
 REQUIRED_MANIFEST_KEYS = {"name", "label", "schema", "handler"}
 
 
@@ -127,6 +127,25 @@ class TestModuleCoverage:
         "read_excel",
         "read_pdf",
         "write_file",
+        "read_word_comments",
+        "read_word_track_changes",
+        "read_excel_comments",
+        "read_ppt_content",
     ])
     def test_document_tools_registered(self, tool_name):
+        assert tool_name in _registry
+
+    @pytest.mark.parametrize("tool_name", [
+        "analyze_screen",
+        "analyze_region",
+    ])
+    def test_vision_tools_registered(self, tool_name):
+        assert tool_name in _registry
+
+    @pytest.mark.parametrize("tool_name", [
+        "ui_list_windows",
+        "ui_inspect_window",
+        "ui_find_and_read",
+    ])
+    def test_ui_automation_tools_registered(self, tool_name):
         assert tool_name in _registry
