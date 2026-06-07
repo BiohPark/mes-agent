@@ -98,7 +98,7 @@
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
 
-**총 툴 수: 123종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 124종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -107,7 +107,7 @@
 | `desktop.py` | 19 |
 | `browser.py` | 23 |
 | `process.py` | 9 |
-| `document.py` | 14 |
+| `document.py` | 15 |
 | `obsidian_rag.py` | 18 |
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
@@ -446,7 +446,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 **구현 우선순위**:
 1. **P1 LibreOffice 변환 엔진** (`office_libre.py`) — MS Office 없는 PC의 고품질 오프라인 폴백. `soffice --headless --convert-to`로 신뢰성 높은 PDF/포맷 변환(`libre_convert` 툴). `word_export_pdf`/`ppt_export_pdf`가 COM 불가 시 자동 폴백. ✅ **완료** (단, 검증 PC에 LibreOffice 미설치 — 설치 환경에서 종단 검증 필요)
-2. **P2 라운드트립 프롬프트 전략** — 클라우드 문서는 동기화/다운로드 로컬 경로를 우선 탐색해 COM 편집 후 저장. (프롬프트 + 탐색 헬퍼)
+2. **P2 라운드트립 프롬프트 전략** — 클라우드 문서는 동기화/다운로드 로컬 경로를 우선 탐색해 COM 편집 후 저장. ✅ **완료** (`office_locate_file` 툴: OneDrive/SharePoint 동기화 폴더 탐색 + 프롬프트 지침)
 3. **P3 OnlyOffice Document Server 연동** (폐쇄망 자체호스팅 시) — 헤드리스 Document Builder API로 대량 생성·편집·변환, 브라우저 협업 에디터 임베드. `.env`로 서버 URL 설정.
 4. **P4 MS Graph Excel 클라이언트** (M365 사용 시) — 클라우드 Excel 셀/수식 REST 편집. Azure AD 앱 등록 + OAuth 토큰 필요.
 

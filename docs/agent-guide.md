@@ -116,6 +116,7 @@
 | `read_pdf(path, pages)` | PDF 텍스트 추출 |
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 (`.docx`/`.xlsx` 금지 — 깨짐) |
+| `office_locate_file(name, max_results)` | 로컬 Office 문서 찾기(OneDrive/SharePoint 동기화 폴더 포함). 클라우드 문서 라운드트립 편집용 |
 
 ### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (11종)
 

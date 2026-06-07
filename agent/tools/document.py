@@ -449,6 +449,67 @@ def write_file(path: str, content: str, append: bool = False,
         return json.dumps({"error": str(e)})
 
 
+_OFFICE_EXTS = {".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".pdf"}
+
+
+def office_locate_file(name: str, max_results: int = 20) -> str:
+    """이름(부분 일치)으로 로컬 Office 문서를 찾습니다(OneDrive·SharePoint 동기화 폴더 포함).
+    클라우드 문서를 브라우저로 편집하기 전에, 동기화된 로컬 사본을 찾아 COM으로 편집하기 위한 라운드트립 용도.
+    OneDrive/SharePoint 동기화 루트와 바탕화면·문서·다운로드를 탐색합니다."""
+    roots: list[str] = []
+    for env in ("OneDrive", "OneDriveCommercial", "OneDriveConsumer"):
+        v = os.environ.get(env)
+        if v:
+            roots.append(v)
+    home = os.path.expanduser("~")
+    for sub in ("Desktop", "Documents", "Downloads", "바탕 화면", "문서"):
+        roots.append(os.path.join(home, sub))
+
+    # 중복 루트 제거(정규화)
+    seen_roots, uniq_roots = set(), []
+    for r in roots:
+        try:
+            rr = os.path.normcase(os.path.abspath(r))
+        except Exception:
+            continue
+        if rr in seen_roots or not os.path.isdir(r):
+            continue
+        seen_roots.add(rr)
+        uniq_roots.append(r)
+
+    needle = name.lower()
+    matches, seen_files = [], set()
+    for root in uniq_roots:
+        for dirpath, dirs, files in os.walk(root):
+            depth = dirpath[len(root):].count(os.sep)
+            if depth > 4:
+                dirs[:] = []
+                continue
+            dirs[:] = [d for d in dirs
+                       if not d.startswith(".") and d.lower() not in ("node_modules", ".git", "appdata")]
+            for f in files:
+                if os.path.splitext(f)[1].lower() in _OFFICE_EXTS and needle in f.lower():
+                    full = os.path.join(dirpath, f)
+                    nc = os.path.normcase(full)
+                    if nc in seen_files:
+                        continue
+                    seen_files.add(nc)
+                    try:
+                        mt = os.path.getmtime(full)
+                    except Exception:
+                        mt = 0
+                    matches.append((mt, full))
+            if len(matches) >= max_results * 5:
+                break
+
+    matches.sort(reverse=True)
+    result = [{"path": p, "modified": mt} for mt, p in matches[:max_results]]
+    return json.dumps({"query": name, "count": len(result), "matches": result,
+                       "hint": ("로컬 사본이 있으면 word_edit_text/excel_set_cells(COM)로 편집하세요"
+                                "(브라우저 편집보다 정확). 없으면 office_web_open을 사용하세요.")},
+                      ensure_ascii=False)
+
+
 MANIFEST = [
     {
         "name": "get_excel_sheet_names",
@@ -650,6 +711,30 @@ MANIFEST = [
             }
         },
         "handler": lambda a: write_file(a["path"], a["content"], a.get("append", False))
+    },
+    {
+        "name": "office_locate_file",
+        "label": "로컬 Office 파일 찾기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "office_locate_file",
+                "description": (
+                    "이름(부분 일치)으로 로컬 Office 문서를 찾습니다(OneDrive/SharePoint 동기화 폴더 포함). "
+                    "클라우드 문서를 브라우저로 편집하기 전에, 동기화된 로컬 사본을 찾아 COM 도구로 편집하는 "
+                    "라운드트립에 사용하세요(브라우저 편집보다 정확)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "파일명 일부(확장자 없이도 가능)"},
+                        "max_results": {"type": "integer", "description": "최대 결과 수(기본 20)"},
+                    },
+                    "required": ["name"],
+                },
+            },
+        },
+        "handler": lambda a: office_locate_file(a["name"], a.get("max_results", 20)),
     },
     {
         "name": "read_word_comments",
