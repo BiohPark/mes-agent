@@ -30,6 +30,7 @@ from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
+from agent.workflow.model import WorkflowRunState
 from agent.core import events as ev
 
 app = FastAPI()
@@ -243,7 +244,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                         except Exception:
                             pass
 
-                # 툴 실패 시 running 단계를 자동으로 error 상태로 전환
+                # 툴 실패 시 running 단계를 자동으로 error 상태로 전환 + RunState 동기화
                 if _tool_failed and thread_id and task_type and not tc["name"].startswith("workflow_"):
                     try:
                         _err_wf = await loop.run_in_executor(
@@ -257,6 +258,17 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                                     None, wf_storage.save_workflow, _err_wf
                                 )
                                 yield sse({"type": ev.WORKFLOW_UPDATE, "workflow": _err_wf.to_dict()})
+                                # RunState 별도 파일에도 동기화
+                                try:
+                                    _rs = await loop.run_in_executor(
+                                        None, wf_storage.load_run_state, task_type, thread_id
+                                    ) or WorkflowRunState(definition_id=thread_id)
+                                    _rs.set_node_status(_err_step.id, "error", _err_step.notes)
+                                    await loop.run_in_executor(
+                                        None, wf_storage.save_run_state, task_type, thread_id, _rs
+                                    )
+                                except Exception:
+                                    pass
                                 break
                     except Exception:
                         pass
@@ -289,12 +301,30 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 except (json.JSONDecodeError, AttributeError, KeyError):
                     pass
 
-                # 워크플로우 도구 결과 → workflow_update SSE
+                # 워크플로우 도구 결과 → workflow_update SSE + RunState 동기화
                 if tc["name"].startswith("workflow_"):
                     try:
                         robj = json.loads(result)
                         if isinstance(robj, dict) and robj.get("ok") and "workflow" in robj:
-                            yield sse({"type": ev.WORKFLOW_UPDATE, "workflow": robj["workflow"]})
+                            wf_data = robj["workflow"]
+                            yield sse({"type": ev.WORKFLOW_UPDATE, "workflow": wf_data})
+                            # 단계 status 변경을 RunState에도 반영
+                            if thread_id and task_type:
+                                try:
+                                    _rs = await loop.run_in_executor(
+                                        None, wf_storage.load_run_state, task_type, thread_id
+                                    ) or WorkflowRunState(definition_id=thread_id)
+                                    for _step in wf_data.get("steps", []):
+                                        _rs.set_node_status(
+                                            _step["id"],
+                                            _step.get("status", "pending"),
+                                            _step.get("notes", ""),
+                                        )
+                                    await loop.run_in_executor(
+                                        None, wf_storage.save_run_state, task_type, thread_id, _rs
+                                    )
+                                except Exception:
+                                    pass
                     except (json.JSONDecodeError, AttributeError):
                         pass
 

@@ -3,7 +3,13 @@ import uuid
 import os
 from pathlib import Path
 
-from .model import Workflow, WorkflowStep
+from .model import (
+    Workflow,
+    WorkflowStep,
+    WorkflowDefinition,
+    WorkflowRunState,
+    migrate_linear_to_graph,
+)
 
 # ── 태스크별 기본 워크플로우 템플릿 ──────────────────────────────
 
@@ -69,7 +75,22 @@ def _make_default(task_type: str, thread_id: str) -> Workflow:
     return Workflow(thread_id=thread_id, task_type=task_type, title=title, steps=steps)
 
 
-# ── 스토리지 함수 ─────────────────────────────────────────────
+def _make_default_definition(task_type: str, thread_id: str) -> WorkflowDefinition:
+    wf = _make_default(task_type, thread_id)
+    defn, _ = migrate_linear_to_graph(wf)
+    return defn
+
+
+# ── 포맷 감지 ─────────────────────────────────────────────────
+
+def detect_format(data: dict) -> str:
+    """JSON 데이터가 선형(linear) 또는 그래프(graph) 포맷인지 반환한다."""
+    if "nodes" in data:
+        return "graph"
+    return "linear"
+
+
+# ── 경로 헬퍼 ─────────────────────────────────────────────────
 
 def _workflow_dir() -> Path | None:
     vault = os.environ.get("OBSIDIAN_VAULT_PATH", "").strip()
@@ -78,31 +99,62 @@ def _workflow_dir() -> Path | None:
     return Path(vault) / "agent" / "workflows"
 
 
+def _wf_path(task_type: str, thread_id: str) -> Path | None:
+    d = _workflow_dir()
+    return (d / task_type / f"{thread_id}.json") if d else None
+
+
+def _state_path(task_type: str, thread_id: str) -> Path | None:
+    d = _workflow_dir()
+    return (d / task_type / f"{thread_id}_state.json") if d else None
+
+
+# ── 기존 선형 모델 스토리지 (하위 호환 유지) ───────────────────────
+
 def load_workflow(task_type: str, thread_id: str) -> Workflow:
     """저장된 워크플로우가 없으면 기본 템플릿을 만들어 저장 후 반환한다.
 
     기본 템플릿을 최초 1회 영속화해야 단계 id가 고정된다.
     그래야 우측 패널이 보여주는 id와 workflow_set_step이 찾는 id가 일치한다.
+
+    새 그래프 포맷(nodes 키)으로 저장된 파일도 Workflow로 변환해 반환한다.
     """
-    d = _workflow_dir()
-    if d:
-        path = d / task_type / f"{thread_id}.json"
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                return Workflow.from_dict(data)
-            except Exception:
-                pass
+    path = _wf_path(task_type, thread_id)
+    if path and path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if detect_format(data) == "graph":
+                return _graph_data_to_workflow(data, task_type, thread_id)
+            return Workflow.from_dict(data)
+        except Exception:
+            pass
     wf = _make_default(task_type, thread_id)
     save_workflow(wf)
     return wf
 
 
+def _graph_data_to_workflow(data: dict, task_type: str, thread_id: str) -> Workflow:
+    """그래프 포맷 데이터를 선형 Workflow로 변환한다 (하위 호환)."""
+    defn = WorkflowDefinition.from_dict(data)
+    rs = load_run_state(task_type, thread_id)
+    steps = []
+    for n in defn.nodes:
+        ns = rs.node_states.get(n.id) if rs else None
+        steps.append(WorkflowStep(
+            id=n.id,
+            title=n.title,
+            type=n.type,
+            status=ns.status if ns else "pending",
+            notes=ns.notes if ns else "",
+            max_retry=n.retry,
+        ))
+    return Workflow(thread_id=defn.id, task_type=defn.task_type, title=defn.title, steps=steps)
+
+
 def save_workflow(workflow: Workflow) -> None:
-    d = _workflow_dir()
-    if not d:
+    path = _wf_path(workflow.task_type, workflow.thread_id)
+    if not path:
         return
-    path = d / workflow.task_type / f"{workflow.thread_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(workflow.to_dict(), ensure_ascii=False, indent=2),
@@ -111,9 +163,66 @@ def save_workflow(workflow: Workflow) -> None:
 
 
 def delete_workflow(task_type: str, thread_id: str) -> None:
-    d = _workflow_dir()
-    if not d:
-        return
-    path = d / task_type / f"{thread_id}.json"
-    if path.exists():
+    path = _wf_path(task_type, thread_id)
+    if path and path.exists():
         path.unlink()
+
+
+# ── 새 그래프 모델 스토리지 ───────────────────────────────────────
+
+def load_definition(task_type: str, thread_id: str) -> WorkflowDefinition:
+    """WorkflowDefinition을 로드한다.
+
+    - 그래프 포맷 파일: 바로 역직렬화
+    - 선형 포맷 파일: migrate_linear_to_graph로 자동 변환
+    - 파일 없음: 기본 템플릿으로 생성
+    """
+    path = _wf_path(task_type, thread_id)
+    if path and path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if detect_format(data) == "graph":
+                return WorkflowDefinition.from_dict(data)
+            # 선형 포맷 자동 마이그레이션
+            wf = Workflow.from_dict(data)
+            defn, _ = migrate_linear_to_graph(wf)
+            return defn
+        except Exception:
+            pass
+    defn = _make_default_definition(task_type, thread_id)
+    save_definition(defn)
+    return defn
+
+
+def save_definition(defn: WorkflowDefinition) -> None:
+    path = _wf_path(defn.task_type, defn.id)
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(defn.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_run_state(task_type: str, thread_id: str) -> WorkflowRunState | None:
+    """RunState 파일이 있으면 로드, 없으면 None 반환."""
+    path = _state_path(task_type, thread_id)
+    if path and path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return WorkflowRunState.from_dict(data)
+        except Exception:
+            pass
+    return None
+
+
+def save_run_state(task_type: str, thread_id: str, rs: WorkflowRunState) -> None:
+    path = _state_path(task_type, thread_id)
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(rs.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
