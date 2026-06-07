@@ -35,7 +35,7 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
-| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 251개 테스트, `.\test.ps1` 으로 실행 |
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 268개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
@@ -75,6 +75,9 @@
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
 | wait_for_image/wait_for_text interval 명시화 (Phase 5 ✅) | `agent/tools/screen.py` | MANIFEST 스키마에 `interval` 파라미터 노출 → LLM이 폴링 간격 직접 제어 가능 |
 | mouse_click after_delay_ms (Phase 5 ✅) | `agent/tools/desktop.py` | 클릭 후 안정화 대기 옵션, MANIFEST 스키마 및 함수 시그니처에 추가 |
+| 런타임 라우팅 엔진 (Phase 6A ✅) | `agent/workflow/model.py` + `workflow.py` + `server.py` | `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택, `PATCH /workflow/nodes/{id}` UI 제어 엔드포인트 |
+| 그래프 캔버스 시각화 (Phase 6B ✅) | `electron/renderer/workflow.js` + `style.css` | BFS 레이아웃 2D 그래프, running/done/error 애니메이션, 분기 색상·흐름 연결선, 진행 바 |
+| 인터랙티브 노드 컨트롤 (Phase 6C ✅) | `electron/renderer/workflow.js` + `style.css` | 노드 ⋮ 클릭 → 완료/건너뛰기/실행/재시도/분기 선택 패널 |
 
 **총 툴 수: 89종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 

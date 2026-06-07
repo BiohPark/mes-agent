@@ -1007,6 +1007,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .wf-step {
@@ -1193,10 +1196,6 @@ body {
 
 /* ── 워크플로우 연결선 (SVG 오버레이) ───────────────────────── */
 
-#workflow-steps {
-  position: relative; /* SVG 오버레이 기준점 */
-}
-
 .wf-connections-svg {
   position: absolute;
   top: 0; left: 0;
@@ -1296,6 +1295,277 @@ body {
   white-space: nowrap;
 }
 .wf-add-conn-btn:hover { background: #0f2030; color: #9cc8ff; }
+
+/* ── 그래프 캔버스 (Phase 6B) ────────────────────────────────── */
+
+.wf-graph-canvas {
+  position: relative;
+  margin: 0 auto;
+  min-height: 80px;
+}
+
+/* 그래프 노드 */
+.wf-graph-node {
+  position: absolute;
+  border-radius: 10px;
+  background: #111827;
+  border: 1.5px solid #1f3a52;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.25s;
+  box-sizing: border-box;
+}
+.wf-graph-node:hover { border-color: #3a6090; }
+
+.wf-node-inner {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 8px 10px;
+  gap: 8px;
+  box-sizing: border-box;
+}
+.wf-node-status-icon { font-size: 17px; flex-shrink: 0; width: 22px; text-align: center; }
+.wf-node-body { flex: 1; min-width: 0; overflow: hidden; }
+.wf-node-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #d1d5db;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.wf-node-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #4b5563;
+}
+.wf-node-status-label { color: #6b7280; }
+.wf-node-notes-dot { cursor: help; font-size: 11px; }
+
+.wf-node-menu-btn {
+  background: none;
+  border: none;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.wf-graph-node:hover .wf-node-menu-btn { opacity: 1; }
+.wf-node-menu-btn:hover { color: #9ca3af; }
+
+/* 상태별 노드 스타일 */
+.wf-graph-node.running {
+  border-color: #3b82f6;
+  background: #0f1f35;
+  animation: wf-pulse 2s ease-in-out infinite;
+}
+.wf-graph-node.running .wf-node-title  { color: #93c5fd; }
+.wf-graph-node.running .wf-node-status-label { color: #3b82f6; }
+
+.wf-graph-node.done {
+  border-color: #22c55e;
+  background: #0a1f0e;
+}
+.wf-graph-node.done .wf-node-title  { color: #86efac; }
+.wf-graph-node.done .wf-node-status-label { color: #22c55e; }
+
+.wf-graph-node.error {
+  border-color: #ef4444;
+  background: #200c0c;
+  animation: wf-error-shake 0.45s ease-in-out;
+}
+.wf-graph-node.error .wf-node-title { color: #fca5a5; }
+.wf-graph-node.error .wf-node-status-label { color: #ef4444; }
+
+.wf-graph-node.waiting {
+  border-color: #f59e0b;
+  background: #1a1500;
+}
+.wf-graph-node.skipped { border-color: #374151; opacity: 0.55; }
+
+@keyframes wf-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+  50%      { box-shadow: 0 0 0 7px rgba(59,130,246,0); }
+}
+@keyframes wf-error-shake {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-5px); }
+  40%     { transform: translateX(5px); }
+  60%     { transform: translateX(-3px); }
+  80%     { transform: translateX(3px); }
+}
+
+/* 흐르는 연결선 애니메이션 */
+@keyframes wf-flow {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+.wf-conn-active { animation: wf-flow 0.75s linear infinite; }
+
+/* 진행 바 */
+.wf-progress-wrap { padding: 2px 12px 8px; }
+.wf-progress-bar {
+  height: 3px;
+  background: #1f2937;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.wf-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #22c55e 100%);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  min-width: 3px;
+}
+
+/* 제목 + 뱃지 */
+#workflow-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wf-title-text { flex: 1; }
+.wf-progress-badge {
+  font-size: 10.5px;
+  background: #1f2937;
+  border-radius: 10px;
+  padding: 2px 7px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ── 인터랙션 패널 (Phase 6C) ────────────────────────────────── */
+
+.wf-action-panel {
+  position: fixed;
+  z-index: 9000;
+  background: #111827;
+  border: 1px solid #1f3a52;
+  border-radius: 12px;
+  width: 264px;
+  box-shadow: 0 10px 36px rgba(0,0,0,0.65);
+  overflow: hidden;
+  animation: wf-panel-in 0.12s ease;
+}
+@keyframes wf-panel-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wf-action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1f2937;
+}
+.wf-action-step-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #d1d5db;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-action-close {
+  background: none;
+  border: none;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 3px;
+  line-height: 1;
+}
+.wf-action-close:hover { color: #9ca3af; }
+
+.wf-action-current-notes {
+  padding: 6px 12px 0;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+  max-height: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-action-notes-wrap { padding: 6px 12px 8px; }
+.wf-action-notes-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1b2a;
+  border: 1px solid #1f3a52;
+  border-radius: 7px;
+  color: #c9d1d9;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 6px 8px;
+  resize: none;
+  height: 52px;
+  transition: border-color 0.15s;
+}
+.wf-action-notes-input:focus { outline: none; border-color: #3b82f6; }
+
+.wf-action-branch {
+  padding: 0 12px 8px;
+  border-bottom: 1px solid #1f2937;
+}
+.wf-action-branch-label {
+  font-size: 10.5px;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 5px;
+}
+.wf-action-branch-btns { display: flex; gap: 6px; }
+.wf-branch-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: none;
+  transition: background 0.15s;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-branch-btn.branch-true  { border: 1px solid #22c55e; color: #22c55e; }
+.wf-branch-btn.branch-false { border: 1px solid #ef4444; color: #ef4444; }
+.wf-branch-btn.branch-true:hover  { background: rgba(34,197,94,0.12); }
+.wf-branch-btn.branch-false:hover { background: rgba(239,68,68,0.12); }
+
+.wf-action-btns {
+  display: flex;
+  gap: 5px;
+  padding: 8px 12px;
+}
+.wf-action-btn {
+  flex: 1;
+  padding: 6px 6px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: filter 0.15s;
+  white-space: nowrap;
+}
+.wf-action-btn:hover { filter: brightness(1.15); }
+.wf-btn-done  { background: #22c55e; color: #052e16; }
+.wf-btn-skip  { background: #374151; color: #9ca3af; }
+.wf-btn-run   { background: #3b82f6; color: #fff; }
+.wf-btn-retry { background: #f59e0b; color: #1c1002; }
 
 /* ── 실행 로그 패널 ──────────────────────────────────────────── */
 
