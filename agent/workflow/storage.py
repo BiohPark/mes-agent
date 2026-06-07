@@ -1,6 +1,7 @@
 import json
 import uuid
 import os
+import yaml
 from pathlib import Path
 
 from .model import (
@@ -100,8 +101,15 @@ def _workflow_dir() -> Path | None:
 
 
 def _wf_path(task_type: str, thread_id: str) -> Path | None:
+    """구 JSON 경로 — 하위 호환 및 linear format 저장용."""
     d = _workflow_dir()
     return (d / task_type / f"{thread_id}.json") if d else None
+
+
+def _def_path(task_type: str, thread_id: str) -> Path | None:
+    """새 YAML frontmatter (.md) 경로 — WorkflowDefinition 저장용."""
+    d = _workflow_dir()
+    return (d / task_type / f"{thread_id}.md") if d else None
 
 
 def _state_path(task_type: str, thread_id: str) -> Path | None:
@@ -117,8 +125,16 @@ def load_workflow(task_type: str, thread_id: str) -> Workflow:
     기본 템플릿을 최초 1회 영속화해야 단계 id가 고정된다.
     그래야 우측 패널이 보여주는 id와 workflow_set_step이 찾는 id가 일치한다.
 
-    새 그래프 포맷(nodes 키)으로 저장된 파일도 Workflow로 변환해 반환한다.
+    우선순위: .md (YAML frontmatter) → .json (기존) → 기본 템플릿
     """
+    # 1) .md 파일 (그래프 포맷, Phase 4C 이후 기본)
+    md_path = _def_path(task_type, thread_id)
+    if md_path and md_path.exists():
+        defn = _load_definition_from_md(md_path)
+        if defn:
+            return _graph_data_to_workflow(defn.to_dict(), task_type, thread_id)
+
+    # 2) .json 파일 (기존 포맷 하위 호환)
     path = _wf_path(task_type, thread_id)
     if path and path.exists():
         try:
@@ -128,6 +144,8 @@ def load_workflow(task_type: str, thread_id: str) -> Workflow:
             return Workflow.from_dict(data)
         except Exception:
             pass
+
+    # 3) 기본 템플릿
     wf = _make_default(task_type, thread_id)
     save_workflow(wf)
     return wf
@@ -165,46 +183,83 @@ def save_workflow(workflow: Workflow) -> None:
 
 
 def delete_workflow(task_type: str, thread_id: str) -> None:
-    path = _wf_path(task_type, thread_id)
-    if path and path.exists():
-        path.unlink()
+    for path in (
+        _wf_path(task_type, thread_id),    # 구 .json
+        _def_path(task_type, thread_id),   # 새 .md
+        _state_path(task_type, thread_id), # RunState
+    ):
+        if path and path.exists():
+            path.unlink()
 
 
 # ── 새 그래프 모델 스토리지 ───────────────────────────────────────
 
+def _load_definition_from_md(path: Path) -> WorkflowDefinition | None:
+    """YAML frontmatter .md 파일에서 WorkflowDefinition을 로드한다."""
+    try:
+        content = path.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            return None
+        parts = content.split("---", 2)
+        if len(parts) < 2:
+            return None
+        data = yaml.safe_load(parts[1])
+        if not data or "nodes" not in data:
+            return None
+        return WorkflowDefinition.from_dict(data)
+    except Exception:
+        return None
+
+
 def load_definition(task_type: str, thread_id: str) -> WorkflowDefinition:
     """WorkflowDefinition을 로드한다.
 
-    - 그래프 포맷 파일: 바로 역직렬화
-    - 선형 포맷 파일: migrate_linear_to_graph로 자동 변환
-    - 파일 없음: 기본 템플릿으로 생성
+    우선순위: .md (YAML frontmatter) → .json (그래프 포맷) → .json (선형 포맷 자동 마이그레이션) → 기본 템플릿
+    .json 파일을 읽으면 .md로 자동 마이그레이션하고 .json을 삭제한다.
     """
-    path = _wf_path(task_type, thread_id)
-    if path and path.exists():
+    md_path = _def_path(task_type, thread_id)
+    json_path = _wf_path(task_type, thread_id)
+
+    # 1) .md 파일 우선
+    if md_path and md_path.exists():
+        defn = _load_definition_from_md(md_path)
+        if defn:
+            return defn
+
+    # 2) .json 파일 — 읽은 후 .md로 마이그레이션
+    if json_path and json_path.exists():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(json_path.read_text(encoding="utf-8"))
             if detect_format(data) == "graph":
-                return WorkflowDefinition.from_dict(data)
-            # 선형 포맷 자동 마이그레이션
-            wf = Workflow.from_dict(data)
-            defn, _ = migrate_linear_to_graph(wf)
+                defn = WorkflowDefinition.from_dict(data)
+            else:
+                wf = Workflow.from_dict(data)
+                defn, _ = migrate_linear_to_graph(wf)
+            # .md로 저장 후 .json 삭제
+            save_definition(defn)
+            try:
+                json_path.unlink()
+            except Exception:
+                pass
             return defn
         except Exception:
             pass
+
+    # 3) 파일 없음 — 기본 템플릿
     defn = _make_default_definition(task_type, thread_id)
     save_definition(defn)
     return defn
 
 
 def save_definition(defn: WorkflowDefinition) -> None:
-    path = _wf_path(defn.task_type, defn.id)
+    """WorkflowDefinition을 YAML frontmatter .md 파일로 저장한다."""
+    path = _def_path(defn.task_type, defn.id)
     if not path:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(defn.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    data = defn.to_dict()
+    content = "---\n" + yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False) + "---\n"
+    path.write_text(content, encoding="utf-8")
 
 
 def load_run_state(task_type: str, thread_id: str) -> WorkflowRunState | None:

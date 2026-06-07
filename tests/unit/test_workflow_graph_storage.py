@@ -133,14 +133,17 @@ class TestSaveDefinition:
     def test_save_creates_file(self, vault):
         defn = _defn(tid="save-test")
         save_definition(defn)
-        path = vault / "agent" / "workflows" / "general" / "save-test.json"
+        # Phase 4C: save_definition은 .md (YAML frontmatter) 형식으로 저장한다.
+        path = vault / "agent" / "workflows" / "general" / "save-test.md"
         assert path.exists()
 
     def test_saved_file_is_graph_format(self, vault):
         defn = _defn(tid="fmt-test")
         save_definition(defn)
-        path = vault / "agent" / "workflows" / "general" / "fmt-test.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
+        import yaml as _yaml
+        path = vault / "agent" / "workflows" / "general" / "fmt-test.md"
+        content = path.read_text(encoding="utf-8")
+        data = _yaml.safe_load(content.split("---", 2)[1])
         assert "nodes" in data
         assert "connections" in data
 
