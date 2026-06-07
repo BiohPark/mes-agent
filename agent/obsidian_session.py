@@ -152,6 +152,7 @@ class ObsidianSession:
         self._ssl_ctx.check_hostname = False
         self._ssl_ctx.verify_mode = ssl.CERT_NONE
         self._ready = bool(vault_path)
+        self._rest_ok: bool | None = None  # None=미확인, True=사용가능, False=불가
 
     # ── 초기화 ────────────────────────────────────────────────
 
@@ -673,7 +674,7 @@ tags:
     # ── REST API / 파일 I/O ───────────────────────────────────
 
     def _write(self, vault_rel: str, content: str):
-        if self.api_base and self.api_key:
+        if self.api_base and self.api_key and self._rest_ok is not False:
             url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel, safe="/")
             data = content.encode("utf-8")
             req = urllib.request.Request(
@@ -683,9 +684,13 @@ tags:
             )
             try:
                 with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5):
+                    self._rest_ok = True
                     return
             except Exception as e:
-                print(f"[obsidian] REST 쓰기 실패({vault_rel}), fallback: {e}")
+                if self._rest_ok is None:
+                    # 첫 실패에만 경고 1회 출력
+                    print(f"[obsidian] REST API 연결 실패 — 파일 직접 쓰기로 전환합니다. ({e})")
+                self._rest_ok = False
 
         # fallback: 직접 파일 쓰기
         if self.agent_dir:
@@ -695,20 +700,21 @@ tags:
             path.write_text(content, encoding="utf-8")
 
     def _read(self, vault_rel: str) -> str:
-        if self.api_base and self.api_key:
+        if self.api_base and self.api_key and self._rest_ok is not False:
             url = self.api_base + "/vault/" + urllib.parse.quote(vault_rel, safe="/")
             req = urllib.request.Request(
                 url, headers={"Authorization": self.api_key}
             )
             try:
                 with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=5) as r:
+                    self._rest_ok = True
                     return r.read().decode("utf-8")
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     return ""
                 raise
-            except Exception as e:
-                print(f"[obsidian] REST 읽기 실패({vault_rel}), fallback: {e}")
+            except Exception:
+                self._rest_ok = False
 
         if self.agent_dir:
             path = self.agent_dir.parent / vault_rel

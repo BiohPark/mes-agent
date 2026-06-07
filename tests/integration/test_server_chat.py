@@ -278,3 +278,79 @@ class TestToolFailureAutoError:
 
         saved = wf_storage.load_workflow("general", tid)
         assert saved.steps[0].status == "pending", "pending 단계가 자동으로 error로 바뀌면 안 됨"
+
+
+class TestRunStateSync:
+    """Phase 1-C: 툴 실패 → RunState 동기화 + Definition 불변성 검증."""
+
+    async def _setup(self, client_fail, vault, step_id="rs1"):
+        """그래프 포맷으로 Definition + running 상태의 RunState를 저장한다."""
+        from agent.workflow import storage as wf_storage
+        from agent.workflow.model import WorkflowDefinition, WorkflowNode, WorkflowRunState
+
+        create = await client_fail.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+
+        # Definition 파일 (그래프 포맷, 불변)
+        defn = WorkflowDefinition(
+            id=tid, task_type="general", title="RunState 테스트",
+            nodes=[WorkflowNode(id=step_id, title="실행 단계")],
+            connections=[],
+        )
+        wf_storage.save_definition(defn)
+
+        # RunState 파일 (가변, running 상태)
+        rs = WorkflowRunState(definition_id=tid)
+        rs.set_node_status(step_id, "running")
+        wf_storage.save_run_state("general", tid, rs)
+        return tid
+
+    async def test_run_state_updated_on_tool_failure(self, client_fail, vault):
+        """툴 실패 후 RunState 파일에 error 상태가 저장되어야 한다."""
+        from agent.workflow import storage as wf_storage
+
+        tid = await self._setup(client_fail, vault, step_id="sync1")
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        rs = wf_storage.load_run_state("general", tid)
+        assert rs is not None, "RunState 파일이 생성되지 않음"
+        assert rs.node_states.get("sync1") is not None
+        assert rs.node_states["sync1"].status == "error"
+
+    async def test_definition_unchanged_after_tool_failure(self, client_fail, vault):
+        """툴 실패 후에도 WorkflowDefinition 파일이 변경되지 않아야 한다 (C3 불변성)."""
+        from agent.workflow import storage as wf_storage
+
+        tid = await self._setup(client_fail, vault, step_id="sync2")
+        defn_before = wf_storage.load_definition("general", tid)
+        original_node_count = len(defn_before.nodes)
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        defn_after = wf_storage.load_definition("general", tid)
+        assert len(defn_after.nodes) == original_node_count
+        assert defn_after.nodes[0].id == "sync2"
+        # Definition의 노드 구조(title, type)가 변경되지 않아야 함
+        assert defn_after.nodes[0].title == "실행 단계"
+
+    async def test_run_state_reflects_error_notes(self, client_fail, vault):
+        """RunState의 error notes에 오류 내용이 포함되어야 한다."""
+        from agent.workflow import storage as wf_storage
+
+        tid = await self._setup(client_fail, vault, step_id="sync3")
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        rs = wf_storage.load_run_state("general", tid)
+        assert rs is not None
+        assert rs.node_states["sync3"].notes, "RunState notes가 비어있음"
