@@ -115,7 +115,7 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (89종)
+### 툴 (98종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -124,7 +124,7 @@
 | 브라우저 자동화 (Playwright Chromium) | 22 | ✅ |
 | 프로세스/시스템 (PowerShell, 파일, 프로세스) | 9 | ✅ |
 | 문서 처리 (Excel·Word·PDF·텍스트) | 9 | ✅ |
-| Obsidian RAG (검색·읽기·쓰기·링크 탐색) | 7 | ✅ |
+| Obsidian PKM (탐색·편집·이동·고급검색) | 16 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
 | 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
@@ -315,6 +315,15 @@ Vault/
 - [x] BFS 레이아웃 2D 그래프 캔버스 (running 펄스·done·error shake 애니메이션, 흐름 연결선)
 - [x] 노드 ⋮ 인터랙티브 컨트롤 패널 (완료·건너뛰기·실행·재시도·분기 선택)
 - [x] 진행률 프로그레스 바
+
+### Phase 7 — Obsidian PKM 스레드 ✅
+- [x] `obsidian-rag` → `obsidian` (🗂️ Obsidian PKM) 스레드 전환
+- [x] 2-tier 탐색: `obsidian_preview_note`·`obsidian_scan_vault`·`obsidian_get_backlinks`·`obsidian_read_section`
+- [x] 편집 툴: `obsidian_edit_note`(텍스트 replace)·`obsidian_replace_section`·`obsidian_update_frontmatter`
+- [x] 정리 툴: `obsidian_move_note` (wikilink 자동 업데이트)
+- [x] 고급 검색: `obsidian_search_advanced` (태그·폴더 필터)
+- [x] `obsidian_follow_links` `max_chars_per_note` 파라미터 추가 (토큰 절약)
+- [x] PKM 특화 시스템 프롬프트 (탐색 전략 명시)
 
 ### 다음 단계
 - [ ] 도메인별 실제 시스템 URL을 .env + 시스템 프롬프트에 반영 (Syncade·Knox)

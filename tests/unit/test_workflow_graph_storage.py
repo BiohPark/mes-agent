@@ -122,7 +122,7 @@ class TestLoadDefinition:
         assert defn.connections[0].to_node == "s2"
 
     def test_all_task_types_have_defaults(self, vault):
-        for tt in ("general", "syncade", "obsidian-rag", "unscript", "knox"):
+        for tt in ("general", "syncade", "obsidian", "unscript", "knox"):
             defn = load_definition(tt, f"t-{tt}")
             assert len(defn.nodes) > 0, f"{tt}: 기본 노드 없음"
 

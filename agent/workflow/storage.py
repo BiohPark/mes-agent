@@ -29,11 +29,12 @@ _DEFAULT_STEPS: dict[str, list[dict]] = {
         {"title": "서비스 정상 기동 확인", "type": "auto"},
         {"title": "배포 결과 기록 및 보고", "type": "auto"},
     ],
-    "obsidian-rag": [
-        {"title": "키워드 검색 (obsidian_search)", "type": "auto"},
-        {"title": "관련 노트 읽기·링크 탐색", "type": "auto"},
-        {"title": "정보 종합 및 답변 작성", "type": "auto"},
-        {"title": "새 인사이트 노트 저장", "type": "auto"},
+    "obsidian": [
+        {"title": "목적 파악 및 탐색 전략 수립", "type": "auto"},
+        {"title": "검색·스캔으로 관련 노트 파악", "type": "auto"},
+        {"title": "노트 읽기·분석 (섹션·역링크)", "type": "auto"},
+        {"title": "편집·정리·새 노트 작성", "type": "semi_auto"},
+        {"title": "결과 요약 및 사용자 보고", "type": "auto"},
     ],
     "unscript": [
         {"title": "테스트 대상 화면 확인 (OCR)", "type": "auto"},
@@ -54,7 +55,7 @@ _DEFAULT_STEPS: dict[str, list[dict]] = {
 _DEFAULT_TITLES: dict[str, str] = {
     "general":      "기본업무 워크플로우",
     "syncade":      "Syncade 배포 절차",
-    "obsidian-rag": "Obsidian RAG 조회",
+    "obsidian":     "Obsidian PKM 작업",
     "unscript":     "Unscript 테스트 절차",
     "knox":         "Knox 데이터 수집",
 }

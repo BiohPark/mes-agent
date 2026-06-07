@@ -42,7 +42,7 @@ class TestTaskConfig:
         resp = await client.get("/task-config")
         assert resp.status_code == 200
         data = resp.json()
-        for task_type in ("general", "syncade", "obsidian-rag", "unscript", "knox"):
+        for task_type in ("general", "syncade", "obsidian", "unscript", "knox"):
             assert task_type in data, f"{task_type} 누락"
 
     async def test_each_task_has_required_fields(self, client):

@@ -45,7 +45,7 @@
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
-| Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회·링크 순회 (7종), REST API + 파일 fallback |
+| Obsidian PKM (Phase 7 ✅) | `agent/tools/obsidian_rag.py` | 2-tier 탐색(preview/scan/backlinks/section), 편집(edit/replace_section/update_frontmatter), 이동, 고급검색 (16종) |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
 | 문서 처리 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 (9종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
@@ -78,8 +78,9 @@
 | 런타임 라우팅 엔진 (Phase 6A ✅) | `agent/workflow/model.py` + `workflow.py` + `server.py` | `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택, `PATCH /workflow/nodes/{id}` UI 제어 엔드포인트 |
 | 그래프 캔버스 시각화 (Phase 6B ✅) | `electron/renderer/workflow.js` + `style.css` | BFS 레이아웃 2D 그래프, running/done/error 애니메이션, 분기 색상·흐름 연결선, 진행 바 |
 | 인터랙티브 노드 컨트롤 (Phase 6C ✅) | `electron/renderer/workflow.js` + `style.css` | 노드 ⋮ 클릭 → 완료/건너뛰기/실행/재시도/분기 선택 패널 |
+| Obsidian PKM 스레드 (Phase 7 ✅) | `agent/tools/obsidian_rag.py` + `obsidian_session.py` | `obsidian-rag` → `obsidian` 전환, 2-tier 탐색·편집·이동 9종 신규 툴, 시스템 프롬프트 전면 개편 |
 
-**총 툴 수: 89종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 98종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -89,7 +90,7 @@
 | `browser.py` | 22 |
 | `process.py` | 9 |
 | `document.py` | 9 |
-| `obsidian_rag.py` | 7 |
+| `obsidian_rag.py` | 16 |
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
 | `obsidian_session.py` | 4 |
@@ -103,7 +104,7 @@
 | Phase 0 task_type/thread_id 주입 | `server.py generate()` — 시스템 프롬프트에 세션 컨텍스트 삽입, LLM이 workflow 툴 호출 시 올바른 값 사용 |
 | `_AUTO_EXEC` 워크플로우 지침 | `obsidian_session.py` — 작업 시작 시 `workflow_init` 강제, 각 단계 `workflow_set_step` 업데이트 지침 |
 | TASK_CONFIGS 시스템 프롬프트 보강 | `obsidian_session.py` — 5개 업무별 워크플로우 상세 지침, 브라우저 조작 전략 명시 |
-| 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian-rag(4)/unscript(5)/knox(5) 단계 |
+| 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian(5)/unscript(5)/knox(5) 단계 |
 | 워크플로우 데이터 모델 | `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스, StepType·StepStatus Literal |
 | 워크플로우 스토리지 | `agent/workflow/storage.py` — Vault `agent/workflows/{type}/{id}.json` 저장/로드/삭제 |
 | 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder` (6종) |
@@ -172,7 +173,7 @@ agent/server.py 내 generate() 수정
 
 #### 4. ✅ Obsidian RAG 연동 — 완성
 
-**구현 완료**: `agent/tools/obsidian_rag.py` (7종 툴)
+**구현 완료**: `agent/tools/obsidian_rag.py` (16종 툴, Phase 7 확장)
 - `obsidian_search` — Vault 전체 키워드 검색
 - `obsidian_read_note` — 노트 읽기
 - `obsidian_list_notes` — 폴더 목록

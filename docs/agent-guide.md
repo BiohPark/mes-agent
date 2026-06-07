@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (89종)
+## 구현된 툴 목록 (98종)
 
 ### 화면 인식 (10종)
 
@@ -116,7 +116,7 @@
 | `read_file(path)` | 텍스트 파일 읽기 |
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 |
 
-### Obsidian RAG — Vault 접근 (7종)
+### Obsidian PKM — Vault 탐색·편집·정리 (16종)
 
 **환경 설정 (`.env`):**
 ```ini
@@ -127,19 +127,64 @@ OBSIDIAN_API_KEY=발급받은-API-키                 # Obsidian 플러그인에
 
 **접근 우선순위:** REST API (`OBSIDIAN_HOST`) → 직접 파일 (`OBSIDIAN_VAULT_PATH`) fallback
 
+#### Tier 1 — 얕은 탐색 (토큰 절약)
+
 | 툴 이름 | 기능 |
 |---------|------|
-| `obsidian_search` | Vault 전체 키워드 검색 |
-| `obsidian_read_note` | 경로로 노트 읽기 |
-| `obsidian_list_notes` | 폴더 내 목록 조회 |
-| `obsidian_write_note` | 노트 생성/덮어쓰기 |
-| `obsidian_append_note` | 노트에 내용 추가 |
-| `obsidian_get_tags` | 태그 조회 |
-| `obsidian_follow_links` | `[[wikilink]]` 다중 뎁스 BFS 스캔 |
+| `obsidian_preview_note` | 첫 N줄 + 파일크기·프론트매터만 반환. 관련성 판단용 |
+| `obsidian_scan_vault` | 여러 노트 배치 미리보기. `paths` 목록 또는 `folder` 지정 |
+| `obsidian_get_backlinks` | 이 노트를 `[[링크]]`하는 노트 목록 |
+| `obsidian_read_section` | 특정 헤딩 섹션만 읽기. 큰 노트에서 필요한 부분만 추출 |
+
+#### Tier 2 — 깊은 읽기
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `obsidian_read_note` | 노트 전문 읽기 |
+| `obsidian_list_notes` | 폴더 내 노트 목록 |
+| `obsidian_get_tags` | 프론트매터·인라인 태그 조회 |
+| `obsidian_follow_links` | `[[wikilink]]` BFS 다중 뎁스 스캔. `max_chars_per_note`로 비루트 노트 글자 수 제한 가능 |
+
+#### 검색
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `obsidian_search` | 키워드 전체 검색 |
+| `obsidian_search_advanced` | 태그 필터·폴더 범위·최근 수정순 정렬 지원 |
+
+#### 쓰기·편집
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `obsidian_write_note` | 노트 생성/전체 덮어쓰기 |
+| `obsidian_append_note` | 노트 끝에 내용 추가 |
+| `obsidian_edit_note` | 특정 텍스트 교체 (중복 발견 시 오류 반환 — 안전장치) |
+| `obsidian_replace_section` | 헤딩 섹션 내용 전체 교체 (헤딩 줄 보존) |
+| `obsidian_update_frontmatter` | YAML 프론트매터 필드 upsert |
+
+#### 정리·이동
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `obsidian_move_note` | 이동/이름 변경 + `[[wikilink]]` 자동 업데이트 |
+
+#### 2-tier 탐색 패턴 (권장)
+
+```
+1. obsidian_search("키워드")
+   → 관련 노트 경로 목록 확보
+
+2. obsidian_scan_vault(paths=[...])
+   → 크기·태그·첫 줄로 관련성 판단
+
+3. (관련 있는 노트만) obsidian_read_note / obsidian_read_section
+   → 토큰 절약
+
+4. [[링크]] 네트워크 필요 시
+   → obsidian_follow_links(max_chars_per_note=500)
+```
 
 #### `obsidian_follow_links` 상세
-
-Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 탐색한다.
 
 **지원 문법:**
 ```
@@ -148,18 +193,12 @@ Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 �
 [[노트 제목#섹션]]         — 헤딩 링크 (섹션 기호 무시, 노트만 탐색)
 ```
 
-**링크 해석 순서:**
-1. REST API `GET /vault/{title}.md`
-2. REST API `POST /search/simple/?query={title}` → stem 이름 매칭
-3. Vault 전체 파일 스캔 (대소문자 무시)
-
 **사용 예:**
 ```json
-{ "path": "projects/Syncade.md", "depth": 2, "max_notes": 30 }
+{ "path": "projects/Syncade.md", "depth": 2, "max_notes": 20, "max_chars_per_note": 500 }
 ```
 
-> `depth` 권장값: 1~2. 3 이상은 `max_notes`를 줄여 응답 크기 제한.  
-> depth=0인 루트 노트만 전체 내용 반환, 나머지는 2000자로 자동 잘림.
+> `depth` 권장값: 1~2. `max_chars_per_note` 기본 2000, 토큰 절약 시 500으로 줄여라.
 
 ### Obsidian 세션 (4종)
 
@@ -327,7 +366,7 @@ agent/
     ├── browser.py       — MANIFEST(22종)
     ├── process.py       — MANIFEST(9종)
     ├── document.py      — MANIFEST(9종)
-    ├── obsidian_rag.py  — MANIFEST(7종)
+    ├── obsidian_rag.py  — MANIFEST(16종) 탐색·편집·이동·고급검색
     ├── interaction.py   — MANIFEST(1종) ask_user
     └── workflow.py      — MANIFEST(8종) init·set_step·add_step·update_step·remove_step·reorder·add_connection·remove_connection
 ```

@@ -67,23 +67,37 @@ TASK_CONFIGS = {
             "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록."
         ) + _AUTO_EXEC,
     },
-    "obsidian-rag": {
-        "label": "Obsidian RAG",
-        "icon": "🧠",
+    "obsidian": {
+        "label": "Obsidian PKM",
+        "icon": "🗂️",
         "description": (
-            "Obsidian 지식베이스 관리 에이전트입니다.\n"
-            "Vault에서 관련 노트를 찾고, 정보를 종합하고 새 노트를 작성합니다.\n\n"
-            "워크플로우: 키워드 검색 → 노트 읽기·링크 탐색\n"
-            "→ 정보 종합 → 새 인사이트 저장"
+            "Obsidian 지식 관리 페어 에이전트입니다.\n"
+            "Vault를 탐색·편집·정리하고 사용자와 함께 지식을 구조화합니다.\n\n"
+            "주요 기능: 노트 검색·읽기·편집·이동 · 역링크 탐색\n"
+            "태그·폴더 필터 검색 · 섹션 단위 편집 · 프론트매터 관리"
         ),
         "system_prompt": (
-            "너는 Obsidian 지식베이스 관리 에이전트야. "
-            "사용자의 Obsidian Vault를 지식 베이스로 활용해 질문에 답하고 정보를 정리한다. "
-            "답변 전 반드시 obsidian_search로 Vault에서 관련 노트를 먼저 검색해. "
-            "검색 결과가 있으면 obsidian_read_note로 해당 노트를 읽어 맥락을 파악한 뒤 답변해. "
-            "[[wikilink]] 연결 노트가 중요해 보이면 obsidian_follow_links로 다중 뎁스 탐색해. "
-            "새로운 인사이트나 분석 결과는 obsidian_write_note 또는 obsidian_append_note로 기록해. "
-            "Vault에 없는 내용이면 솔직히 말하고, 필요 시 새 노트를 생성해 지식을 축적해."
+            "너는 사용자의 Obsidian Vault를 함께 관리하는 PKM(Personal Knowledge Management) 페어야. "
+            "Vault를 지식베이스로 활용해 질문에 답하고, 노트를 탐색·편집·정리하며 사용자와 협력한다. "
+            ""
+            "[탐색 전략 — 토큰 효율] "
+            "1. 먼저 obsidian_search 또는 obsidian_search_advanced로 관련 노트 목록을 파악해. "
+            "2. 결과 목록은 obsidian_scan_vault로 일괄 미리보기해 관련성을 판단해. "
+            "3. 실제로 필요한 노트만 obsidian_read_note로 전문 읽기해. "
+            "4. 큰 노트는 obsidian_read_section으로 필요한 섹션만 읽어 토큰을 절약해. "
+            "5. [[wikilink]] 네트워크가 중요하면 obsidian_follow_links로 탐색하되 "
+            "   max_chars_per_note=500으로 설정해 토큰을 아껴. "
+            "6. 이 노트를 참조하는 노트가 궁금하면 obsidian_get_backlinks를 써. "
+            ""
+            "[편집 전략] "
+            "- 노트 일부 수정: obsidian_edit_note (정확한 텍스트 replace, 중복 시 오류). "
+            "- 섹션 전체 교체: obsidian_replace_section (헤딩 지정). "
+            "- 프론트매터 수정: obsidian_update_frontmatter (tags·status·aliases 등). "
+            "- 전체 재작성: obsidian_write_note. "
+            "- 이름/위치 변경: obsidian_move_note (update_links=true로 wikilink 자동 업데이트). "
+            ""
+            "Vault에 없는 정보면 솔직히 말하고, 새로 작성이 필요하면 사용자와 내용을 먼저 협의해. "
+            "편집 전에 현재 내용을 읽어 맥락을 파악하고, 중요 변경 전에는 ask_user로 확인해."
         ) + _AUTO_EXEC,
     },
     "unscript": {
