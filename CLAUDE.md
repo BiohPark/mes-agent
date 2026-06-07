@@ -309,7 +309,7 @@ mes-agent/
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)
 ├── .env                    ← 로컬 설정 (git 제외)
 ├── .env.example            ← 설정 템플릿
-├── requirements.txt        ← Python 의존성 (17개 패키지)
+├── requirements.txt        ← Python 의존성 (22개 패키지 — 런타임 18 + 테스트 4)
 └── package.json            ← Electron 42, Node 22
 ```
 

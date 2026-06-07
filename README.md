@@ -106,13 +106,16 @@
 | 멀티 스레드 대화 | ✅ | 업무별 독립 스레드, 탭 UI, 멀티턴 이력 |
 | Obsidian 저장 | ✅ | 스레드 전체 메시지 `agent/threads/{type}/{id}.md` 저장 |
 | 스레드 관리 | ✅ | 완료·보관·복원·영구 삭제 |
-| 워크플로우 패널 | ✅ | 단계 카드(pending/running/waiting/done/error), 클릭 시 상세 펼침, 드래그 리사이즈 |
-| 워크플로우 편집모드 | ✅ | 제목·단계 CUD, 드래그앤드롭 순서변경, AI 코웍 편집, 삭제(초기화) |
-| 워크플로우 저장 | ✅ | `agent/workflows/{type}/{id}.json` Obsidian 저장 |
+| 그래프 캔버스 시각화 | ✅ | BFS 레이아웃 2D 그래프, running 애니메이션·done(녹색)·error(적색 shake), 분기 연결선 |
+| 런타임 라우팅 | ✅ | `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택, 병합 지원 |
+| 인터랙티브 노드 컨트롤 | ✅ | 노드 ⋮ 클릭 → 완료·건너뛰기·실행·재시도·분기 선택 패널 |
+| 워크플로우 편집모드 | ✅ | 제목·단계 CUD, 드래그앤드롭 순서변경, SVG 분기 연결 CUD, AI 코웍 편집 |
+| 워크플로우 저장 | ✅ | `agent/workflows/{type}/{id}.md` YAML frontmatter + Obsidian 저장 |
+| 워크플로우 파일 감지 | ✅ | SSE mtime 폴링, 외부 편집 즉시 반영 |
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (87종)
+### 툴 (89종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -124,7 +127,7 @@
 | Obsidian RAG (검색·읽기·쓰기·링크 탐색) | 7 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
-| 워크플로우 (init·set_step·add·update·remove·reorder) | 6 | ✅ |
+| 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
 
 > 상세 툴 목록 → **[docs/agent-guide.md](docs/agent-guide.md)**
 
@@ -275,37 +278,49 @@ Vault/
 | DELETE | `/threads/{type}/{id}` | 스레드 보관 |
 | POST | `/threads/{type}/{id}/close` | 스레드 완료 |
 | GET/POST/DELETE | `/threads/{type}/{id}/workflow` | 워크플로우 조회/저장/삭제 |
+| PATCH | `/threads/{type}/{id}/workflow/nodes/{node_id}` | 노드 상태 직접 변경 (인터랙티브 컨트롤) |
+| GET | `/threads/{type}/{id}/workflow/events` | 워크플로우 파일 변경 감지 SSE |
 | POST | `/confirm/{confirm_id}` | 사용자 확인 응답 |
 | POST | `/tool/test` | 툴 직접 테스트 |
 
 ---
 
-## 다음 단계 로드맵
+## 개발 이력 & 로드맵
 
-### Phase 0 — 즉시 (워크플로우 루프 완성) ✅ 완료
+### Phase 0 — 워크플로우 루프 완성 ✅
 - [x] task_type·thread_id를 시스템 프롬프트에 주입
 - [x] _AUTO_EXEC에 워크플로우 사용 지시 추가
 - [x] workflow_set_step 단계 id 고정 (기본 템플릿 최초 1회 영속화)
 - [x] LLM 스트리밍 중 즉시 중단 (청크 루프 내 stop 플래그 체크)
-- [ ] 도메인별 실제 시스템 URL을 .env + 시스템 프롬프트에 반영
 
-### Phase 1 — 이번 주 (실제 업무 연결)
-- [ ] Syncade·Knox 실제 접속 URL·경로 구체화
+### Phase 1 — 워크플로우 편집 ✅
 - [x] 워크플로우 단계 클릭 → 결과 상세 드로어
-- [x] 실행 로그 스레드 전환 시 초기화
 - [x] 빠른 작업 버튼 — 완성형 원클릭 실행 / 템플릿 삽입 구분
 - [x] 워크플로우 편집모드 — 단계 CUD·드래그앤드롭·AI 코웍 편집
-- [ ] 워크플로우를 업무 표준 템플릿으로 저장 (후속)
 
-### Phase 2 — 2주 내 (안정성)
-- [ ] 실제 토큰 수 (LLM 응답 usage 필드)
+### Phase 2~4 — 그래프 모델·스토리지·SSE ✅
+- [x] 그래프 모델 (WorkflowNode·WorkflowConnection·WorkflowRunState)
+- [x] SVG 분기 연결선 (from_output별 색상, 편집모드 연결 CUD UI)
+- [x] YAML frontmatter 스토리지 (`.md` 포맷 저장·로드)
+- [x] 워크플로우 파일 감지 SSE (`/workflow/events`, mtime 폴링)
+- [x] 툴 실패 → error 단계 자동 전환 + 재시도 버튼
+
+### Phase 5 — 파라미터 명시화 ✅
+- [x] `wait_for_image`/`wait_for_text` `interval` 파라미터 MANIFEST 노출 → LLM이 폴링 간격 직접 제어
+- [x] `mouse_click` `after_delay_ms` 추가 → 클릭 후 안정화 대기
+
+### Phase 6 — 런타임 라우팅 + 그래프 UX ✅
+- [x] 런타임 라우팅 엔진: `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택
+- [x] `PATCH /workflow/nodes/{id}` UI 제어 엔드포인트
+- [x] BFS 레이아웃 2D 그래프 캔버스 (running 펄스·done·error shake 애니메이션, 흐름 연결선)
+- [x] 노드 ⋮ 인터랙티브 컨트롤 패널 (완료·건너뛰기·실행·재시도·분기 선택)
+- [x] 진행률 프로그레스 바
+
+### 다음 단계
+- [ ] 도메인별 실제 시스템 URL을 .env + 시스템 프롬프트에 반영 (Syncade·Knox)
 - [ ] 컨텍스트 80% 도달 시 자동 압축
-- [ ] 툴 실패 시 워크플로우 단계 error 자동 표시 + 재시도 버튼
-
-### Phase 3 — 1달 내 (배포·확장)
-- [ ] Electron 패키징 → `.exe` 인스톨러
-- [ ] 워크플로우 템플릿 라이브러리
 - [ ] 멀티모달 비전 (사내 LLM 지원 여부 확인 후)
+- [ ] Electron 패키징 → `.exe` 인스톨러
 
 ---
 

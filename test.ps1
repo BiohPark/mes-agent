@@ -1,4 +1,4 @@
-# MES Agent 테스트 실행 스크립트
+﻿# MES Agent 테스트 실행 스크립트
 # 사용법: .\test.ps1 [옵션]
 #   .\test.ps1              — 전체 테스트 + 커버리지 리포트
 #   .\test.ps1 unit         — 단위 테스트만
@@ -11,6 +11,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# 한글 출력 깨짐 방지: 콘솔 코드페이지 + PowerShell 출력 인코딩을 UTF-8로 통일
+chcp 65001 | Out-Null
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host "=== MES Agent 테스트 ===" -ForegroundColor Cyan
 

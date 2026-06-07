@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (87종)
+## 구현된 툴 목록 (89종)
 
 ### 화면 인식 (10종)
 
@@ -25,8 +25,8 @@
 | `capture_region_ocr` | `screen.py` | 지정 영역 OCR (좌표·크기 지정, 더 정확) |
 | `find_image_on_screen` | `screen.py` | OpenCV 템플릿 매칭 → 좌표 반환 |
 | `find_text_location` | `screen.py` | OCR로 텍스트 위치(좌표) 탐색 |
-| `wait_for_image` | `screen.py` | 이미지 나타날 때까지 대기 |
-| `wait_for_text` | `screen.py` | 텍스트 나타날 때까지 대기 |
+| `wait_for_image` | `screen.py` | 이미지 나타날 때까지 대기 (`interval`로 폴링 간격 지정, 기본 0.5s) |
+| `wait_for_text` | `screen.py` | 텍스트 나타날 때까지 대기 (`interval`로 폴링 간격 지정, 기본 0.5s) |
 | `compare_screenshots` | `screen.py` | 두 스크린샷 픽셀 비교 → 변화율 |
 | `save_screenshot` | `screen.py` | 전체 화면 파일 저장 |
 | `get_pixel_color` | `screen.py` | 픽셀 RGB/HEX 색상 반환 |
@@ -36,7 +36,7 @@
 
 | 툴 이름 | 파일 | 기능 |
 |---------|------|------|
-| `mouse_click` | `desktop.py` | 좌표 클릭 (`use_sendinput=true`로 UAC 앱 대응) |
+| `mouse_click` | `desktop.py` | 좌표 클릭 (`use_sendinput=true`로 UAC 앱 대응, `after_delay_ms`로 클릭 후 안정화 대기) |
 | `mouse_move` | `desktop.py` | 마우스 이동 |
 | `mouse_scroll` | `desktop.py` | 휠 스크롤 (up/down, amount 지정) |
 | `mouse_drag` | `desktop.py` | 드래그 앤 드롭 |
@@ -184,34 +184,44 @@ Obsidian의 `[[노트 제목]]` 링크를 따라가며 연결된 노트들을 �
 **타임아웃:** 300초 (5분) — 초과 시 자동 중단  
 **사용 시점:** 중요한 비가역적 작업 직전 (파일 삭제, 배포 실행, 대량 입력 등)
 
-### 워크플로우 (6종)
+### 워크플로우 (8종)
 
 | 툴 이름 | 기능 |
 |---------|------|
 | `workflow_init` | 스레드 워크플로우 초기화 (단계 전체 정의/교체, 우측 패널에 표시) |
-| `workflow_set_step` | 특정 단계의 **진행 상태** 업데이트 (pending/running/waiting/done/error/skipped) |
+| `workflow_set_step` | 특정 단계의 **진행 상태** 업데이트 (pending/running/waiting/done/error/skipped). `branch_output=1/2`로 분기 경로 선택 |
 | `workflow_add_step` | 단계 **추가** (기존 단계 상태 유지, `after_step_id`로 삽입 위치 지정 가능) |
 | `workflow_update_step` | 단계의 **구조 수정** (제목·유형). 상태는 `set_step`이 담당 |
 | `workflow_remove_step` | 단계 **삭제** |
 | `workflow_reorder` | 단계 **순서 재배치** (`ordered_step_ids`에 원하는 순서대로 id 나열) |
+| `workflow_add_connection` | 노드 간 연결 추가 (`from_output`: 0=기본, 1=true 분기, 2=false 분기) |
+| `workflow_remove_connection` | 노드 간 연결 삭제 |
 
 **단계 타입:**
 - `auto` 🤖 — 에이전트가 자동 실행
 - `semi_auto` 👁️ — 사용자 확인 후 실행
 - `manual` ✋ — 사용자가 직접 수행
 
+**런타임 라우팅:**  
+`workflow_set_step(status="done")` 호출 시 연결된 다음 노드를 자동으로 `running` 상태로 전환한다.  
+분기 노드는 `branch_output=1`(true) 또는 `branch_output=2`(false)로 경로를 선택해야 자동 진행된다.  
+생략 시 `from_output=0` 기본 경로를 따라가고, 다중 분기 노드에서 생략하면 자동 진행 없음(사용자가 노드 ⋮ 패널에서 선택).
+
 **사용 패턴 (진행 추적):**
 ```
 1. workflow_init(task_type, thread_id, title, steps=[...])
-   → 우측 패널에 단계 카드 표시, step_id 반환
+   → 우측 패널에 그래프 캔버스 표시, step_id 반환
 
 2. (단계 시작 전)
    workflow_set_step(task_type, thread_id, step_id, status="running")
 
 3. (실제 작업 실행 — 다른 툴들 호출)
 
-4. (단계 완료 후)
+4. (단계 완료 후 — 다음 노드 자동 running 전환)
    workflow_set_step(task_type, thread_id, step_id, status="done", notes="결과 요약")
+
+5. (분기 노드 완료 시 — true 경로 선택)
+   workflow_set_step(task_type, thread_id, step_id, status="done", branch_output=1)
 ```
 
 **사용 패턴 (AI 코웍 편집):** 사용자가 "단계 추가/수정/삭제/순서변경 해줘" 라고 하면
@@ -319,7 +329,7 @@ agent/
     ├── document.py      — MANIFEST(9종)
     ├── obsidian_rag.py  — MANIFEST(7종)
     ├── interaction.py   — MANIFEST(1종) ask_user
-    └── workflow.py      — MANIFEST(6종) init·set_step·add_step·update_step·remove_step·reorder
+    └── workflow.py      — MANIFEST(8종) init·set_step·add_step·update_step·remove_step·reorder·add_connection·remove_connection
 ```
 
 ---
