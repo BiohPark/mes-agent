@@ -131,21 +131,13 @@
 
 ---
 
-#### 1. 멀티모달 비전 (`agent/tools/vision.py`)
+#### 1. ✅ 멀티모달 비전 (`agent/tools/vision.py`) — 완성
 
-**무엇**: 화면을 캡처해 이미지 그대로 LLM에 전달하여 도표, 플로우차트, UI 레이아웃을 인식한다.
-
-**왜 필요**: OCR은 텍스트만 추출하지만, SAP/MES 화면처럼 복잡한 UI나 차트는 LLM 비전으로만 해석 가능.
-
-**구현 계획**:
-```
-agent/tools/vision.py
-  - analyze_screen(prompt)     — 전체화면 base64 인코딩 → LLM messages에 image_url 첨부
-  - analyze_region(x,y,w,h)    — 특정 영역만 분석
-```
-
-사내 LLM의 멀티모달 지원 여부 먼저 확인 필요 (담당자 문의).
-완료 시 `CLAUDE.md` + `README.md` 업데이트.
+**구현 완료** (2026-06-07):
+- `analyze_screen(prompt)` — 전체화면 base64 → LLM `image_url` 전달
+- `analyze_region(x,y,width,height,prompt)` — 영역 지정 분석
+- `VISION_ENABLED=true` 환경변수 게이트 — 비활성 시 안내 메시지 반환
+- 사용 전 사내 LLM 비전 지원 여부 유저 확인 흐름 (`ask_user` 연동)
 
 ---
 
@@ -346,6 +338,75 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 - **분석 시작 전** — `obsidian_search`로 관련 도메인 노트 먼저 검색
 - **설계 결정 시** — `obsidian_read_note`로 시스템 명세, 이전 분석 참조
 - **작업 중 인사이트** — `obsidian_write_note` / `obsidian_append_note`로 기록
+
+---
+
+## 향후 개선 아이디어 (Backlog)
+
+> 우선순위 없음. 설계 전 타당성 검토 필요. README.md에도 동일 내용 기재.
+
+### A. IDE식 탭 + 스레드 관리 개선 🖥️
+
+**배경**: 스레드가 조금만 쌓여도 사이드바 관리 어려움. 상단 채팅 탭 영역이 사이드바로 이전된 뒤 빈 공간으로 방치 중.
+
+**아이디어**:
+- 상단 빈 탭 바를 IDE처럼 "활성 스레드 탭"으로 활용 (VS Code 스타일)
+- `×` 버튼은 **삭제 아닌 닫기** — 탭에서만 제거, 사이드바 목록 보존
+- 사이드바: 최근 N개 + 폴더 검색 + 접이식 그룹(진행 중 / 완료 / 보관)
+- 탭 overflow 시 스크롤 or `>` 드롭다운 메뉴
+
+**구현 포인트**: `chat.js` 탭 렌더 로직 + `index.html` 레이아웃 수정. 탭 상태는 메모리 유지(새로고침 시 재로드).
+
+---
+
+### B. 워크플로우 패널 컴팩트 + 반응형 레이아웃 📋
+
+**배경**: 그래프 캔버스 화살표·노드가 커서 좁은 사이드바(300px)에 정보량이 너무 적음. 초기 선형 플로우가 좌우로 그려져 공간 낭비.
+
+**아이디어**:
+- **반응형**: 사이드바 너비 감지 → 좁음(<350px): 세로 1열 카드 목록, 넓음(≥350px): 2D 그래프
+- **컴팩트 노드**: 화살표 축소, 노드 높이 최소화, 완료 노드는 아이콘만 표시로 접기
+- **상태 중심 표시**: running/error 노드만 펼침, 나머지는 collapsed
+- 구현: `workflow.js` `_layout()` 및 `renderCanvas()` 분기 처리. `ResizeObserver`로 패널 너비 감지.
+
+---
+
+### C. 에이전트 실행 중 창 최소화 UX 🪟
+
+**배경**: 에이전트가 화면 OCR/이미지 매칭을 수행하는 동안 앱 창이 화면을 가려 심각한 동작 실패. 현재 회피책 없음.
+
+**구현 가능성: 높음** — Electron BrowserWindow API로 즉시 구현 가능.
+
+**옵션 (난이도 낮은 순)**:
+1. **자동 최소화** (권장): `agentState=running` SSE → `ipcRenderer.send('minimize-window')` → `main.js`에서 `win.minimize()`. idle 수신 시 `win.restore()`.
+2. **뱃지 창 모드**: 100×60px 플로팅 윈도우로 전환. 진행 상태(단계명, 시간)만 표시. 클릭 시 복원.
+3. **반투명 모드**: `win.setOpacity(0.15)` — 창은 유지하되 화면 간섭 최소화.
+
+**구현 항목**: `main.js` IPC 핸들러 추가, `chat.js` agentState 이벤트 훅, (옵션 2의 경우) 별도 뱃지 창 `BrowserWindow` 생성.
+
+---
+
+### D. AI 모델 다중 선택 UI 🤖
+
+**배경**: LLM 전환이 "프로파일" 단위만 가능. 같은 엔드포인트에서 모델명만 바꾸려면 `.env` 직접 수정 필요.
+
+**아이디어**:
+- 헤더 [LLM 프로파일] 버튼 → 드롭다운: 엔드포인트·모델명·temperature 선택
+- 모델 프리셋: 빠른(nano) / 균형(mini) / 정밀(full) / 비전(vision 지원 모델)
+- 스레드별 모델 오버라이드 지원
+- `GET /v1/models` API로 사내 LLM 모델 목록 동적 조회 (OpenAI 호환 시)
+
+**구현 항목**: `config.py` `MODEL_OVERRIDES` 추가, `/profile` API 확장, `index.html` 드롭다운 UI.
+
+---
+
+### E. 일반 채팅 대화 기억
+
+기본업무 단일 메시지 채팅에서 멀티턴 컨텍스트 유지. `generate()` 내 세션 메시지 리스트 유지, 80% 도달 시 슬라이딩 윈도우 또는 자동 요약.
+
+### F. Electron 패키징 배포
+
+`electron-builder` → `.exe` 인스톨러. Python 환경 `conda-pack` 동봉. `npm run dist` 한 명령 빌드.
 
 ---
 

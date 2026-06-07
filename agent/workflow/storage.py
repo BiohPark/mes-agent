@@ -61,19 +61,56 @@ _DEFAULT_TITLES: dict[str, str] = {
 }
 
 
+def _template_path(task_type: str) -> Path | None:
+    d = _workflow_dir()
+    return (d / "_templates" / f"{task_type}.md") if d else None
+
+
+def load_template(task_type: str) -> dict:
+    """태스크 유형의 기본 템플릿을 로드. 없으면 하드코딩 기본값 반환."""
+    path = _template_path(task_type)
+    if path and path.exists():
+        try:
+            content = path.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 2:
+                    data = yaml.safe_load(parts[1])
+                    if data and "steps" in data:
+                        return data
+        except Exception:
+            pass
+    return {
+        "title": _DEFAULT_TITLES.get(task_type, "워크플로우"),
+        "steps": _DEFAULT_STEPS.get(task_type, _DEFAULT_STEPS["general"]),
+    }
+
+
+def save_template(task_type: str, title: str, steps: list) -> None:
+    """태스크 유형의 기본 템플릿을 Vault에 저장한다."""
+    path = _template_path(task_type)
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"title": title, "steps": steps}
+    content = "---\n" + yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False) + "---\n"
+    path.write_text(content, encoding="utf-8")
+
+
 def _make_default(task_type: str, thread_id: str) -> Workflow:
-    steps_def = _DEFAULT_STEPS.get(task_type, _DEFAULT_STEPS["general"])
+    tmpl = load_template(task_type)
+    steps_def = tmpl.get("steps", _DEFAULT_STEPS.get(task_type, _DEFAULT_STEPS["general"]))
+    title = tmpl.get("title", _DEFAULT_TITLES.get(task_type, "워크플로우"))
     steps = [
         WorkflowStep(
             id=uuid.uuid4().hex[:8],
-            title=s["title"],
-            type=s["type"],
+            title=s["title"] if isinstance(s, dict) else s,
+            type=s.get("type", "auto") if isinstance(s, dict) else "auto",
             status="pending",
             notes="",
         )
         for s in steps_def
     ]
-    title = _DEFAULT_TITLES.get(task_type, "워크플로우")
     return Workflow(thread_id=thread_id, task_type=task_type, title=title, steps=steps)
 
 

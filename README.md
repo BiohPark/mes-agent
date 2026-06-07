@@ -115,7 +115,7 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (98종)
+### 툴 (109종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -123,11 +123,13 @@
 | 마우스/키보드 제어 (UAC 앱 포함, 창 관리) | 19 | ✅ |
 | 브라우저 자동화 (Playwright Chromium) | 22 | ✅ |
 | 프로세스/시스템 (PowerShell, 파일, 프로세스) | 9 | ✅ |
-| 문서 처리 (Excel·Word·PDF·텍스트) | 9 | ✅ |
-| Obsidian PKM (탐색·편집·이동·고급검색) | 16 | ✅ |
+| 문서 처리 (Excel·Word·PDF·텍스트·검토메모·수정추적·PPT) | 13 | ✅ |
+| Obsidian PKM (탐색·편집·이동·고급검색·Templater) | 18 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
 | 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
+| 멀티모달 비전 (전체화면·영역 분석, VISION_ENABLED 게이트) | 2 | ✅ |
+| Windows UI Automation (접근성 트리, OCR 없이 Win32 컨트롤 파악) | 3 | ✅ |
 
 > 상세 툴 목록 → **[docs/agent-guide.md](docs/agent-guide.md)**
 
@@ -151,7 +153,9 @@ opencv-python + mss            — 이미지 매칭, 고속 스크린샷
 pillow                         — 이미지 처리
 
 openpyxl / python-docx / pdfplumber  — 문서 처리
+zipfile + xml.etree             — Office OpenXML 검토메모·수정추적·PPT 파싱 (추가 설치 불필요)
 Obsidian Local REST API        — Vault 읽기·쓰기 (fallback: 직접 파일)
+VISION_ENABLED=true            — 멀티모달 LLM 비전 게이트 (사내 LLM 지원 여부 선확인)
 ```
 
 ---
@@ -221,9 +225,11 @@ mes-agent/
 │       ├── browser.py       — Playwright 브라우저 자동화 (22종)
 │       ├── process.py       — 프로세스·시스템·파일 (9종)
 │       ├── document.py      — Excel·Word·PDF·텍스트 (9종)
-│       ├── obsidian_rag.py  — Obsidian Vault RAG (7종)
+│       ├── obsidian_rag.py  — Obsidian Vault RAG (18종)
 │       ├── interaction.py   — 사용자 확인 팝업 ask_user (1종)
-│       └── workflow.py      — 워크플로우 관리 (6종: init·set_step·add·update·remove·reorder)
+│       ├── workflow.py      — 워크플로우 관리 (8종)
+│       ├── vision.py        — 멀티모달 비전 분석 (2종, VISION_ENABLED 게이트)
+│       └── ui_automation.py — Windows UI Automation / 접근성 트리 (3종)
 ├── docs/
 │   └── agent-guide.md       — 툴 추가 가이드 + 전체 툴 목록
 ├── start.ps1                — 개발 환경 시작 (conda + nvm PATH 설정)
@@ -280,6 +286,8 @@ Vault/
 | GET/POST/DELETE | `/threads/{type}/{id}/workflow` | 워크플로우 조회/저장/삭제 |
 | PATCH | `/threads/{type}/{id}/workflow/nodes/{node_id}` | 노드 상태 직접 변경 (인터랙티브 컨트롤) |
 | GET | `/threads/{type}/{id}/workflow/events` | 워크플로우 파일 변경 감지 SSE |
+| GET | `/workflow/templates/{task_type}` | 업무별 기본 워크플로우 템플릿 조회 |
+| PUT | `/workflow/templates/{task_type}` | 기본 템플릿 저장 (Vault `_templates/{type}.md`) |
 | POST | `/confirm/{confirm_id}` | 사용자 확인 응답 |
 | POST | `/tool/test` | 툴 직접 테스트 |
 
@@ -325,11 +333,92 @@ Vault/
 - [x] `obsidian_follow_links` `max_chars_per_note` 파라미터 추가 (토큰 절약)
 - [x] PKM 특화 시스템 프롬프트 (탐색 전략 명시)
 
-### 다음 단계
+### Phase 8 — Office 문서 심화 + 비전 + 템플릿 편집 ✅
+
+- [x] Office 문서 검토 읽기 — Word 검토메모(`read_word_comments`)·수정추적(`read_word_track_changes`), Excel 셀메모(`read_excel_comments`), PPT 슬라이드+노트(`read_ppt_content`) (OpenXML 파싱, 추가 설치 불필요)
+- [x] 멀티모달 비전 — `analyze_screen`·`analyze_region` (VISION_ENABLED 런타임 게이트, 사용 전 LLM 지원 여부 유저 확인 흐름)
+- [x] Windows UI Automation — `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` (pywin32 접근성 트리, OCR 없이 Win32 컨트롤 파악)
+- [x] 기본 워크플로우 템플릿 편집 UI — "📋 기본 템플릿 편집" 버튼, Vault `_templates/{type}.md` 저장
+- [x] 패널 접기 UX 버그 수정 — `width:0` 대신 `.collapsed` CSS 클래스, `‹` 버튼이 항상 보이는 26px 스트립 유지
+
+### 다음 단계 (단기)
 - [ ] 도메인별 실제 시스템 URL을 .env + 시스템 프롬프트에 반영 (Syncade·Knox)
 - [ ] 컨텍스트 80% 도달 시 자동 압축
-- [ ] 멀티모달 비전 (사내 LLM 지원 여부 확인 후)
 - [ ] Electron 패키징 → `.exe` 인스톨러
+- [ ] COM Interop 오피스 편집 (`win32com`) — 현재 읽기만, 깊은 편집은 미구현
+
+---
+
+## 향후 개선 아이디어 (Backlog)
+
+> 우선순위 없음. 아이디어 단계 — 설계 전 타당성 검토 필요.
+
+### 🖥️ A. 프론트엔드 — IDE식 탭 + 스레드 관리 개선
+
+**배경**: 스레드가 몇 개만 쌓여도 사이드바 관리가 어렵고, 상단 탭 영역(스레드 전환 바)이 현재 사이드바로 이전되어 빈 공간으로 남아 있음.
+
+**아이디어**:
+- 상단 탭 영역을 IDE처럼 활용 — 현재 활성 스레드를 탭으로 "열어두기" (VS Code처럼 여러 파일을 탭으로 관리)
+- `×` 버튼은 **삭제가 아닌 닫기** — 탭에서만 제거, 스레드는 사이드바 목록에 보존
+- 사이드바: 최근 N개 + 검색 + 접이식 그룹 (완료됨 / 보관됨)
+- 스레드 드래그앤드롭으로 탭 순서 변경
+
+**검토 포인트**: 탭 bar가 채팅 영역 상단에 고정 → 가로 공간 부족 시 스크롤 or overflow 메뉴 처리 방식 결정 필요.
+
+---
+
+### 📋 B. 워크플로우 패널 — 컴팩트 레이아웃 + 반응형 개선
+
+**배경**: 현재 그래프 캔버스의 화살표·노드가 커서 좁은 사이드바에 표시 가능한 정보량이 적음. 초기 선형 워크플로우는 좌우로 그려져 사이드바 너비를 낭비함.
+
+**아이디어**:
+- **반응형 레이아웃**: 사이드바 너비를 감지해 동적으로 방향 전환
+  - 넓음(≥350px): 기존 2D 그래프 (좌우 분기 시각화)
+  - 좁음(<350px): 선형 세로 목록 (1열 카드, 진행 상태 아이콘만)
+- **컴팩트 노드**: 화살표 크기 축소, 노드 높이 감소, 제목 1줄 말줄임
+- **상태 중심 표시**: 완료된 노드는 접혀서 아이콘만, running/error는 펼침
+- **미니맵**: 전체 그래프 축소 미리보기 (노드 수 많을 때)
+
+**검토 포인트**: Phase 6에서 구현한 BFS 레이아웃 엔진 (`_layout()`) 수정 필요. `workflow.js`의 canvas 렌더링 로직 분기 처리.
+
+---
+
+### 🪟 C. 에이전트 실행 중 대화창 최소화 UX
+
+**배경**: 에이전트가 화면을 직접 조작하는 동안 앱 창이 화면을 가려 OCR·이미지 매칭이 실패하는 심각한 충돌. 현재 회피책: 에이전트가 창을 수동으로 최소화하거나 화면 여백 영역만 사용.
+
+**아이디어 (실현 가능성 검토 필요)**:
+1. **자동 최소화**: `agent_state = running` SSE 수신 시 `BrowserWindow.minimize()` 호출. 완료(idle)되면 자동 복원.
+2. **뱃지 모드**: 실행 중에는 작은 플로팅 위젯(100×60px, `alwaysOnTop: false`)으로 축소. 진행 상태(단계명, 경과시간)만 표시. 대화 필요 시 클릭하면 전체 창 복원.
+3. **반투명 오버레이**: 창을 최소화하지 않고 `opacity: 0.15`의 반투명 상태로 유지. 내용은 보이지 않지만 화면에서 OCR 방해 최소화.
+4. **분리 창**: 에이전트 실행창과 대화창을 별도 프로세스로 분리 (더 복잡한 구현).
+
+**우선 검토**: Electron `BrowserWindow` API — `minimize()` / `restore()` / `setOpacity()` / `setAlwaysOnTop()` 모두 지원됨. **옵션 1(자동 최소화)이 가장 단순하고 즉시 구현 가능**. `chat.js`에서 `agentState` 이벤트 수신 시 `ipcRenderer.send('minimize-window')` 호출, `main.js`에서 수신 처리.
+
+---
+
+### 🤖 D. AI 모델 다중 선택 UI
+
+**배경**: 현재 LLM 전환은 "프로파일" 단위 (OpenAI ↔ 사내 LLM)로만 가능. 같은 API 엔드포인트에서 모델만 바꾸고 싶어도 `.env`를 직접 수정해야 함.
+
+**아이디어**:
+- 헤더의 [LLM 프로파일] 버튼을 드롭다운 또는 팝오버로 확장
+- 구성 항목: 엔드포인트(프로파일), 모델명, 온도(temperature), 최대 토큰
+- 사용 패턴별 프리셋: 빠른 응답(nano), 균형(mini), 정밀(full), 코딩 특화
+- 스레드별 모델 오버라이드: 특정 스레드는 비전 모델로 실행
+- 구현: `config.py`에 `MODEL_OVERRIDES` dict 추가, `/profile` API 확장, UI는 헤더 드롭다운
+
+**검토 포인트**: 사내 LLM 모델 목록을 `/models` 엔드포인트에서 동적으로 조회할 수 있는지 확인 (OpenAI 호환 API는 `GET /v1/models` 지원).
+
+---
+
+### 🗂️ E. 일반 채팅 기억 (컨텍스트 유지)
+
+기본업무 채팅(스레드 없는 단일 메시지)에서도 이전 대화를 기억하고 멀티턴 동작. `server.py` `generate()` 내 세션 메시지 리스트 유지, 80% 컨텍스트 도달 시 슬라이딩 윈도우 또는 자동 요약.
+
+### 📦 F. Electron 패키징 배포
+
+`electron-builder`로 `.exe` 인스톨러 빌드. Python 환경은 `conda-pack` 동봉 또는 설치 가이드 제공. `npm run dist` 한 명령으로 빌드.
 
 ---
 

@@ -14,15 +14,18 @@ const workflowEditBtn = document.getElementById('workflow-edit-btn')
 const workflowClearBtn = document.getElementById('workflow-clear-btn')
 const workflowSaveBtn = document.getElementById('workflow-save-btn')
 const workflowCancelBtn = document.getElementById('workflow-cancel-btn')
+const workflowTemplateBtn = document.getElementById('workflow-template-btn')
 const logEntries = document.getElementById('log-entries')
 
 let _currentWorkflow = null
 let _panelCollapsed = false
 let _panelWidth = 300
 let _editMode = false
+let _templateMode = false   // true일 때 저장은 템플릿 endpoint로
 let _editDraft = null
 let _dragIdx = null
 let _watcherES = null   // 파일 변경 감지 EventSource
+let _currentTaskType = null  // 현재 선택된 업무 유형
 
 // ── 탭 전환 ─────────────────────────────────────────────────
 
@@ -42,11 +45,12 @@ rpTabs.forEach(tab => {
 rightPanelToggle.addEventListener('click', () => {
   _panelCollapsed = !_panelCollapsed
   if (_panelCollapsed) {
-    rightPanel.style.width = '0'
+    rightPanel.classList.add('collapsed')
     rightResizeHandle.style.display = 'none'
     rightPanelToggle.textContent = '‹'
     rightPanelToggle.title = '패널 열기'
   } else {
+    rightPanel.classList.remove('collapsed')
     rightPanel.style.width = _panelWidth + 'px'
     rightResizeHandle.style.display = ''
     rightPanelToggle.textContent = '›'
@@ -555,10 +559,13 @@ function renderEditMode() {
 function _enterEdit() {
   if (!_currentWorkflow) return
   _editMode = true
+  _templateMode = false
   _editDraft = JSON.parse(JSON.stringify(_currentWorkflow))
   if (!_editDraft.connections) _editDraft.connections = []
   workflowEditBtn.classList.add('hidden')
   workflowClearBtn.classList.add('hidden')
+  workflowTemplateBtn.classList.add('hidden')
+  workflowSaveBtn.textContent = '💾 저장'
   workflowSaveBtn.classList.remove('hidden')
   workflowCancelBtn.classList.remove('hidden')
   renderEditMode()
@@ -566,17 +573,76 @@ function _enterEdit() {
 
 function _leaveEdit() {
   _editMode = false
+  _templateMode = false
   _editDraft = null
   _dragIdx = null
   workflowSaveBtn.classList.add('hidden')
+  workflowSaveBtn.textContent = '💾 저장'
   workflowCancelBtn.classList.add('hidden')
   workflowEditBtn.classList.remove('hidden')
   workflowClearBtn.classList.remove('hidden')
+  workflowTemplateBtn.classList.remove('hidden')
+}
+
+async function _enterTemplateEdit() {
+  const taskType = _currentTaskType
+  if (!taskType) return
+  const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+  try {
+    const res = await fetch(`${base}/workflow/templates/${taskType}`)
+    const tmpl = await res.json()
+    _editMode = true
+    _templateMode = true
+    _editDraft = {
+      title: tmpl.title || '워크플로우',
+      steps: (tmpl.steps || []).map(s => ({
+        id: '',
+        title: s.title || s,
+        type: s.type || 'auto',
+        status: 'pending',
+        notes: '',
+      })),
+      connections: [],
+    }
+    workflowEditBtn.classList.add('hidden')
+    workflowClearBtn.classList.add('hidden')
+    workflowTemplateBtn.classList.add('hidden')
+    workflowSaveBtn.textContent = '💾 템플릿 저장'
+    workflowSaveBtn.classList.remove('hidden')
+    workflowCancelBtn.classList.remove('hidden')
+    workflowEmpty.classList.add('hidden')
+    workflowContent.classList.remove('hidden')
+    renderEditMode()
+  } catch (e) {
+    console.error('템플릿 로드 실패', e)
+  }
 }
 
 async function _saveEdit() {
-  if (!_editDraft || !_currentWorkflow) return
+  if (!_editDraft) return
   const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+
+  if (_templateMode) {
+    try {
+      await fetch(`${base}/workflow/templates/${_currentTaskType}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: _editDraft.title,
+          steps: _editDraft.steps.map(s => ({ title: s.title, type: s.type || 'auto' })),
+        }),
+      })
+      _leaveEdit()
+      if (_currentWorkflow) renderWorkflow(_currentWorkflow)
+      else { workflowContent.classList.add('hidden'); workflowEmpty.classList.remove('hidden') }
+      if (typeof showToast === 'function') showToast('기본 템플릿이 저장됐습니다. 새 스레드부터 적용됩니다.')
+    } catch (e) {
+      console.error('템플릿 저장 실패', e)
+    }
+    return
+  }
+
+  if (!_currentWorkflow) return
   const { task_type, thread_id } = _currentWorkflow
   try {
     const res = await fetch(`${base}/threads/${task_type}/${thread_id}/workflow`, {
@@ -594,8 +660,10 @@ async function _saveEdit() {
 
 function _cancelEdit() {
   const wf = _currentWorkflow
+  const wasTemplate = _templateMode
   _leaveEdit()
   if (wf) renderWorkflow(wf)
+  else if (wasTemplate) { workflowContent.classList.add('hidden'); workflowEmpty.classList.remove('hidden') }
 }
 
 // ── 워크플로우 로드 (스레드 선택 시) ──────────────────────────
@@ -603,6 +671,7 @@ function _cancelEdit() {
 async function loadWorkflowForThread(taskType, threadId) {
   if (_editMode) _leaveEdit()
   _stopFileWatcher()
+  _currentTaskType = taskType || null
   if (!taskType || !threadId) { clearWorkflow(); return }
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
@@ -660,6 +729,7 @@ function clearLog() {
 workflowEditBtn.addEventListener('click', _enterEdit)
 workflowSaveBtn.addEventListener('click', _saveEdit)
 workflowCancelBtn.addEventListener('click', _cancelEdit)
+workflowTemplateBtn.addEventListener('click', _enterTemplateEdit)
 
 workflowClearBtn.addEventListener('click', async () => {
   if (!_currentWorkflow) return

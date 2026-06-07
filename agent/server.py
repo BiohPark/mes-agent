@@ -619,6 +619,28 @@ async def delete_workflow_endpoint(task_type: str, thread_id: str):
     return {"ok": True}
 
 
+# ── 기본 템플릿 엔드포인트 ─────────────────────────────────────
+
+@app.get("/workflow/templates/{task_type}")
+async def get_workflow_template(task_type: str):
+    """태스크 유형의 기본 템플릿을 반환한다."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, wf_storage.load_template, task_type)
+
+
+class TemplateUpdateRequest(BaseModel):
+    title: str
+    steps: list
+
+
+@app.put("/workflow/templates/{task_type}")
+async def update_workflow_template(task_type: str, body: TemplateUpdateRequest):
+    """태스크 유형의 기본 템플릿을 Vault에 저장한다. 새 스레드부터 적용된다."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, wf_storage.save_template, task_type, body.title, body.steps)
+    return {"ok": True}
+
+
 # ── 확인 응답 ─────────────────────────────────────────────────
 
 class ConfirmResponse(BaseModel):

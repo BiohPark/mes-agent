@@ -936,6 +936,16 @@ body {
   overflow: hidden;
   transition: width 0.2s ease;
 }
+#right-panel.collapsed {
+  width: 26px;
+}
+#right-panel.collapsed .rp-tab { display: none; }
+#right-panel.collapsed #right-panel-body { display: none; }
+#right-panel.collapsed #right-panel-tabs {
+  padding: 6px 3px;
+  justify-content: center;
+}
+#right-panel.collapsed #right-panel-toggle { margin-left: 0; }
 
 #right-panel-tabs {
   display: flex;
@@ -1112,6 +1122,27 @@ body {
   transition: background 0.15s;
 }
 .wf-retry-btn:hover { background: #420020; color: #ff6080; border-color: #e94560; }
+
+/* 워크플로우 패널 툴바 (항상 표시) */
+#workflow-toolbar {
+  padding: 6px 10px;
+  border-bottom: 1px solid #0f2030;
+  flex-shrink: 0;
+}
+.wf-tmpl-btn {
+  width: 100%;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid #1a3050;
+  border-radius: 4px;
+  color: #5a7a8a;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+}
+.wf-tmpl-btn:hover { background: #0f2030; color: #99bbcc; border-color: #2a5070; }
+.wf-tmpl-btn.hidden { display: none; }
 
 #workflow-actions {
   display: flex;
