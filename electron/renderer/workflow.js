@@ -461,7 +461,9 @@ function _startFileWatcher(taskType, threadId) {
   _stopFileWatcher()
   if (!taskType || !threadId) return
   const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
-  _watcherES = new EventSource(`${base}/threads/${taskType}/${threadId}/workflow/events`)
+  // EventSource는 커스텀 헤더를 못 붙이므로 토큰을 쿼리로 전달 (S1)
+  const tokenQ = (window.authTokenQuery || (() => ''))('?')
+  _watcherES = new EventSource(`${base}/threads/${taskType}/${threadId}/workflow/events${tokenQ}`)
   _watcherES.onmessage = e => {
     try {
       const evt = JSON.parse(e.data)

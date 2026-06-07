@@ -14,10 +14,16 @@ from pathlib import Path
 import psutil
 
 
-def run_command(cmd: str, timeout: int = 30, shell: str = "powershell") -> str:
+def run_command(cmd: str, timeout: int = 30, shell: str = "powershell",
+                force: bool = False) -> str:
     """명령어를 실행하고 결과(stdout, stderr, returncode)를 반환합니다.
     shell: 'powershell' (기본) 또는 'cmd'
-    복잡한 배포 스크립트, 빌드 명령, 서버 상태 확인 등에 사용합니다."""
+    복잡한 배포 스크립트, 빌드 명령, 서버 상태 확인 등에 사용합니다.
+    되돌릴 수 없는 위험 명령(재귀삭제·포맷·종료 등)은 차단되며, 사용자 확인 후 force=true로 실행합니다."""
+    from agent.tools._safety import is_dangerous_command, danger_block_message
+    if not force and is_dangerous_command(cmd):
+        return json.dumps({"blocked": True, "message": danger_block_message(cmd),
+                           "success": False}, ensure_ascii=False)
     try:
         if shell == "powershell":
             args = ["powershell", "-NonInteractive", "-Command", cmd]
@@ -103,9 +109,14 @@ def is_process_running(name: str) -> str:
     return json.dumps({"running": False, "name": name})
 
 
-def start_process(cmd: str, wait: bool = False) -> str:
+def start_process(cmd: str, wait: bool = False, force: bool = False) -> str:
     """프로세스를 실행합니다.
-    wait=True 시 완료될 때까지 기다립니다 (최대 30초)."""
+    wait=True 시 완료될 때까지 기다립니다 (최대 30초).
+    되돌릴 수 없는 위험 명령은 차단되며, 사용자 확인 후 force=true로 실행합니다."""
+    from agent.tools._safety import is_dangerous_command, danger_block_message
+    if not force and is_dangerous_command(cmd):
+        return json.dumps({"blocked": True, "message": danger_block_message(cmd),
+                           "success": False}, ensure_ascii=False)
     try:
         if wait:
             result = subprocess.run(
@@ -192,19 +203,20 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "PowerShell 또는 CMD 명령어를 실행하고 stdout, stderr, returncode를 반환합니다.",
+                "description": "PowerShell 또는 CMD 명령어를 실행하고 stdout, stderr, returncode를 반환합니다. 위험 명령은 차단되며 사용자 확인 후 force=true로 실행합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "cmd": {"type": "string"},
                         "timeout": {"type": "integer", "description": "초 (기본 30)"},
-                        "shell": {"type": "string", "enum": ["powershell", "cmd"]}
+                        "shell": {"type": "string", "enum": ["powershell", "cmd"]},
+                        "force": {"type": "boolean", "description": "위험 명령 차단 우회 (사용자 확인 후에만)"}
                     },
                     "required": ["cmd"]
                 }
             }
         },
-        "handler": lambda a: run_command(a["cmd"], a.get("timeout", 30), a.get("shell", "powershell"))
+        "handler": lambda a: run_command(a["cmd"], a.get("timeout", 30), a.get("shell", "powershell"), a.get("force", False))
     },
     {
         "name": "list_processes",
@@ -267,18 +279,19 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "start_process",
-                "description": "명령어로 프로세스를 실행합니다. wait=true 시 완료 대기합니다.",
+                "description": "명령어로 프로세스를 실행합니다. wait=true 시 완료 대기합니다. 위험 명령은 차단되며 사용자 확인 후 force=true로 실행합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "cmd": {"type": "string"},
-                        "wait": {"type": "boolean"}
+                        "wait": {"type": "boolean"},
+                        "force": {"type": "boolean", "description": "위험 명령 차단 우회 (사용자 확인 후에만)"}
                     },
                     "required": ["cmd"]
                 }
             }
         },
-        "handler": lambda a: start_process(a["cmd"], a.get("wait", False))
+        "handler": lambda a: start_process(a["cmd"], a.get("wait", False), a.get("force", False))
     },
     {
         "name": "open_file",

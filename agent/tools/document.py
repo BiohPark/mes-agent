@@ -427,15 +427,24 @@ def read_file(path: str, encoding: str = "utf-8") -> str:
 def write_file(path: str, content: str, append: bool = False,
                encoding: str = "utf-8") -> str:
     """텍스트 파일에 내용을 씁니다.
-    append=True 시 기존 내용 뒤에 추가합니다."""
+    append=True 시 기존 내용 뒤에 추가합니다.
+    시스템 핵심/자동실행 경로는 차단되고, 기존 파일 덮어쓰기 시 자동 백업합니다."""
+    from agent.tools._safety import is_protected_path, backup_file
+    if is_protected_path(path):
+        return json.dumps({"blocked": True,
+                           "error": f"시스템 보호 경로에는 쓸 수 없습니다: {path}"},
+                          ensure_ascii=False)
     try:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
+        # 덮어쓰기(append 아님)로 기존 파일을 지우기 전 백업
+        backup = backup_file(path) if (not append and p.exists()) else None
         mode = "a" if append else "w"
         with p.open(mode, encoding=encoding) as f:
             f.write(content)
         return json.dumps({"path": path, "size_bytes": p.stat().st_size,
-                           "mode": "append" if append else "write"})
+                           "mode": "append" if append else "write",
+                           "backup": backup}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
 

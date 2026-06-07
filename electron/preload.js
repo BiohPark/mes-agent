@@ -18,6 +18,7 @@ function readEnvPort() {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   serverPort: readEnvPort(),
+  authToken: process.env.AGENT_AUTH_TOKEN || '',  // 서버 인증 토큰 (S1)
   onServerReady: (cb) => ipcRenderer.on('server-ready', cb),
   onServerError: (cb) => ipcRenderer.on('server-error', (_, msg) => cb(msg)),
   // 실행 중 창 가림 회피 (개선 아이디어 C)

@@ -1,6 +1,23 @@
 const PORT = window.electronAPI?.serverPort ?? 8000
 const BASE_URL = `http://localhost:${PORT}`
 
+// ── 서버 인증 토큰 주입 (S1) ──────────────────────────────────
+// 모든 localhost API 요청에 X-Auth-Token 헤더를 자동 첨부한다.
+// EventSource는 헤더를 못 붙이므로 workflow.js에서 ?token= 쿼리로 처리.
+const AUTH_TOKEN = window.electronAPI?.authToken || ''
+if (AUTH_TOKEN) {
+  const _origFetch = window.fetch.bind(window)
+  window.fetch = (url, opts = {}) => {
+    const u = typeof url === 'string' ? url : (url && url.url) || ''
+    if (u.includes('localhost') || u.includes('127.0.0.1')) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Auth-Token': AUTH_TOKEN } }
+    }
+    return _origFetch(url, opts)
+  }
+}
+// EventSource URL에 토큰 쿼리를 덧붙이는 헬퍼 (workflow.js에서 사용)
+window.authTokenQuery = AUTH_TOKEN ? (sep => `${sep}token=${encodeURIComponent(AUTH_TOKEN)}`) : (() => '')
+
 const messagesEl = document.getElementById('messages')
 const inputEl = document.getElementById('input')
 const sendBtn = document.getElementById('send-btn')

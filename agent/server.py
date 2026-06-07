@@ -21,8 +21,9 @@ if _env_path.exists():
             k, _, v = line.partition('=')
             os.environ.setdefault(k.strip(), v.strip())
 
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
@@ -49,9 +50,51 @@ async def startup():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "GET", "DELETE"],
+    allow_methods=["POST", "GET", "DELETE", "PATCH", "PUT"],
     allow_headers=["*"],
 )
+
+
+# ── 보안 미들웨어 (S1/S3) ─────────────────────────────────────
+# 위협: 인증이 없으면 사용자가 브라우저로 연 악성 웹페이지가 localhost API로
+#       요청을 보내 에이전트(임의 PowerShell 실행 등)를 조종할 수 있다.
+# 방어: (1) 원격 http(s) Origin 차단 — 웹페이지發 요청 거부
+#       (2) 토큰 검증 — Electron이 주입한 시크릿(X-Auth-Token 헤더 또는 ?token=)만 허용
+# 토큰 미설정(개발/테스트/직접 실행) 시에는 강제하지 않아 하위 호환을 유지한다.
+_AUTH_TOKEN = os.environ.get("AGENT_AUTH_TOKEN", "")
+_AUTH_FREE_PATHS = {"/health"}
+
+
+def _origin_allowed(origin: str) -> bool:
+    """원격 웹 출처는 차단. Electron 렌더러(file://→null/없음)·localhost만 허용."""
+    if not origin or origin == "null":
+        return True
+    o = origin.lower()
+    if o.startswith("file://"):
+        return True
+    if o.startswith("http://localhost") or o.startswith("http://127.0.0.1"):
+        return True
+    return False
+
+
+@app.middleware("http")
+async def _security_gate(request: Request, call_next):
+    # CORS 프리플라이트는 통과 (CORSMiddleware가 처리)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # (1) 원격 Origin 차단 — 악성 웹페이지發 요청 방어 (토큰 유무와 무관)
+    origin = request.headers.get("origin", "")
+    if not _origin_allowed(origin):
+        return JSONResponse(status_code=403, content={"error": "허용되지 않은 Origin"})
+
+    # (2) 토큰 검증 (토큰이 설정된 경우에만 강제)
+    if _AUTH_TOKEN and request.url.path not in _AUTH_FREE_PATHS:
+        token = request.headers.get("x-auth-token") or request.query_params.get("token", "")
+        if token != _AUTH_TOKEN:
+            return JSONResponse(status_code=401, content={"error": "인증 토큰이 유효하지 않습니다"})
+
+    return await call_next(request)
 
 
 class ChatRequest(BaseModel):

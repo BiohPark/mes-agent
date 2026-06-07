@@ -1,8 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { spawn } = require('child_process')
 const http = require('http')
+
+// 서버 인증 토큰 (S1) — 매 실행마다 랜덤 생성, Python 서버와 렌더러가 공유
+const AUTH_TOKEN = crypto.randomBytes(32).toString('hex')
+process.env.AGENT_AUTH_TOKEN = AUTH_TOKEN  // 렌더러(preload)가 process.env로 읽음
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, '..', '.env')
@@ -25,7 +30,8 @@ function startPythonServer() {
   pythonProcess = spawn('python', ['-m', 'agent.server'], {
     cwd: path.join(__dirname, '..'),
     stdio: 'pipe',
-    env: { ..._envFromFile, ...process.env }  // 시스템 환경변수가 .env보다 우선
+    // 시스템 환경변수가 .env보다 우선. AGENT_AUTH_TOKEN(process.env)이 서버로 전달됨
+    env: { ..._envFromFile, ...process.env }
   })
 
   pythonProcess.stdout.on('data', d => console.log('[agent]', d.toString().trim()))
