@@ -98,7 +98,7 @@
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
 
-**총 툴 수: 122종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 123종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -115,6 +115,7 @@
 | `vision.py` | 2 |
 | `ui_automation.py` | 3 |
 | `office_com.py` | 11 |
+| `office_libre.py` | 1 |
 
 ---
 
@@ -319,6 +320,7 @@ mes-agent/
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
 │       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx (14종) ✅
 │       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT 찾아바꾸기·삽입·셀/수식·메모·PDF) + 폴백 (11종) ✅
+│       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 PDF/포맷 폴백) (1종) ✅
 │       ├── _safety.py       ← 파괴적 작업 가드(위험명령·보호경로·백업) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
 │       └── workflow.py     ← 워크플로우 init·set_step·add/update/remove_step·reorder (6종) ✅
@@ -423,6 +425,32 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 ### F. Electron 패키징 배포
 
 `electron-builder` → `.exe` 인스톨러. Python 환경 `conda-pack` 동봉. `npm run dist` 한 명령 빌드.
+
+---
+
+### G. Office 편집 고도화 로드맵 (2026-06-08 웹조사 반영) 🏢
+
+**배경**: 기존 Office 편집은 ① 로컬+Office설치 → COM, ② Office 없음 → python-docx/openpyxl/pptx 폴백, ③ 클라우드 → 브라우저 진입(office_web_open)+UI Automation 까지 구현됨. 웹 조사로 더 나은 경로를 정리한다.
+
+**조사한 방식 비교 (출처는 커밋 메시지·세션노트 참조)**:
+
+| 방식 | 장점 | 한계 | 폐쇄망 적합 |
+|------|------|------|:---:|
+| **MS COM** (구현됨) | 로컬 파일 완전충실도(수식·서식·수정추적·메모·PDF) | Windows+Office 설치 필요 | 로컬 ◎ |
+| **MS Graph API** | Excel 셀/수식/서식 REST 편집 풍부(세션 기반), 클라우드 파일 직접 | **M365 테넌트+Azure AD OAuth 필요**, Word/PPT 콘텐츠 편집은 미지원(Aspose/Office.js 필요) | M365 연결 시만 △ |
+| **OnlyOffice Docs + Document Builder** | **오픈소스·Docker 자체호스팅**, OOXML(docx/xlsx/pptx) 완전 편집, 브라우저 협업 에디터 + **헤드리스 빌더 JS API**(UI 없이 생성·편집·변환) | 서버 호스팅 필요, 빌더 JS 스크립팅 학습, Community 동시 20연결 | **◎ (최적)** |
+| **LibreOffice headless / UNO** | 오픈소스·무료·크로스플랫폼, **MS Office 불필요**, 헤드리스 변환(docx→pdf)·UNO 편집 | pyuno가 Python 버전과 일치해야, MS 대비 미세 서식차 | ◎ (오프라인) |
+| **Edge UI 자동화 + OCR/UI Automation** (구현됨) | API 없는 어떤 웹 에디터도 가능(최후수단) | 깨지기 쉬움, 느림 | 보편 △ |
+
+**핵심 전략 — 라운드트립이 최선**: 클라우드 문서(SharePoint/OneDrive)를 *브라우저에서 직접 편집*(취약)하지 말고, **다운로드(또는 OneDrive 동기화 로컬 파일) → COM/LibreOffice로 완전충실도 편집 → 업로드** 한다. OneDrive 동기화 폴더면 클라우드 문서가 곧 로컬 파일이라 COM이 바로 동작한다.
+
+**구현 우선순위**:
+1. **P1 LibreOffice 변환 엔진** (`office_libre.py`) — MS Office 없는 PC의 고품질 오프라인 폴백. `soffice --headless --convert-to`로 신뢰성 높은 PDF/포맷 변환(`libre_convert` 툴). `word_export_pdf`/`ppt_export_pdf`가 COM 불가 시 자동 폴백. ✅ **완료** (단, 검증 PC에 LibreOffice 미설치 — 설치 환경에서 종단 검증 필요)
+2. **P2 라운드트립 프롬프트 전략** — 클라우드 문서는 동기화/다운로드 로컬 경로를 우선 탐색해 COM 편집 후 저장. (프롬프트 + 탐색 헬퍼)
+3. **P3 OnlyOffice Document Server 연동** (폐쇄망 자체호스팅 시) — 헤드리스 Document Builder API로 대량 생성·편집·변환, 브라우저 협업 에디터 임베드. `.env`로 서버 URL 설정.
+4. **P4 MS Graph Excel 클라이언트** (M365 사용 시) — 클라우드 Excel 셀/수식 REST 편집. Azure AD 앱 등록 + OAuth 토큰 필요.
+
+> 참고 출처: ONLYOFFICE DocumentServer/DocumentBuilder(GitHub, api.onlyoffice.com), MS Graph Excel API(learn.microsoft.com/graph), LibreOffice headless/UNO·unoconv.
 
 ---
 

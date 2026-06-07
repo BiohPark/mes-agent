@@ -148,6 +148,15 @@ def _backup(path: str) -> str | None:
     return str(bak)
 
 
+def _libre_to_pdf(path: str, pdf_path: str = "") -> str | None:
+    """LibreOffice 헤드리스 PDF 폴백(설치돼 있으면). 경로 반환, 없으면 None."""
+    try:
+        from agent.tools.office_libre import to_pdf
+        return to_pdf(path, pdf_path)
+    except Exception:
+        return None
+
+
 def _no_com_msg(op: str) -> str:
     return json.dumps({
         "error": f"이 작업({op})은 설치된 MS Office(COM)가 필요합니다. "
@@ -299,22 +308,30 @@ def word_export_pdf(path: str, pdf_path: str = "") -> str:
     err = _validate_ooxml(path)
     if err:
         return json.dumps({"error": err}, ensure_ascii=False)
-    if not _HAS_PYWIN32:
-        return _no_com_msg("PDF 내보내기")
     if not pdf_path:
         pdf_path = str(Path(path).with_suffix(".pdf"))
     pdf_path = _abspath(pdf_path)
-    try:
-        word = _get_word()
-        doc = word.Documents.Open(path)
+    if _HAS_PYWIN32:
         try:
-            doc.ExportAsFixedFormat(OutputFileName=pdf_path, ExportFormat=17)  # wdExportFormatPDF
-        finally:
-            doc.Close(SaveChanges=0)
-        return json.dumps({"path": pdf_path, "engine": "com",
-                           "message": "PDF 내보내기 완료"}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e), "engine": "com"}, ensure_ascii=False)
+            word = _get_word()
+            doc = word.Documents.Open(path)
+            try:
+                doc.ExportAsFixedFormat(OutputFileName=pdf_path, ExportFormat=17)  # wdExportFormatPDF
+            finally:
+                doc.Close(SaveChanges=0)
+            return json.dumps({"path": pdf_path, "engine": "com",
+                               "message": "PDF 내보내기 완료"}, ensure_ascii=False)
+        except Exception as e:
+            com_err = str(e)
+    else:
+        com_err = "pywin32/COM 미사용"
+    # COM 불가/실패 → LibreOffice 헤드리스 폴백
+    out = _libre_to_pdf(path, pdf_path)
+    if out:
+        return json.dumps({"path": out, "engine": "libreoffice",
+                           "message": "PDF 내보내기 완료(LibreOffice 폴백)"}, ensure_ascii=False)
+    return json.dumps({"error": f"PDF 내보내기 실패: {com_err}. LibreOffice도 사용 불가.",
+                       "engine": "none"}, ensure_ascii=False)
 
 
 def word_accept_all_changes(path: str) -> str:
@@ -543,22 +560,30 @@ def ppt_export_pdf(path: str, pdf_path: str = "") -> str:
     err = _validate_ooxml(path)
     if err:
         return json.dumps({"error": err}, ensure_ascii=False)
-    if not _HAS_PYWIN32:
-        return _no_com_msg("PPT PDF 내보내기")
     if not pdf_path:
         pdf_path = str(Path(path).with_suffix(".pdf"))
     pdf_path = _abspath(pdf_path)
-    try:
-        ppt = _get_ppt()
-        pres = ppt.Presentations.Open(path, ReadOnly=True, WithWindow=False)
+    if _HAS_PYWIN32:
         try:
-            pres.SaveAs(pdf_path, 32)  # ppSaveAsPDF=32
-        finally:
-            pres.Close()
-        return json.dumps({"path": pdf_path, "engine": "com",
-                           "message": "PPT→PDF 내보내기 완료"}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e), "engine": "com"}, ensure_ascii=False)
+            ppt = _get_ppt()
+            pres = ppt.Presentations.Open(path, ReadOnly=True, WithWindow=False)
+            try:
+                pres.SaveAs(pdf_path, 32)  # ppSaveAsPDF=32
+            finally:
+                pres.Close()
+            return json.dumps({"path": pdf_path, "engine": "com",
+                               "message": "PPT→PDF 내보내기 완료"}, ensure_ascii=False)
+        except Exception as e:
+            com_err = str(e)
+    else:
+        com_err = "pywin32/COM 미사용"
+    # COM 불가/실패 → LibreOffice 헤드리스 폴백
+    out = _libre_to_pdf(path, pdf_path)
+    if out:
+        return json.dumps({"path": out, "engine": "libreoffice",
+                           "message": "PPT→PDF 내보내기 완료(LibreOffice 폴백)"}, ensure_ascii=False)
+    return json.dumps({"error": f"PPT→PDF 내보내기 실패: {com_err}. LibreOffice도 사용 불가.",
+                       "engine": "none"}, ensure_ascii=False)
 
 
 def office_close() -> str:
