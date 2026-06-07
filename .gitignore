@@ -29,3 +29,8 @@ desktop.ini
 
 # Claude Code 로컬 설정
 .claude/settings.local.json
+
+# 테스트 커버리지
+.coverage
+htmlcov/
+.pytest_cache/

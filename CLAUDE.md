@@ -35,7 +35,7 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
-| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 98개 테스트, `.\test.ps1` 으로 실행 |
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 107개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
@@ -63,6 +63,9 @@
 | 워크플로우 API | `agent/server.py` | `GET/POST/DELETE /threads/{type}/{id}/workflow` |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
 | SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
+| 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
+| 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
+| `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
 
 **총 툴 수: 87종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 

@@ -12,6 +12,7 @@ class WorkflowStep:
     type: StepType = "auto"
     status: StepStatus = "pending"
     notes: str = ""
+    max_retry: int = 0
 
 
 @dataclass
@@ -27,14 +28,30 @@ class Workflow:
             "task_type": self.task_type,
             "title": self.title,
             "steps": [
-                {"id": s.id, "title": s.title, "type": s.type, "status": s.status, "notes": s.notes}
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "type": s.type,
+                    "status": s.status,
+                    "notes": s.notes,
+                    "max_retry": s.max_retry,
+                }
                 for s in self.steps
             ],
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Workflow":
-        steps = [WorkflowStep(**s) for s in data.get("steps", [])]
+        steps = []
+        for s in data.get("steps", []):
+            steps.append(WorkflowStep(
+                id=s["id"],
+                title=s["title"],
+                type=s.get("type", "auto"),
+                status=s.get("status", "pending"),
+                notes=s.get("notes", ""),
+                max_retry=s.get("max_retry", 0),
+            ))
         return cls(
             thread_id=data["thread_id"],
             task_type=data["task_type"],

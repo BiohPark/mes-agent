@@ -9,6 +9,88 @@ import pytest
 from agent.core import events as ev
 
 
+# ── 툴 실패 시나리오용 LLM 목 ─────────────────────────────────────
+
+class _Fn:
+    def __init__(self, name="", arguments=""):
+        self.name = name
+        self.arguments = arguments
+
+
+class _TC:
+    def __init__(self, index=0, id="tc1", name="run_command", arguments='{"command":"x"}'):
+        self.index = index
+        self.id = id
+        self.function = _Fn(name, arguments)
+
+
+class _Delta:
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []
+
+
+class _Choice:
+    def __init__(self, content=None, tool_calls=None, finish_reason=None):
+        self.delta = _Delta(content, tool_calls)
+        self.finish_reason = finish_reason
+
+
+class _Chunk:
+    def __init__(self, content=None, tool_calls=None, finish_reason=None):
+        self.choices = [_Choice(content=content, tool_calls=tool_calls, finish_reason=finish_reason)]
+
+
+class _TwoPhaseStream:
+    """LLM 호출 1회차: tool_call 반환 / 2회차 이후: 텍스트 반환."""
+    _call_count = 0
+
+    @classmethod
+    def reset(cls):
+        cls._call_count = 0
+
+    def __iter__(self):
+        type(self)._call_count += 1
+        if type(self)._call_count == 1:
+            yield _Chunk(tool_calls=[_TC()])
+            yield _Chunk(finish_reason="tool_calls")
+        else:
+            yield _Chunk(content="오류 확인됨")
+            yield _Chunk(finish_reason="stop")
+
+
+class _TwoPhaseLLM:
+    class _Comp:
+        def create(self, **kw):
+            return _TwoPhaseStream()
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _TwoPhaseLLM._Comp()
+
+    def __init__(self):
+        self.chat = _TwoPhaseLLM._Chat()
+
+
+@pytest.fixture
+async def client_fail(vault, monkeypatch):
+    """LLM이 tool_call을 반환하고, run_tool이 항상 예외를 던지는 테스트 클라이언트."""
+    _TwoPhaseStream.reset()
+    monkeypatch.setattr("agent.server.get_client", lambda: _TwoPhaseLLM())
+    monkeypatch.setattr("agent.server.get_model", lambda: "gpt-test")
+
+    def _always_fail(name, args):
+        raise RuntimeError("의도된 테스트 실패")
+
+    monkeypatch.setattr("agent.server.run_tool", _always_fail)
+
+    from httpx import AsyncClient, ASGITransport
+    from agent.server import app
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
 def _parse_sse(text: str) -> list[dict]:
     """SSE 응답 텍스트를 이벤트 딕셔너리 목록으로 파싱한다."""
     events = []
@@ -96,3 +178,103 @@ class TestConfirm:
         resp = await client.post("/confirm/no-such-confirm-id", json=payload)
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+
+
+class TestToolFailureAutoError:
+    """Phase 2: 툴 실패 시 running 단계 자동 error 전환 검증."""
+
+    async def _setup_running_workflow(self, client_fail, vault, step_id="s1", step_title="실행 단계"):
+        """스레드 생성 + running 단계 워크플로우 설정 헬퍼."""
+        from agent.workflow import storage as wf_storage
+        from agent.workflow.model import Workflow, WorkflowStep
+
+        create = await client_fail.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+
+        wf = Workflow(
+            thread_id=tid, task_type="general", title="테스트",
+            steps=[WorkflowStep(id=step_id, title=step_title, status="running")],
+        )
+        wf_storage.save_workflow(wf)
+        return tid
+
+    async def test_workflow_update_event_emitted_on_failure(self, client_fail, vault):
+        """툴 실패 시 WORKFLOW_UPDATE SSE 이벤트가 발생해야 한다."""
+        tid = await self._setup_running_workflow(client_fail, vault)
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            text = await resp.aread()
+
+        events = _parse_sse(text.decode())
+        wf_updates = [e for e in events if e.get("type") == ev.WORKFLOW_UPDATE]
+        assert wf_updates, "WORKFLOW_UPDATE 이벤트 없음"
+
+    async def test_running_step_becomes_error_in_event(self, client_fail, vault):
+        """WORKFLOW_UPDATE 이벤트의 단계 status가 error여야 한다."""
+        tid = await self._setup_running_workflow(client_fail, vault, step_id="s_err")
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            text = await resp.aread()
+
+        events = _parse_sse(text.decode())
+        error_steps = [
+            step
+            for e in events if e.get("type") == ev.WORKFLOW_UPDATE
+            for step in e.get("workflow", {}).get("steps", [])
+            if step.get("status") == "error"
+        ]
+        assert error_steps, "error 상태 단계가 이벤트에 없음"
+        assert error_steps[0]["id"] == "s_err"
+
+    async def test_error_step_persisted_to_file(self, client_fail, vault):
+        """툴 실패 후 파일에도 error 상태가 저장되어야 한다."""
+        from agent.workflow import storage as wf_storage
+
+        tid = await self._setup_running_workflow(client_fail, vault, step_id="s_file")
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        saved = wf_storage.load_workflow("general", tid)
+        assert saved.steps[0].status == "error"
+
+    async def test_error_step_notes_contain_error_message(self, client_fail, vault):
+        """error 단계의 notes에 오류 내용이 포함되어야 한다."""
+        from agent.workflow import storage as wf_storage
+
+        tid = await self._setup_running_workflow(client_fail, vault, step_id="s_note")
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        saved = wf_storage.load_workflow("general", tid)
+        assert saved.steps[0].notes, "notes가 비어있음"
+
+    async def test_no_error_transition_without_running_step(self, client_fail, vault):
+        """pending 상태 단계만 있을 때 자동 error 전환이 없어야 한다."""
+        from agent.workflow import storage as wf_storage
+        from agent.workflow.model import Workflow, WorkflowStep
+
+        create = await client_fail.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+        wf = Workflow(
+            thread_id=tid, task_type="general", title="테스트",
+            steps=[WorkflowStep(id="p1", title="대기 단계", status="pending")],
+        )
+        wf_storage.save_workflow(wf)
+
+        async with client_fail.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        saved = wf_storage.load_workflow("general", tid)
+        assert saved.steps[0].status == "pending", "pending 단계가 자동으로 error로 바뀌면 안 됨"

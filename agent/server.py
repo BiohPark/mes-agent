@@ -213,10 +213,53 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
 
                 await asyncio.sleep(0)
+                _tool_failed = False
                 try:
                     result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
-                except Exception as e:
-                    result = f"툴 실행 오류: {e}"
+                except Exception as first_err:
+                    _tool_failed = True
+                    result = f"툴 실행 오류: {first_err}"
+
+                    # running 단계의 max_retry 확인 후 재시도
+                    if thread_id and task_type and not tc["name"].startswith("workflow_"):
+                        try:
+                            _check_wf = await loop.run_in_executor(
+                                None, wf_storage.load_workflow, task_type, thread_id
+                            )
+                            _running_step = next(
+                                (s for s in _check_wf.steps if s.status == "running"), None
+                            )
+                            _max_retry = getattr(_running_step, "max_retry", 0) if _running_step else 0
+                            for _attempt in range(_max_retry):
+                                await asyncio.sleep(1.0)
+                                try:
+                                    result = await loop.run_in_executor(
+                                        None, run_tool, tc["name"], tc["arguments"]
+                                    )
+                                    _tool_failed = False
+                                    break
+                                except Exception as retry_err:
+                                    result = f"툴 실행 오류: {retry_err}"
+                        except Exception:
+                            pass
+
+                # 툴 실패 시 running 단계를 자동으로 error 상태로 전환
+                if _tool_failed and thread_id and task_type and not tc["name"].startswith("workflow_"):
+                    try:
+                        _err_wf = await loop.run_in_executor(
+                            None, wf_storage.load_workflow, task_type, thread_id
+                        )
+                        for _err_step in _err_wf.steps:
+                            if _err_step.status == "running":
+                                _err_step.status = "error"
+                                _err_step.notes = result[:200]
+                                await loop.run_in_executor(
+                                    None, wf_storage.save_workflow, _err_wf
+                                )
+                                yield sse({"type": ev.WORKFLOW_UPDATE, "workflow": _err_wf.to_dict()})
+                                break
+                    except Exception:
+                        pass
 
                 # ask_user 툴의 __confirm__ 응답 처리
                 try:

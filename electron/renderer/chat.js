@@ -921,6 +921,12 @@ deleteManagerOverlay.addEventListener('click', (e) => {
   if (e.target === deleteManagerOverlay) deleteManagerOverlay.classList.add('hidden')
 })
 
+// 워크플로우 패널에서 error 단계 재시도 버튼 클릭 시 호출
+document.addEventListener('wf:retry-step', ({ detail: { stepTitle } }) => {
+  if (!currentTaskType || !currentThreadId || inputEl.disabled) return
+  sendMessage(`"${stepTitle}" 단계에서 오류가 발생했습니다. 이 단계를 다시 시도해주세요.`)
+})
+
 archiveToggleBtn.addEventListener('click', async () => {
   showingArchive = !showingArchive
   archiveToggleBtn.textContent = showingArchive ? '← 활성 스레드' : '🗑️ 보관함'

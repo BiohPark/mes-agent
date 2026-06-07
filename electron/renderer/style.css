@@ -1072,6 +1072,19 @@ body {
   white-space: pre-wrap;
 }
 
+.wf-retry-btn {
+  margin-top: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: #2a0010;
+  color: #e94560;
+  border: 1px solid #e9456066;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.wf-retry-btn:hover { background: #420020; color: #ff6080; border-color: #e94560; }
+
 #workflow-actions {
   display: flex;
   gap: 6px;

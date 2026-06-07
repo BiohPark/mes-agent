@@ -115,6 +115,9 @@ function renderWorkflow(wf) {
     const card = document.createElement('div')
     card.className = `wf-step ${sm.cls}`
     card.dataset.stepId = step.id
+    const retryBtn = step.status === 'error'
+      ? `<button class="wf-retry-btn" title="이 단계부터 재시도">↺ 재시도</button>`
+      : ''
     card.innerHTML = `
       <div class="wf-step-header">
         <span class="wf-step-num">${idx + 1}</span>
@@ -127,11 +130,20 @@ function renderWorkflow(wf) {
         <div class="wf-step-detail-row"><span class="wf-detail-key">상태</span><span class="wf-detail-val">${sm.icon} ${sm.label}</span></div>
         <div class="wf-step-detail-row"><span class="wf-detail-key">유형</span><span class="wf-detail-val">${tm.icon} ${tm.label}</span></div>
         <div class="wf-step-detail-row"><span class="wf-detail-key">메모</span><span class="wf-detail-val">${step.notes ? escapeWf(step.notes) : '—'}</span></div>
+        ${retryBtn}
       </div>
     `
     card.querySelector('.wf-step-header').addEventListener('click', () => {
       card.classList.toggle('expanded')
     })
+    if (step.status === 'error') {
+      card.querySelector('.wf-retry-btn').addEventListener('click', e => {
+        e.stopPropagation()
+        document.dispatchEvent(new CustomEvent('wf:retry-step', {
+          detail: { stepId: step.id, stepTitle: step.title },
+        }))
+      })
+    }
     workflowStepsEl.appendChild(card)
   })
 }

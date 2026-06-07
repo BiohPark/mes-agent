@@ -4,8 +4,8 @@ import pytest
 from agent.workflow.model import Workflow, WorkflowStep
 
 
-def _make_step(id="aabb1122", title="단계1", type="auto", status="pending", notes="") -> WorkflowStep:
-    return WorkflowStep(id=id, title=title, type=type, status=status, notes=notes)
+def _make_step(id="aabb1122", title="단계1", type="auto", status="pending", notes="", max_retry=0) -> WorkflowStep:
+    return WorkflowStep(id=id, title=title, type=type, status=status, notes=notes, max_retry=max_retry)
 
 
 def _make_workflow(steps=None) -> Workflow:
@@ -25,6 +25,11 @@ class TestWorkflowStep:
         assert step.type == "auto"
         assert step.status == "pending"
         assert step.notes == ""
+        assert step.max_retry == 0
+
+    def test_max_retry_set(self):
+        step = WorkflowStep(id="abc", title="t", max_retry=3)
+        assert step.max_retry == 3
 
     def test_all_valid_types(self):
         for t in ("auto", "semi_auto", "manual"):
@@ -46,7 +51,29 @@ class TestWorkflowToDict:
     def test_step_keys_present(self):
         wf = _make_workflow()
         step_d = wf.to_dict()["steps"][0]
-        assert set(step_d.keys()) == {"id", "title", "type", "status", "notes"}
+        assert set(step_d.keys()) == {"id", "title", "type", "status", "notes", "max_retry"}
+
+    def test_max_retry_serialized(self):
+        step = _make_step(max_retry=2)
+        wf = _make_workflow(steps=[step])
+        assert wf.to_dict()["steps"][0]["max_retry"] == 2
+
+    def test_max_retry_deserialized(self):
+        data = {
+            "thread_id": "t", "task_type": "general", "title": "w",
+            "steps": [{"id": "x", "title": "t", "type": "auto", "status": "pending", "notes": "", "max_retry": 3}],
+        }
+        wf = Workflow.from_dict(data)
+        assert wf.steps[0].max_retry == 3
+
+    def test_max_retry_missing_in_json_defaults_zero(self):
+        """기존 JSON에 max_retry 키가 없어도 0으로 역직렬화되어야 한다."""
+        data = {
+            "thread_id": "t", "task_type": "general", "title": "w",
+            "steps": [{"id": "x", "title": "t", "type": "auto", "status": "pending", "notes": ""}],
+        }
+        wf = Workflow.from_dict(data)
+        assert wf.steps[0].max_retry == 0
 
     def test_values_match(self):
         step = _make_step(id="zz99", title="환경 확인", type="semi_auto", status="done", notes="완료")
