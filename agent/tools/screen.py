@@ -292,13 +292,14 @@ MANIFEST = [
                     "properties": {
                         "template_path": {"type": "string"},
                         "timeout": {"type": "integer", "description": "최대 대기 초 (기본 10)"},
-                        "confidence": {"type": "number"}
+                        "confidence": {"type": "number"},
+                        "interval": {"type": "number", "description": "폴링 간격(초), 기본 0.5"}
                     },
                     "required": ["template_path"]
                 }
             }
         },
-        "handler": lambda a: wait_for_image(a["template_path"], a.get("timeout", 10), a.get("confidence", 0.8))
+        "handler": lambda a: wait_for_image(a["template_path"], a.get("timeout", 10), a.get("confidence", 0.8), a.get("interval", 0.5))
     },
     {
         "name": "wait_for_text",
@@ -312,13 +313,14 @@ MANIFEST = [
                     "type": "object",
                     "properties": {
                         "text": {"type": "string"},
-                        "timeout": {"type": "integer", "description": "최대 대기 초 (기본 10)"}
+                        "timeout": {"type": "integer", "description": "최대 대기 초 (기본 10)"},
+                        "interval": {"type": "number", "description": "폴링 간격(초), 기본 0.5"}
                     },
                     "required": ["text"]
                 }
             }
         },
-        "handler": lambda a: wait_for_text(a["text"], a.get("timeout", 10))
+        "handler": lambda a: wait_for_text(a["text"], a.get("timeout", 10), a.get("interval", 0.5))
     },
     {
         "name": "compare_screenshots",

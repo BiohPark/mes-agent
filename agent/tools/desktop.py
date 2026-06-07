@@ -108,15 +108,20 @@ def _sendinput_click(x: int, y: int, button: str = "left"):
 # ── 기본 마우스 ───────────────────────────────────────────────
 
 def mouse_click(x: int, y: int, button: str = "left", clicks: int = 1,
-                use_sendinput: bool = False) -> str:
+                use_sendinput: bool = False, after_delay_ms: int = 0) -> str:
     """화면의 특정 좌표를 마우스로 클릭합니다.
-    use_sendinput=True 시 UAC/관리자 권한 앱에서도 동작합니다."""
+    use_sendinput=True 시 UAC/관리자 권한 앱에서도 동작합니다.
+    after_delay_ms: 클릭 후 안정화 대기(ms). 팝업·화면 전환이 느린 경우 사용합니다."""
     if use_sendinput:
         for _ in range(clicks):
             _sendinput_click(x, y, button)
             time.sleep(0.05)
+        if after_delay_ms > 0:
+            time.sleep(after_delay_ms / 1000)
         return f"SendInput ({x}, {y}) {button} 클릭 완료"
     pyautogui.click(x, y, button=button, clicks=clicks)
+    if after_delay_ms > 0:
+        time.sleep(after_delay_ms / 1000)
     return f"({x}, {y}) {button} 클릭 완료"
 
 
@@ -335,13 +340,14 @@ MANIFEST = [
                         "x": {"type": "integer"}, "y": {"type": "integer"},
                         "button": {"type": "string", "enum": ["left", "right", "middle"]},
                         "clicks": {"type": "integer", "description": "1=단일, 2=더블클릭"},
-                        "use_sendinput": {"type": "boolean", "description": "UAC/관리자 앱 제어 시 true"}
+                        "use_sendinput": {"type": "boolean", "description": "UAC/관리자 앱 제어 시 true"},
+                        "after_delay_ms": {"type": "integer", "description": "클릭 후 안정화 대기(ms), 기본 0"}
                     },
                     "required": ["x", "y"]
                 }
             }
         },
-        "handler": lambda a: mouse_click(a["x"], a["y"], a.get("button", "left"), a.get("clicks", 1), a.get("use_sendinput", False))
+        "handler": lambda a: mouse_click(a["x"], a["y"], a.get("button", "left"), a.get("clicks", 1), a.get("use_sendinput", False), a.get("after_delay_ms", 0))
     },
     {
         "name": "mouse_move",
