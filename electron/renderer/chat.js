@@ -8,16 +8,13 @@ const statusEl = document.getElementById('status')
 const profileSwitcher = document.getElementById('profile-switcher')
 const profileBtn = document.getElementById('profile-btn')
 const profileMenu = document.getElementById('profile-menu')
-const threadBar = document.getElementById('thread-bar')
-const threadTaskLabel = document.getElementById('thread-task-label')
-const threadTabsEl = document.getElementById('thread-tabs')
+const currentThreadBar = document.getElementById('current-thread-bar')
+const currentThreadInfo = document.getElementById('current-thread-info')
 const threadCloseCurrentBtn = document.getElementById('thread-close-current-btn')
-const archiveToggleBtn = document.getElementById('archive-toggle-btn')
 const openDeleteManagerBtn = document.getElementById('open-delete-manager-btn')
 const deleteManagerOverlay = document.getElementById('delete-manager-overlay')
 const deleteManagerBody = document.getElementById('delete-manager-body')
 const deleteManagerClose = document.getElementById('delete-manager-close')
-const taskBtns = document.querySelectorAll('.task-btn')
 const agentStateBar = document.getElementById('agent-state-bar')
 const agentStateIcon = document.getElementById('agent-state-icon')
 const agentStateText = document.getElementById('agent-state-text')
@@ -29,9 +26,10 @@ const contextLabel = document.getElementById('context-label')
 // ── 스레드 상태 ──────────────────────────────────────────────
 let currentTaskType = ''
 let currentThreadId = ''
-let taskConfigs = {}   // { syncade: { label, icon }, ... }
-let showingArchive = false
+let taskConfigs = {}
 let currentRequestId = ''
+const showingArchiveGroups = new Set()
+const expandedGroups = new Set()
 
 // ── 에이전트 상태 바 ─────────────────────────────────────────
 
@@ -141,7 +139,6 @@ initWhenReady()
 function setInputEnabled(enabled) {
   inputEl.disabled = !enabled
   sendBtn.disabled = !enabled
-  taskBtns.forEach(btn => btn.disabled = !enabled)
 }
 
 // 메시지 전송
@@ -422,7 +419,6 @@ function showWelcome(taskType) {
 
 // ── 스레드 관리 ──────────────────────────────────────────────
 
-// thread_id 형식: YYYY-MM-DD-NNN → 오늘이면 '#001', 다른 날이면 '05/25 #001'
 function formatThreadLabel(threadId) {
   const m = threadId.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{3})$/)
   if (!m) return '#' + threadId.slice(-3)
@@ -441,170 +437,202 @@ async function loadTaskConfig() {
   } catch {}
 }
 
+// ── 사이드바 그룹 관리 ────────────────────────────────────────
+
+function getGroupEl(taskType) {
+  return document.querySelector(`.task-group[data-task="${taskType}"]`)
+}
+function getGroupBody(taskType) {
+  return document.querySelector(`.task-group[data-task="${taskType}"] .task-group-body`)
+}
+
+function expandGroup(taskType) {
+  const group = getGroupEl(taskType)
+  if (!group) return
+  expandedGroups.add(taskType)
+  getGroupBody(taskType).classList.remove('hidden')
+  group.querySelector('.tg-arrow').textContent = '▾'
+  group.classList.add('expanded')
+}
+
+function collapseGroup(taskType) {
+  const group = getGroupEl(taskType)
+  if (!group) return
+  expandedGroups.delete(taskType)
+  getGroupBody(taskType).classList.add('hidden')
+  group.querySelector('.tg-arrow').textContent = '▸'
+  group.classList.remove('expanded')
+}
+
+function updateGroupBadge(taskType, activeCount) {
+  const badge = document.querySelector(`.task-group[data-task="${taskType}"] .tg-badge`)
+  if (!badge) return
+  if (activeCount > 0) {
+    badge.textContent = activeCount
+    badge.classList.remove('hidden')
+  } else {
+    badge.classList.add('hidden')
+  }
+}
+
+function updateCurrentThreadBar(taskType, threadId, status) {
+  if (!threadId) {
+    currentThreadBar.classList.add('hidden')
+    return
+  }
+  const cfg = taskConfigs[taskType] || {}
+  currentThreadInfo.textContent = `${cfg.icon || ''} ${cfg.label || taskType}  ·  ${formatThreadLabel(threadId)}`
+  currentThreadBar.classList.remove('hidden')
+  threadCloseCurrentBtn.classList.toggle('hidden', status !== 'in_progress')
+}
+
+function _addAction(container, text, title, handler, variant = '') {
+  const btn = document.createElement('span')
+  btn.className = `ti-act${variant ? ' ti-act-' + variant : ''}`
+  btn.textContent = text
+  btn.title = title
+  btn.addEventListener('click', (e) => { e.stopPropagation(); handler() })
+  container.appendChild(btn)
+}
+
+function renderThreadItem(container, taskType, t, isArchived) {
+  const item = document.createElement('div')
+  const isActive = t.thread_id === currentThreadId && currentTaskType === taskType
+  const statusIcon = isArchived ? '🗑' : t.status === 'completed' ? '✓' : '●'
+  const cls = isArchived ? 'archived' : t.status === 'completed' ? 'completed' : 'in-progress'
+  item.className = `thread-item ${cls}${isActive ? ' selected' : ''}`
+  item.dataset.threadId = t.thread_id
+
+  const label = formatThreadLabel(t.thread_id)
+  const title = t.title && t.title !== t.thread_id ? t.title : ''
+  const msgBadge = t.message_count > 0 ? `<span class="ti-count">${t.message_count}</span>` : ''
+
+  item.innerHTML = `
+    <span class="ti-status">${statusIcon}</span>
+    <div class="ti-text">
+      <span class="ti-label">${escapeHtml(label)}</span>
+      ${title ? `<span class="ti-title">${escapeHtml(title)}</span>` : ''}
+    </div>
+    ${msgBadge}
+    <div class="ti-actions"></div>
+  `
+
+  const actions = item.querySelector('.ti-actions')
+
+  if (isArchived) {
+    _addAction(actions, '↑', '보관 전으로 복원', () => restoreArchivedThread(taskType, t.thread_id))
+    _addAction(actions, '×', '영구 삭제', () => deleteThreadFromSidebar(taskType, t.thread_id, true), 'delete')
+    item.addEventListener('click', () => selectArchivedThread(taskType, t.thread_id))
+  } else {
+    if (t.status === 'in_progress') {
+      _addAction(actions, '✓', '완료하기', async () => {
+        currentThreadId = t.thread_id
+        currentTaskType = taskType
+        await closeCurrentThread()
+      })
+    } else if (t.status === 'completed') {
+      _addAction(actions, '↺', '진행 중으로 재개', () => restoreThread(taskType, t.thread_id))
+    }
+    _addAction(actions, '↓', '보관함으로 이동', () => archiveThread(taskType, t.thread_id))
+    _addAction(actions, '×', '영구 삭제', () => deleteThreadFromSidebar(taskType, t.thread_id, false), 'delete')
+    item.addEventListener('click', () => selectThread(taskType, t.thread_id, t.status))
+  }
+
+  container.appendChild(item)
+}
+
+async function renderSidebarThreads(taskType) {
+  let threads = []
+  try {
+    const res = await fetch(`${BASE_URL}/threads/${taskType}`)
+    threads = await res.json()
+  } catch {}
+
+  const activeCount = threads.filter(t => t.status === 'in_progress').length
+  updateGroupBadge(taskType, activeCount)
+
+  const body = getGroupBody(taskType)
+  if (!body || !expandedGroups.has(taskType)) return threads
+
+  body.innerHTML = ''
+
+  if (threads.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'tg-empty'
+    empty.textContent = '스레드 없음'
+    body.appendChild(empty)
+  } else {
+    threads.forEach(t => renderThreadItem(body, taskType, t, false))
+  }
+
+  // 보관 섹션
+  const isArchiveOpen = showingArchiveGroups.has(taskType)
+  const archiveHeader = document.createElement('div')
+  archiveHeader.className = 'tg-archive-toggle'
+  const archiveBody = document.createElement('div')
+  archiveBody.className = 'tg-archive-body'
+
+  let archivedThreads = []
+  if (isArchiveOpen) {
+    try {
+      const res = await fetch(`${BASE_URL}/threads/${taskType}?archived=true`)
+      archivedThreads = await res.json()
+    } catch {}
+    if (archivedThreads.length > 0) {
+      archivedThreads.forEach(t => renderThreadItem(archiveBody, taskType, t, true))
+    } else {
+      const empty = document.createElement('div')
+      empty.className = 'tg-empty'
+      empty.textContent = '보관된 스레드 없음'
+      archiveBody.appendChild(empty)
+    }
+  } else {
+    archiveBody.classList.add('hidden')
+  }
+
+  const archivedLabel = archivedThreads.length > 0 ? ` ${archivedThreads.length}개` : ''
+  archiveHeader.innerHTML = `<span class="tg-archive-arrow">${isArchiveOpen ? '▾' : '▸'}</span><span>보관${archivedLabel}</span>`
+  archiveHeader.addEventListener('click', async () => {
+    if (showingArchiveGroups.has(taskType)) showingArchiveGroups.delete(taskType)
+    else showingArchiveGroups.add(taskType)
+    await renderSidebarThreads(taskType)
+  })
+
+  body.appendChild(archiveHeader)
+  body.appendChild(archiveBody)
+
+  return threads
+}
+
 async function openTask(taskType) {
   currentTaskType = taskType
-  currentThreadId = ''
-  showingArchive = false
-  archiveToggleBtn.textContent = '🗑️ 보관함'
-  archiveToggleBtn.classList.remove('active')
-
-  taskBtns.forEach(b => b.classList.toggle('active', b.dataset.task === taskType))
-
-  const cfg = taskConfigs[taskType] || { label: taskType, icon: '' }
-  threadTaskLabel.textContent = `${cfg.icon} ${cfg.label}`
-  threadBar.classList.remove('hidden')
-  threadCloseCurrentBtn.classList.add('hidden')
-
-  // 입력창을 즉시 '스레드 없음' 상태로 초기화
   messagesEl.innerHTML = ''
-  inputEl.placeholder = `${cfg.label} — 스레드를 선택하거나 새로 시작하세요`
   inputEl.disabled = true
   sendBtn.disabled = true
 
-  const threads = await refreshThreadTabs(taskType)
+  expandGroup(taskType)
+  const threads = await renderSidebarThreads(taskType)
 
-  // 메시지 있는 가장 최근 스레드 우선 선택, 없으면 최근 스레드, 없으면 새로 생성
-  const withMessages = threads.find(t => t.message_count > 0)
-  if (withMessages) {
-    await selectThread(taskType, withMessages.thread_id, withMessages.status)
-  } else if (threads.length > 0) {
-    await selectThread(taskType, threads[0].thread_id, threads[0].status)
+  const best = threads.find(t => t.message_count > 0 && t.status === 'in_progress')
+    || threads.find(t => t.status === 'in_progress')
+    || threads[0]
+
+  if (best) {
+    await selectThread(taskType, best.thread_id, best.status)
   } else {
     await createNewThread(taskType)
   }
 }
 
-async function refreshThreadTabs(taskType) {
-  let threads = []
-  try {
-    const url = showingArchive
-      ? `${BASE_URL}/threads/${taskType}?archived=true`
-      : `${BASE_URL}/threads/${taskType}`
-    const res = await fetch(url)
-    threads = await res.json()
-  } catch {}
-
-  threadTabsEl.innerHTML = ''
-  threadBar.classList.toggle('archive-mode', showingArchive)
-
-  if (!showingArchive) {
-    // + 새 시작 버튼 (활성 모드에서만)
-    const newBtn = document.createElement('button')
-    newBtn.className = 'thread-tab new-thread'
-    newBtn.textContent = '+ 새 시작'
-    newBtn.addEventListener('click', () => createNewThread(taskType))
-    threadTabsEl.appendChild(newBtn)
-  }
-
-  if (showingArchive && threads.length === 0) {
-    const empty = document.createElement('span')
-    empty.className = 'thread-empty-hint'
-    empty.textContent = '보관된 스레드 없음'
-    threadTabsEl.appendChild(empty)
-  }
-
-  threads.forEach(t => {
-    const btn = document.createElement('button')
-    const isActive = t.thread_id === currentThreadId
-    let cls = 'thread-tab'
-    if (showingArchive) cls += ' archived'
-    else if (t.status === 'completed') cls += ' completed'
-    if (isActive) cls += ' active'
-    btn.className = cls
-    btn.dataset.threadId = t.thread_id
-    btn.title = t.title
-
-    const labelSpan = document.createElement('span')
-    if (showingArchive) {
-      const label = formatThreadLabel(t.thread_id)
-      const msgCount = t.message_count > 0 ? ` (${t.message_count})` : ''
-      // archived_at에서 날짜만 표시
-      const archivedDate = t.archived_at ? ` · ${t.archived_at.slice(5, 10)}` : ''
-      labelSpan.textContent = `${label}${msgCount}${archivedDate}`
-    } else {
-      const label = formatThreadLabel(t.thread_id)
-      const statusMark = t.status === 'completed' ? ' ✓' : ''
-      const msgCount = t.message_count > 0 ? ` (${t.message_count})` : ''
-      labelSpan.textContent = `${label}${msgCount}${statusMark}`
-    }
-    btn.appendChild(labelSpan)
-
-    if (showingArchive) {
-      // 보관 탭: ↑ (원래 상태로 복원) + × (영구 삭제)
-      const unarchiveBtn = document.createElement('span')
-      unarchiveBtn.className = 'tab-unarchive-btn'
-      unarchiveBtn.textContent = '↑'
-      unarchiveBtn.title = '보관 전 상태로 복원'
-      unarchiveBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        restoreArchivedThread(taskType, t.thread_id)
-      })
-      btn.appendChild(unarchiveBtn)
-
-      const delBtn = document.createElement('span')
-      delBtn.className = 'tab-del-btn'
-      delBtn.textContent = '×'
-      delBtn.title = '영구 삭제'
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        deleteThreadFromTab(taskType, t.thread_id, true)
-      })
-      btn.appendChild(delBtn)
-    } else {
-      // 활성 탭: 완료 스레드만 ↺ (재개), 모두 ↓ (보관) + × (영구 삭제)
-      if (t.status === 'completed') {
-        const restoreBtn = document.createElement('span')
-        restoreBtn.className = 'tab-restore-btn'
-        restoreBtn.textContent = '↺'
-        restoreBtn.title = '진행 중으로 재개'
-        restoreBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          restoreThread(taskType, t.thread_id)
-        })
-        btn.appendChild(restoreBtn)
-      }
-      const archiveBtn = document.createElement('span')
-      archiveBtn.className = 'tab-archive-btn'
-      archiveBtn.textContent = '↓'
-      archiveBtn.title = '보관함으로 이동'
-      archiveBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        archiveThread(taskType, t.thread_id)
-      })
-      btn.appendChild(archiveBtn)
-
-      const delBtn = document.createElement('span')
-      delBtn.className = 'tab-del-btn'
-      delBtn.textContent = '×'
-      delBtn.title = '영구 삭제'
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        deleteThreadFromTab(taskType, t.thread_id, false)
-      })
-      btn.appendChild(delBtn)
-    }
-
-    btn.addEventListener('click', () => {
-      if (showingArchive) selectArchivedThread(taskType, t.thread_id)
-      else selectThread(taskType, t.thread_id, t.status)
-    })
-    threadTabsEl.appendChild(btn)
-  })
-
-  return threads
-}
-
 async function archiveThread(taskType, threadId) {
-  const wasActive = currentThreadId === threadId
+  const wasActive = currentThreadId === threadId && currentTaskType === taskType
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}`, { method: 'DELETE' })
-    const threads = await refreshThreadTabs(taskType)
-
+    const threads = await renderSidebarThreads(taskType)
     if (wasActive) {
       currentThreadId = ''
       messagesEl.innerHTML = ''
-      threadCloseCurrentBtn.classList.add('hidden')
-      // 보관 후 다음 활성 스레드로 자동 이동
+      updateCurrentThreadBar(taskType, '', '')
       const next = threads.find(t => t.status === 'in_progress')
       if (next) {
         await selectThread(taskType, next.thread_id, next.status)
@@ -615,18 +643,16 @@ async function archiveThread(taskType, threadId) {
         sendBtn.disabled = true
       }
     }
-  } catch (e) {
-    console.error('스레드 보관 실패', e)
-  }
+  } catch (e) { console.error('스레드 보관 실패', e) }
 }
 
 async function selectArchivedThread(taskType, threadId) {
   currentThreadId = threadId
-  threadTabsEl.querySelectorAll('.thread-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.threadId === threadId)
+  currentTaskType = taskType
+  document.querySelectorAll('.thread-item').forEach(item => {
+    item.classList.toggle('selected', item.dataset.threadId === threadId && item.classList.contains('archived'))
   })
-  threadCloseCurrentBtn.classList.add('hidden')
-
+  updateCurrentThreadBar(taskType, threadId, 'archived')
   messagesEl.innerHTML = ''
   try {
     const res = await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/messages?archived=true`)
@@ -639,7 +665,6 @@ async function selectArchivedThread(taskType, threadId) {
       }
     })
   } catch {}
-
   inputEl.placeholder = '(보관된 스레드 — 읽기 전용)'
   inputEl.disabled = true
   sendBtn.disabled = true
@@ -648,31 +673,43 @@ async function selectArchivedThread(taskType, threadId) {
 async function restoreThread(taskType, threadId) {
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/restore`, { method: 'POST' })
-    // 서버 실제 status 기준으로 UI 갱신 (하드코딩 금지)
-    const threads = await refreshThreadTabs(taskType)
+    const threads = await renderSidebarThreads(taskType)
     const t = threads.find(t => t.thread_id === threadId)
     await selectThread(taskType, threadId, t ? t.status : 'in_progress')
-  } catch (e) {
-    console.error('스레드 복원 실패', e)
-  }
+  } catch (e) { console.error('스레드 복원 실패', e) }
 }
 
 async function restoreArchivedThread(taskType, threadId) {
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/unarchive`, { method: 'POST' })
-    // 보관함 뷰에서 활성 뷰로 전환 후 복원된 스레드(완료 상태) 선택
-    showingArchive = false
-    archiveToggleBtn.textContent = '🗑️ 보관함'
-    archiveToggleBtn.classList.remove('active')
-    threadBar.classList.remove('archive-mode')
-    const threads = await refreshThreadTabs(taskType)
+    showingArchiveGroups.delete(taskType)
+    const threads = await renderSidebarThreads(taskType)
     const t = threads.find(t => t.thread_id === threadId)
-    if (t) {
-      await selectThread(taskType, threadId, t.status)
+    if (t) await selectThread(taskType, threadId, t.status)
+  } catch (e) { console.error('보관 스레드 복원 실패', e) }
+}
+
+async function deleteThreadFromSidebar(taskType, threadId, isArchived) {
+  const wasActive = currentThreadId === threadId && currentTaskType === taskType
+  const qs = isArchived ? '?archived=true' : ''
+  try {
+    await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/permanent${qs}`, { method: 'DELETE' })
+    const threads = await renderSidebarThreads(taskType)
+    if (wasActive) {
+      currentThreadId = ''
+      messagesEl.innerHTML = ''
+      updateCurrentThreadBar(taskType, '', '')
+      const next = threads.find(t => t.status === 'in_progress')
+      if (next) {
+        await selectThread(taskType, next.thread_id, next.status)
+      } else {
+        const cfg = taskConfigs[taskType] || {}
+        inputEl.placeholder = `${cfg.label} — 스레드를 선택하거나 새로 시작하세요`
+        inputEl.disabled = true
+        sendBtn.disabled = true
+      }
     }
-  } catch (e) {
-    console.error('보관 스레드 복원 실패', e)
-  }
+  } catch (e) { console.error('영구 삭제 실패', e) }
 }
 
 // ── 스레드 전체 관리 모달 ─────────────────────────────────────
@@ -699,42 +736,32 @@ function renderDeleteManager(allThreads) {
   taskTypes.forEach(taskType => {
     const cfg = taskConfigs[taskType] || { label: taskType, icon: '' }
     const threads = allThreads[taskType]
-
     const section = document.createElement('div')
     section.className = 'dm-section'
-
     const heading = document.createElement('div')
     heading.className = 'dm-heading'
     heading.textContent = `${cfg.icon} ${cfg.label}`
     section.appendChild(heading)
-
     threads.forEach(t => {
       const row = document.createElement('div')
       row.className = 'dm-row'
-
       const info = document.createElement('div')
       info.className = 'dm-info'
-
       const label = formatThreadLabel(t.thread_id)
       const statusMap = { in_progress: '진행 중', completed: '완료', archived: '보관됨' }
       const statusCls  = { in_progress: 'dm-status-active', completed: 'dm-status-done', archived: 'dm-status-archived' }
       const statusText = statusMap[t.status] || t.status
       const statusClass = statusCls[t.status] || ''
       const msgCount = t.message_count > 0 ? `${t.message_count}개` : ''
-
       info.innerHTML =
         `<span class="dm-label">${label}</span>` +
         `<span class="dm-title">${escapeHtml(t.title)}</span>` +
         `<span class="dm-count">${msgCount}</span>` +
         `<span class="dm-status ${statusClass}">${statusText}</span>`
-
       const delBtn = document.createElement('button')
       delBtn.className = 'dm-delete-btn'
       delBtn.textContent = '삭제'
-      delBtn.addEventListener('click', () =>
-        permanentDeleteThread(taskType, t.thread_id, t.is_archived)
-      )
-
+      delBtn.addEventListener('click', () => permanentDeleteThread(taskType, t.thread_id, t.is_archived))
       row.appendChild(info)
       row.appendChild(delBtn)
       section.appendChild(row)
@@ -747,56 +774,22 @@ async function permanentDeleteThread(taskType, threadId, isArchived) {
   const qs = isArchived ? '?archived=true' : ''
   try {
     await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/permanent${qs}`, { method: 'DELETE' })
-
-    // 현재 열려있는 스레드면 UI 초기화
     if (currentThreadId === threadId && currentTaskType === taskType) {
       currentThreadId = ''
       messagesEl.innerHTML = ''
-      threadCloseCurrentBtn.classList.add('hidden')
+      updateCurrentThreadBar(taskType, '', '')
       const cfg = taskConfigs[taskType] || {}
       inputEl.placeholder = `${cfg.label} — 스레드를 선택하거나 새로 시작하세요`
       inputEl.disabled = true
       sendBtn.disabled = true
     }
-
-    // 모달 새로고침
     await openDeleteManager()
-
-    // 현재 태스크의 탭도 새로고침
-    if (currentTaskType === taskType) {
-      await refreshThreadTabs(taskType)
-    }
-  } catch (e) {
-    console.error('영구 삭제 실패', e)
-  }
-}
-
-async function deleteThreadFromTab(taskType, threadId, isArchived) {
-  const wasActive = currentThreadId === threadId && currentTaskType === taskType
-  const qs = isArchived ? '?archived=true' : ''
-  try {
-    await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/permanent${qs}`, { method: 'DELETE' })
-    const threads = await refreshThreadTabs(taskType)
-    if (wasActive) {
-      currentThreadId = ''
-      messagesEl.innerHTML = ''
-      threadCloseCurrentBtn.classList.add('hidden')
-      const next = threads.find(t => t.status === 'in_progress')
-      if (next) {
-        await selectThread(taskType, next.thread_id, next.status)
-      } else {
-        const cfg = taskConfigs[taskType] || {}
-        inputEl.placeholder = `${cfg.label} — 스레드를 선택하거나 새로 시작하세요`
-        inputEl.disabled = true
-        sendBtn.disabled = true
-      }
-    }
-  } catch (e) {
-    console.error('영구 삭제 실패', e)
-  }
+    if (currentTaskType === taskType) await renderSidebarThreads(taskType)
+  } catch (e) { console.error('영구 삭제 실패', e) }
 }
 
 async function createNewThread(taskType) {
+  expandGroup(taskType)
   try {
     const res = await fetch(`${BASE_URL}/threads/${taskType}`, {
       method: 'POST',
@@ -804,25 +797,21 @@ async function createNewThread(taskType) {
       body: JSON.stringify({ title: '' })
     })
     const { thread_id } = await res.json()
+    await renderSidebarThreads(taskType)
     await selectThread(taskType, thread_id, 'in_progress')
-    await refreshThreadTabs(taskType)
-  } catch (e) {
-    console.error('스레드 생성 실패', e)
-  }
+  } catch (e) { console.error('스레드 생성 실패', e) }
 }
 
 async function selectThread(taskType, threadId, status) {
   currentThreadId = threadId
+  currentTaskType = taskType
 
-  // 탭 active 갱신
-  threadTabsEl.querySelectorAll('.thread-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.threadId === threadId)
+  document.querySelectorAll('.thread-item').forEach(item => {
+    item.classList.toggle('selected', item.dataset.threadId === threadId && !item.classList.contains('archived'))
   })
 
-  // 완료 버튼 표시 여부
-  threadCloseCurrentBtn.classList.toggle('hidden', status === 'completed')
+  updateCurrentThreadBar(taskType, threadId, status)
 
-  // 대화 이력 로드
   messagesEl.innerHTML = ''
   try {
     const res = await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/messages`)
@@ -840,7 +829,6 @@ async function selectThread(taskType, threadId, status) {
     }
   } catch {}
 
-  // 입력창 placeholder 업데이트
   const cfg = taskConfigs[taskType] || {}
   inputEl.placeholder = status === 'completed'
     ? '(완료된 스레드입니다)'
@@ -848,7 +836,6 @@ async function selectThread(taskType, threadId, status) {
   inputEl.disabled = status === 'completed'
   sendBtn.disabled = status === 'completed'
 
-  // 워크플로우 패널 로드
   if (window.workflowPanel) {
     window.workflowPanel.load(taskType, threadId)
     window.workflowPanel.clearLog()
@@ -860,13 +847,10 @@ async function closeCurrentThread() {
   const closingId = currentThreadId
   try {
     await fetch(`${BASE_URL}/threads/${currentTaskType}/${closingId}/close`, { method: 'POST' })
-    // 서버 실제 status 기준으로 UI 갱신
-    const threads = await refreshThreadTabs(currentTaskType)
+    const threads = await renderSidebarThreads(currentTaskType)
     const t = threads.find(t => t.thread_id === closingId)
     await selectThread(currentTaskType, closingId, t ? t.status : 'completed')
-  } catch (e) {
-    console.error('스레드 완료 처리 실패', e)
-  }
+  } catch (e) { console.error('스레드 완료 처리 실패', e) }
 }
 
 // ── 이벤트 바인딩 ──────────────────────────────────────────
@@ -886,14 +870,28 @@ inputEl.addEventListener('keydown', (e) => {
   }
 })
 
-taskBtns.forEach(btn => {
-  btn.addEventListener('click', () => openTask(btn.dataset.task))
+document.querySelectorAll('.task-group-header').forEach(header => {
+  header.addEventListener('click', (e) => {
+    if (e.target.closest('.tg-new-btn')) return
+    const taskType = header.closest('.task-group').dataset.task
+    if (!expandedGroups.has(taskType) || currentTaskType !== taskType) {
+      openTask(taskType)
+    } else {
+      collapseGroup(taskType)
+    }
+  })
 })
 
-// 빠른 작업 버튼 — 완성형(data-autosend)은 즉시 실행, 템플릿은 삽입 후 포커스
+document.querySelectorAll('.tg-new-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    createNewThread(btn.closest('.task-group').dataset.task)
+  })
+})
+
 document.querySelectorAll('.quick-action-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    if (inputEl.disabled) return  // 스레드 미선택/읽기전용이면 무시
+    if (inputEl.disabled) return
     const prompt = btn.dataset.prompt || ''
     if (btn.dataset.autosend === 'true') {
       inputEl.value = ''
@@ -908,11 +906,9 @@ document.querySelectorAll('.quick-action-btn').forEach(btn => {
 
 threadCloseCurrentBtn.addEventListener('click', closeCurrentThread)
 
-// 채팅 영역 클릭 → 입력창 포커스 (클릭해서 대화 시작 UX)
 messagesEl.addEventListener('click', () => {
-  if (currentTaskType && currentThreadId && !showingArchive) {
-    inputEl.focus()
-  }
+  const isArchived = document.querySelector('.thread-item.selected.archived')
+  if (currentTaskType && currentThreadId && !isArchived) inputEl.focus()
 })
 
 openDeleteManagerBtn.addEventListener('click', openDeleteManager)
@@ -921,39 +917,7 @@ deleteManagerOverlay.addEventListener('click', (e) => {
   if (e.target === deleteManagerOverlay) deleteManagerOverlay.classList.add('hidden')
 })
 
-// 워크플로우 패널에서 error 단계 재시도 버튼 클릭 시 호출
 document.addEventListener('wf:retry-step', ({ detail: { stepTitle } }) => {
   if (!currentTaskType || !currentThreadId || inputEl.disabled) return
   sendMessage(`"${stepTitle}" 단계에서 오류가 발생했습니다. 이 단계를 다시 시도해주세요.`)
-})
-
-archiveToggleBtn.addEventListener('click', async () => {
-  showingArchive = !showingArchive
-  archiveToggleBtn.textContent = showingArchive ? '← 활성 스레드' : '🗑️ 보관함'
-  archiveToggleBtn.classList.toggle('active', showingArchive)
-
-  currentThreadId = ''
-  messagesEl.innerHTML = ''
-  threadCloseCurrentBtn.classList.add('hidden')
-
-  // 보관함 진입 시 즉시 입력 비활성 (스레드 미선택 상태)
-  if (showingArchive) {
-    inputEl.disabled = true
-    sendBtn.disabled = true
-    inputEl.placeholder = '보관함 — 스레드를 클릭해서 내용을 확인하세요'
-  }
-
-  const threads = await refreshThreadTabs(currentTaskType)
-
-  if (!showingArchive) {
-    const cfg = taskConfigs[currentTaskType] || {}
-    const firstActive = threads.find(t => t.status === 'in_progress')
-    if (firstActive) {
-      await selectThread(currentTaskType, firstActive.thread_id, firstActive.status)
-    } else {
-      inputEl.placeholder = `${cfg.label} — 스레드를 선택하거나 새로 시작하세요`
-      inputEl.disabled = true
-      sendBtn.disabled = true
-    }
-  }
 })

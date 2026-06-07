@@ -28,21 +28,56 @@
     <div id="main">
       <aside id="sidebar">
         <div class="sidebar-label">업무 자동화</div>
-        <button class="quick-btn task-btn" data-task="general">
-          💬 기본업무
-        </button>
-        <button class="quick-btn task-btn" data-task="syncade">
-          🚀 Syncade 배포
-        </button>
-        <button class="quick-btn task-btn" data-task="obsidian">
-          🗂️ Obsidian PKM
-        </button>
-        <button class="quick-btn task-btn" data-task="unscript">
-          🤖 Unscript 테스트
-        </button>
-        <button class="quick-btn task-btn" data-task="knox">
-          📥 Knox 자동 수집
-        </button>
+
+        <div class="task-group" data-task="general">
+          <div class="task-group-header">
+            <span class="tg-arrow">▸</span>
+            <span class="tg-name">💬 기본업무</span>
+            <span class="tg-badge hidden"></span>
+            <button class="tg-new-btn" title="새 스레드">＋</button>
+          </div>
+          <div class="task-group-body hidden"></div>
+        </div>
+
+        <div class="task-group" data-task="syncade">
+          <div class="task-group-header">
+            <span class="tg-arrow">▸</span>
+            <span class="tg-name">🚀 Syncade</span>
+            <span class="tg-badge hidden"></span>
+            <button class="tg-new-btn" title="새 스레드">＋</button>
+          </div>
+          <div class="task-group-body hidden"></div>
+        </div>
+
+        <div class="task-group" data-task="obsidian">
+          <div class="task-group-header">
+            <span class="tg-arrow">▸</span>
+            <span class="tg-name">🗂️ Obsidian</span>
+            <span class="tg-badge hidden"></span>
+            <button class="tg-new-btn" title="새 스레드">＋</button>
+          </div>
+          <div class="task-group-body hidden"></div>
+        </div>
+
+        <div class="task-group" data-task="unscript">
+          <div class="task-group-header">
+            <span class="tg-arrow">▸</span>
+            <span class="tg-name">🤖 Unscript</span>
+            <span class="tg-badge hidden"></span>
+            <button class="tg-new-btn" title="새 스레드">＋</button>
+          </div>
+          <div class="task-group-body hidden"></div>
+        </div>
+
+        <div class="task-group" data-task="knox">
+          <div class="task-group-header">
+            <span class="tg-arrow">▸</span>
+            <span class="tg-name">📥 Knox</span>
+            <span class="tg-badge hidden"></span>
+            <button class="tg-new-btn" title="새 스레드">＋</button>
+          </div>
+          <div class="task-group-body hidden"></div>
+        </div>
 
         <div class="sidebar-divider"></div>
         <div class="sidebar-label">빠른 작업</div>
@@ -84,16 +119,11 @@
       <div id="toast-container"></div>
 
       <section id="chat-area">
-        <!-- 스레드 바 (업무 선택 시 표시) -->
-        <div id="thread-bar" class="hidden">
-          <div id="thread-bar-inner">
-            <span id="thread-task-label"></span>
-            <div id="thread-tabs-scroll">
-              <div id="thread-tabs"></div>
-            </div>
-            <button id="thread-close-current-btn" class="hidden" title="이 스레드를 완료하기">완료하기</button>
-            <button id="archive-toggle-btn" title="보관된 스레드 보기">🗑️ 보관함</button>
-          </div>
+        <!-- 현재 스레드 정보 바 -->
+        <div id="current-thread-bar" class="hidden">
+          <span id="current-thread-info"></span>
+          <div class="ctb-spacer"></div>
+          <button id="thread-close-current-btn" class="hidden" title="이 스레드를 완료하기">완료하기</button>
         </div>
 
         <div id="messages"></div>

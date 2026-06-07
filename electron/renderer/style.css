@@ -120,71 +120,26 @@ body {
   margin: 8px 0;
 }
 
-/* 스레드 바 */
-#thread-bar {
-  background: #0d1b2a;
-  border-bottom: 1px solid #0f3460;
-  padding: 6px 12px;
-  flex-shrink: 0;
-}
-
-#thread-bar-inner {
+/* 현재 스레드 바 (간소화) */
+#current-thread-bar {
   display: flex;
   align-items: center;
   gap: 8px;
+  background: #0d1b2a;
+  border-bottom: 1px solid #0f3460;
+  padding: 5px 14px;
+  flex-shrink: 0;
 }
-
-#thread-task-label {
+#current-thread-info {
   font-size: 12px;
-  font-weight: bold;
-  color: #c0d8ff;
-  white-space: nowrap;
-  min-width: 100px;
+  color: #7799bb;
 }
-
-#thread-tabs-scroll {
-  flex: 1;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-#thread-tabs {
-  display: flex;
-  gap: 6px;
-  min-width: max-content;
-}
-
-.thread-tab {
-  background: #0f3460;
-  border: 1px solid #1a4a8a;
-  color: #8899bb;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-.thread-tab:hover { background: #1a4a8a; color: #c0d8ff; }
-.thread-tab.active {
-  background: #1a4a8a;
-  border-color: #4488cc;
-  color: #e0f0ff;
-}
-.thread-tab.completed { color: #4caf50; border-color: #2a6a3a; }
-.thread-tab.new-thread {
-  background: transparent;
-  border-style: dashed;
-  border-color: #2a4060;
-  color: #5577aa;
-}
-.thread-tab.new-thread:hover { background: #0a1520; color: #99bbdd; }
-
+.ctb-spacer { flex: 1; }
 #thread-close-current-btn {
   background: transparent;
   border: 1px solid #3a6a3a;
   color: #4caf50;
-  padding: 3px 8px;
+  padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
@@ -193,86 +148,184 @@ body {
 }
 #thread-close-current-btn:hover { background: #1a3a1a; }
 
-#thread-back-btn {
-  background: transparent;
-  border: none;
-  color: #445566;
-  font-size: 11px;
+/* 태스크 그룹 */
+.task-group { display: flex; flex-direction: column; }
+
+.task-group-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  white-space: nowrap;
-  padding: 3px 6px;
-  border-radius: 4px;
+  user-select: none;
+  transition: background 0.15s;
+  font-size: 13px;
+  color: #c0d8ff;
+}
+.task-group-header:hover { background: #1a4a8a22; }
+.task-group.expanded > .task-group-header { background: #0f3460; }
+
+.tg-arrow {
+  font-size: 10px;
+  color: #445566;
+  width: 12px;
+  flex-shrink: 0;
   transition: color 0.15s;
 }
-#thread-back-btn:hover { color: #8899aa; }
+.task-group-header:hover .tg-arrow { color: #6688aa; }
+.task-group.expanded > .task-group-header .tg-arrow { color: #4488cc; }
 
-/* 보관함 토글 버튼 */
-#archive-toggle-btn {
+.tg-name { flex: 1; }
+
+.tg-badge {
+  background: #e94560;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.tg-new-btn {
   background: transparent;
-  border: 1px solid #3a3020;
-  color: #7a6a44;
-  padding: 3px 8px;
+  border: 1px solid #1a4a8a;
+  color: #4488cc;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
-  font-size: 11px;
   cursor: pointer;
-  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   transition: all 0.15s;
+  opacity: 0;
 }
-#archive-toggle-btn:hover { background: #1a1200; color: #c0a060; border-color: #7a5a20; }
-#archive-toggle-btn.active { background: #2a1800; color: #c0a060; border-color: #8a6030; }
+.task-group-header:hover .tg-new-btn { opacity: 1; }
+.tg-new-btn:hover { background: #1a4a8a; color: #e0f0ff; }
 
-/* 스레드 바 보관 모드 */
-#thread-bar.archive-mode {
-  background: #1a1200;
-  border-bottom-color: #4a3000;
+/* 그룹 바디 */
+.task-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 6px 14px;
 }
 
-/* 탭 내 보관 버튼 (↓) */
-.tab-archive-btn {
-  margin-left: 4px;
+/* 스레드 아이템 */
+.thread-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s;
+  position: relative;
+}
+.thread-item:hover { background: #0f2a40; }
+.thread-item.selected { background: #0f3460; }
+
+.ti-status {
+  font-size: 10px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+.thread-item.in-progress .ti-status { color: #4488cc; }
+.thread-item.completed .ti-status { color: #4caf50; font-size: 12px; }
+.thread-item.archived .ti-status { color: #5a4a30; }
+.thread-item.archived { color: #7a6a4a; }
+.thread-item.completed { color: #668866; }
+
+.ti-text {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+}
+.ti-label {
+  color: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ti-title {
+  color: #556677;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-item.selected .ti-title { color: #7799aa; }
+
+.ti-count {
+  font-size: 10px;
+  color: #445566;
+  background: #0d1b2a;
+  padding: 1px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.ti-actions {
+  display: none;
+  gap: 3px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.thread-item:hover .ti-actions { display: flex; }
+
+.ti-act {
   font-size: 12px;
   color: #334455;
-  padding: 0 2px;
-  vertical-align: middle;
-  border-radius: 2px;
-  transition: color 0.1s;
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
   line-height: 1;
 }
-.thread-tab:hover .tab-archive-btn { color: #556677; }
-.tab-archive-btn:hover { color: #f0a500 !important; }
+.ti-act:hover { color: #88bbdd; background: #0a2030; }
+.ti-act.ti-act-delete:hover { color: #e94560; background: #200a10; }
 
-/* 탭 내 보관 복원 버튼 (↑) */
-.tab-unarchive-btn {
-  margin-left: 4px;
-  font-size: 12px;
-  color: #6a5a33;
-  padding: 0 2px;
-  vertical-align: middle;
-  border-radius: 2px;
-  transition: color 0.1s;
-  line-height: 1;
-}
-.thread-tab:hover .tab-unarchive-btn { color: #9a8a55; }
-.tab-unarchive-btn:hover { color: #c0a060 !important; }
-
-/* 보관된 스레드 탭 */
-.thread-tab.archived { color: #8a7a55; border-color: #4a3a20; }
-.thread-tab.archived:hover { background: #1a1200; color: #c0a060; border-color: #7a5a20; }
-.thread-tab.archived.active { background: #2a1800; border-color: #8a6030; color: #c0a060; }
-
-/* 보관함 탭 없음 힌트 */
-.thread-empty-hint {
-  color: #554433;
+/* 빈 스레드 힌트 */
+.tg-empty {
   font-size: 11px;
-  padding: 4px 8px;
-  align-self: center;
+  color: #334455;
+  padding: 4px 6px;
+  font-style: italic;
 }
 
-/* 활성 task 버튼 강조 */
-.task-btn.active {
-  background: #1a4a8a;
-  border-color: #4488cc;
-  color: #e0f0ff;
+/* 보관 섹션 */
+.tg-archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #445566;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.12s;
+  user-select: none;
+}
+.tg-archive-toggle:hover { color: #7a8a6a; }
+.tg-archive-arrow { font-size: 9px; width: 10px; flex-shrink: 0; }
+
+.tg-archive-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
 }
 
 /* 채팅 영역 */
@@ -473,34 +526,6 @@ body {
   from { width: 100%; }
   to   { width: 0%; }
 }
-
-/* 탭 영구 삭제 버튼 (×) */
-.tab-del-btn {
-  margin-left: 4px;
-  font-size: 12px;
-  color: #2a2020;
-  padding: 0 2px;
-  vertical-align: middle;
-  border-radius: 2px;
-  transition: color 0.1s;
-  line-height: 1;
-}
-.thread-tab:hover .tab-del-btn { color: #553333; }
-.tab-del-btn:hover { color: #e94560 !important; }
-
-/* 탭 복원 버튼 */
-.tab-restore-btn {
-  margin-left: 4px;
-  font-size: 11px;
-  color: #334455;
-  padding: 0 2px;
-  vertical-align: middle;
-  border-radius: 2px;
-  transition: color 0.1s;
-  line-height: 1;
-}
-.thread-tab:hover .tab-restore-btn { color: #3366aa; }
-.tab-restore-btn:hover { color: #66aaff !important; }
 
 /* ── 스레드 전체 관리 모달 ─────────────────────────── */
 #delete-manager-overlay {
