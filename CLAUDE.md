@@ -35,15 +35,15 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
-| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 235개 테스트, `.\test.ps1` 으로 실행 |
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 251개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
 | LLM 프로파일 전환 | `agent/config.py` | OpenAI ↔ 사내 LLM 런타임 전환, UI 버튼 |
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
-| 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기, 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
-| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up), 키보드(press·down·up), 클립보드, 창 관리 (19종) |
+| 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
+| 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종) |
 | Obsidian RAG | `agent/tools/obsidian_rag.py` | Vault 전체 검색·읽기·쓰기·추가·태그 조회·링크 순회 (7종), REST API + 파일 fallback |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
@@ -73,6 +73,8 @@
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
+| wait_for_image/wait_for_text interval 명시화 (Phase 5 ✅) | `agent/tools/screen.py` | MANIFEST 스키마에 `interval` 파라미터 노출 → LLM이 폴링 간격 직접 제어 가능 |
+| mouse_click after_delay_ms (Phase 5 ✅) | `agent/tools/desktop.py` | 클릭 후 안정화 대기 옵션, MANIFEST 스키마 및 함수 시그니처에 추가 |
 
 **총 툴 수: 89종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
