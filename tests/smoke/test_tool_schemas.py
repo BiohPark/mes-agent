@@ -8,7 +8,7 @@ import pytest
 from agent.tools import _registry, TOOLS, TOOL_LABELS
 
 
-EXPECTED_TOOL_COUNT = 98
+EXPECTED_TOOL_COUNT = 100
 REQUIRED_MANIFEST_KEYS = {"name", "label", "schema", "handler"}
 
 
@@ -117,6 +117,8 @@ class TestModuleCoverage:
         "obsidian_replace_section",
         "obsidian_update_frontmatter",
         "obsidian_move_note",
+        "obsidian_list_commands",
+        "obsidian_run_command",
     ])
     def test_obsidian_tools_registered(self, tool_name):
         assert tool_name in _registry

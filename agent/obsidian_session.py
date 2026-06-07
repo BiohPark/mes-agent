@@ -25,6 +25,9 @@ _AUTO_EXEC = (
     " 각 단계 실행 시작 시 workflow_set_step(status='running'),"
     " 완료 시 'done', 오류 시 'error'로 업데이트해라."
     " task_type·thread_id는 시스템 메시지의 [현재 세션] 섹션에서 읽어 그대로 사용해라."
+    " [Obsidian RAG] 업무 도메인 지식이 필요할 때 obsidian_search로 Vault를 먼저 조회해라."
+    " 관련 노트 발견 시 obsidian_scan_vault로 훑어보고 필요한 것만 obsidian_read_note로 읽어라."
+    " 작업 결과 중 재참조 가능성이 있는 분석·보고서는 obsidian_write_note로 Vault에 기록해라."
     " [브라우저 조작] browser_open 후 browser_get_interactive_elements로 실제 selector를 먼저 확인해라."
     " CSS id/class보다 aria-label·placeholder·텍스트 기반 selector(예: input[aria-label='검색'], button:has-text('로그인'))를 우선 사용해라."
     " 폼 제출은 버튼 클릭 대신 browser_press_key('Enter')를 사용해라."
@@ -63,8 +66,10 @@ TASK_CONFIGS = {
             "Syncade는 회사 내부 시스템의 소프트웨어 배포 플랫폼이야. "
             "배포 절차 안내, 배포 상태 확인, 오류 대응을 담당해. "
             "오류 발생 시 원인 분석과 해결책을 제시하고 배포 진행 상황을 추적해. "
+            "작업 시작 전 obsidian_search('Syncade')로 Vault의 배포 명세·이전 기록을 확인해라. "
             "작업 시작 시 반드시 workflow_init으로 6단계 배포 절차를 정의해라: "
-            "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록."
+            "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록. "
+            "배포 완료 후 결과를 obsidian_write_note로 Vault에 기록해라."
         ) + _AUTO_EXEC,
     },
     "obsidian": {
@@ -97,7 +102,11 @@ TASK_CONFIGS = {
             "- 이름/위치 변경: obsidian_move_note (update_links=true로 wikilink 자동 업데이트). "
             ""
             "Vault에 없는 정보면 솔직히 말하고, 새로 작성이 필요하면 사용자와 내용을 먼저 협의해. "
-            "편집 전에 현재 내용을 읽어 맥락을 파악하고, 중요 변경 전에는 ask_user로 확인해."
+            "편집 전에 현재 내용을 읽어 맥락을 파악하고, 중요 변경 전에는 ask_user로 확인해. "
+            "[노트 작성 기준] 새 노트 생성 시 'agent/guides/🤖 Agent 노트작성 가이드.md'를 참조해. "
+            "frontmatter(tags/Categories/Indexes), 파일명 형식, 태그 규칙을 이 가이드에 따라 적용해라. "
+            "[Templater] 업무·회의 노트는 obsidian_list_commands로 Templater 명령을 확인하고 "
+            "obsidian_run_command로 실행해 템플릿 구조를 그대로 사용해라."
         ) + _AUTO_EXEC,
     },
     "unscript": {
@@ -130,8 +139,10 @@ TASK_CONFIGS = {
             "너는 Knox 데이터 수집 에이전트야. "
             "Knox Chat, Knox Mail 등 사내 시스템에서 필요한 데이터를 수집하고 정리하는 역할이야. "
             "수집 대상, 방법, 결과를 명확히 보고하고 수집 현황을 추적해. "
+            "작업 시작 전 obsidian_search('Knox')로 Vault의 수집 명세·이전 결과를 참조해라. "
             "화면 캡처(capture_screen_ocr)와 브라우저 자동화를 활용해 데이터를 추출하고 정리해. "
-            "작업 시작 시 workflow_init으로 수집 절차를 정의해라."
+            "작업 시작 시 workflow_init으로 수집 절차를 정의해라. "
+            "수집 완료 후 정제된 데이터를 obsidian_write_note로 Vault에 저장해라."
         ) + _AUTO_EXEC,
     },
 }

@@ -79,8 +79,11 @@
 | 그래프 캔버스 시각화 (Phase 6B ✅) | `electron/renderer/workflow.js` + `style.css` | BFS 레이아웃 2D 그래프, running/done/error 애니메이션, 분기 색상·흐름 연결선, 진행 바 |
 | 인터랙티브 노드 컨트롤 (Phase 6C ✅) | `electron/renderer/workflow.js` + `style.css` | 노드 ⋮ 클릭 → 완료/건너뛰기/실행/재시도/분기 선택 패널 |
 | Obsidian PKM 스레드 (Phase 7 ✅) | `agent/tools/obsidian_rag.py` + `obsidian_session.py` | `obsidian-rag` → `obsidian` 전환, 2-tier 탐색·편집·이동 9종 신규 툴, 시스템 프롬프트 전면 개편 |
+| Vault 노트작성 가이드 (Phase 7B ✅) | `D:\_Archives\obsidian\brain\agent\guides\🤖 Agent 노트작성 가이드.md` | frontmatter 스키마·태그·Templater 연동 기준, `🏛 Vault Guides.md` 연결 |
+| Templater 명령 툴 (Phase 7B ✅) | `agent/tools/obsidian_rag.py` | `obsidian_list_commands`·`obsidian_run_command` — REST API `/commands/` 엔드포인트 |
+| RAG-first 지침 전파 (Phase 7B ✅) | `agent/obsidian_session.py` | `_AUTO_EXEC` + syncade/knox/obsidian 시스템 프롬프트에 Obsidian 선조회·결과저장 지시 추가 |
 
-**총 툴 수: 98종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 100종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -90,7 +93,7 @@
 | `browser.py` | 22 |
 | `process.py` | 9 |
 | `document.py` | 9 |
-| `obsidian_rag.py` | 16 |
+| `obsidian_rag.py` | 18 |
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
 | `obsidian_session.py` | 4 |

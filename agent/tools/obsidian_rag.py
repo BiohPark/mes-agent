@@ -665,6 +665,27 @@ def obsidian_update_frontmatter(path: str, updates: dict) -> str:
     return json.dumps(write_result, ensure_ascii=False)
 
 
+def obsidian_list_commands() -> str:
+    """Obsidian REST API를 통해 사용 가능한 명령 목록을 반환한다 (Templater 포함)."""
+    raw = _api_request("GET", "/commands/")
+    if raw is None:
+        return json.dumps({"error": "REST API를 사용할 수 없습니다. OBSIDIAN_HOST/OBSIDIAN_API_KEY를 확인하세요."})
+    try:
+        data = json.loads(raw)
+        commands = data.get("commands", data) if isinstance(data, dict) else data
+        return json.dumps({"count": len(commands), "commands": commands}, ensure_ascii=False)
+    except Exception:
+        return json.dumps({"raw": raw[:500]})
+
+
+def obsidian_run_command(command_id: str) -> str:
+    """Obsidian 명령을 실행한다 (Templater 템플릿 적용, 플러그인 명령 등)."""
+    raw = _api_request("POST", f"/commands/{urllib.parse.quote(command_id, safe='')}", body=b"")
+    if raw is None:
+        return json.dumps({"error": f"명령 실행 실패: {command_id}. REST API 접근 또는 command_id를 확인하세요."})
+    return json.dumps({"executed": True, "command_id": command_id, "response": raw[:200]}, ensure_ascii=False)
+
+
 def obsidian_move_note(
     from_path: str, to_path: str, update_links: bool = True
 ) -> str:
@@ -1103,5 +1124,48 @@ MANIFEST = [
             }
         },
         "handler": lambda a: obsidian_move_note(a["from_path"], a["to_path"], a.get("update_links", True))
+    },
+    {
+        "name": "obsidian_list_commands",
+        "label": "Obsidian 명령 목록 조회",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "obsidian_list_commands",
+                "description": (
+                    "Obsidian REST API로 사용 가능한 명령 목록을 반환합니다 (Templater 명령 포함). "
+                    "obsidian_run_command로 실행할 command-id를 확인할 때 사용합니다. "
+                    "OBSIDIAN_HOST/OBSIDIAN_API_KEY 설정이 필요합니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                },
+            }
+        },
+        "handler": lambda a: obsidian_list_commands()
+    },
+    {
+        "name": "obsidian_run_command",
+        "label": "Obsidian 명령 실행",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "obsidian_run_command",
+                "description": (
+                    "Obsidian 명령을 실행합니다 (Templater 템플릿 적용, 플러그인 명령 등). "
+                    "command_id는 obsidian_list_commands로 먼저 확인하세요. "
+                    "예: 'templater-obsidian:create-new-note-from-template'"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command_id": {"type": "string", "description": "실행할 명령 ID (obsidian_list_commands로 확인)"},
+                    },
+                    "required": ["command_id"],
+                },
+            }
+        },
+        "handler": lambda a: obsidian_run_command(a["command_id"])
     },
 ]
