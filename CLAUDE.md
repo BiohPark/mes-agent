@@ -454,6 +454,8 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 > 참고 출처: ONLYOFFICE DocumentServer/DocumentBuilder(GitHub, api.onlyoffice.com), MS Graph Excel API(learn.microsoft.com/graph), LibreOffice headless/UNO·unoconv.
 
+**⏭ 다음 작업 가이드**: `docs/office-editing-next-steps.md` — 사내 문서 백엔드(네트워크드라이브 / 온프렘 SharePoint / 사내 M365 / OnlyOffice) 확인 절차 + 각 경로별 구현 스케치. **`sbiologics.com`이 일반 O365가 아닌 사내 전용이라, 회사 PC에서 실제 문서 URL/경로를 먼저 확인해야 정확한 경로 결정 가능.** `GRAPH_BASE_URL` 환경변수로 사내 M365 엔드포인트 재정의는 이미 지원.
+
 ---
 
 ## 폐쇄망 환경 제약

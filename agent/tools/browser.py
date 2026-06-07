@@ -90,21 +90,49 @@ def office_web_open(url: str, timeout: int = 60000) -> str:
             page.wait_for_load_state("networkidle", timeout=timeout)
         except Exception:
             pass  # Office Online은 지속 연결로 networkidle이 안 올 수 있음 — 무시
-        # Office 편집 캔버스가 보통 iframe 안에 있음을 알린다
+
+        # 편집기 종류·상태 진단 (프레임 URL/제목 기반)
+        frame_urls = " ".join((f.url or "") for f in page.frames).lower()
+        title_l = (page.title() or "").lower()
+        blob = frame_urls + " " + title_l
+        detected = "unknown"
+        for key, name in (("excel", "Excel Online"), ("word", "Word Online"),
+                          ("powerpoint", "PowerPoint Online"), ("/we/", "Word Online"),
+                          ("/xe/", "Excel Online"), ("/pe/", "PowerPoint Online")):
+            if key in blob:
+                detected = name
+                break
+        # 편집 모드 단서: action=edit / wopi edit frame
+        looks_editable = ("action=edit" in frame_urls or "edit.aspx" in frame_urls
+                          or "wopi" in frame_urls or "office" in frame_urls)
+
         fd, shot = tempfile.mkstemp(suffix=".png", prefix="office_web_")
         os.close(fd)
         try:
             page.screenshot(path=shot, full_page=False)
         except Exception:
             shot = ""
+
         return json.dumps({
             "url": page.url,
             "title": page.title(),
             "screenshot": shot,
             "frames": len(page.frames),
-            "hint": ("편집 화면 진입 완료. 찾아바꾸기는 Ctrl+H, 저장은 Ctrl+S(자동저장이면 불필요). "
-                     "정확한 클릭이 필요하면 ui_inspect_window/analyze_screen으로 좌표를 먼저 확인하세요. "
-                     "로컬 파일이면 웹 대신 word_edit_text(COM)가 더 정확합니다."),
+            "detected_editor": detected,
+            "looks_editable": looks_editable,
+            # ── 솔직한 한계 고지 ─────────────────────────────────────
+            "known_limitation": (
+                "Office Online 편집 화면은 iframe + 캔버스 렌더라 DOM selector로 셀/문단을 직접 "
+                "클릭·입력하기 어렵습니다. browser_click 류는 대부분 실패합니다. 이게 웹 편집의 약점입니다."
+            ),
+            # ── 권장 폴백 순서(에이전트가 따라야 할 사다리) ──────────
+            "recommended_next": [
+                "1) office_locate_file로 같은 문서의 동기화/로컬 사본을 먼저 찾아라. 있으면 word_edit_text/excel_set_cells(COM)로 편집(가장 정확).",
+                "2) M365면 graph_find_item→graph_excel_set_range(Excel)로 REST 편집을 시도하라.",
+                "3) 위가 불가하면 이 브라우저 창에서 키보드로 편집: 문서에 포커스 후 Ctrl+H(찾아바꾸기)·타이핑, Ctrl+S(자동저장이면 불필요).",
+                "4) 클릭 좌표가 필요하면 analyze_screen/ui_inspect_window로 위치를 먼저 확인하라(스크린샷·OCR).",
+                "5) 그래도 막히면 무엇을 시도했고 왜 막혔는지(편집기 종류·로그인·권한 등) 사용자에게 명확히 보고하라.",
+            ],
         }, ensure_ascii=False)
     return _safe_call(_do)
 
@@ -752,10 +780,11 @@ MANIFEST = [
             "function": {
                 "name": "office_web_open",
                 "description": (
-                    "Office Online(SharePoint/OneDrive/365) 문서를 브라우저로 열고 편집 화면 준비 후 "
-                    "스크린샷을 저장합니다. 이후 편집은 키보드(Ctrl+H 찾아바꾸기, Ctrl+S 저장)와 "
-                    "UI Automation/OCR로 진행하세요. ★ 로컬 파일은 word_edit_text(COM)가 더 정확합니다. "
-                    "BROWSER_CHANNEL=msedge 환경변수로 실제 Edge에서 열 수 있습니다."
+                    "Office Online(SharePoint/OneDrive/365) 문서를 브라우저로 열고 편집기 종류·편집가능 여부를 "
+                    "진단해 스크린샷과 함께 반환합니다. ⚠ 웹 편집기는 iframe+캔버스라 selector 클릭이 거의 안 되는 "
+                    "약점이 있어, 반환되는 recommended_next(로컬사본 COM→Graph→키보드→보고) 순서를 따르세요. "
+                    "★ 로컬/동기화 파일은 office_locate_file+word_edit_text(COM)가 가장 정확합니다. "
+                    "BROWSER_CHANNEL=msedge 로 실제 Edge에서 열 수 있습니다."
                 ),
                 "parameters": {
                     "type": "object",

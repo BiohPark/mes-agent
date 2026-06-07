@@ -53,6 +53,27 @@ def test_set_range_requires_values_or_formulas(monkeypatch):
     assert "error" in res
 
 
+def test_graph_base_url_override(monkeypatch):
+    """사내 전용 M365 대비 — GRAPH_BASE_URL 재정의가 요청 URL에 반영되는지."""
+    import contextlib
+
+    monkeypatch.setattr(oc, "_GRAPH_BASE", "https://graph.internal.example/v1.0")
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+    @contextlib.contextmanager
+    def fake_urlopen(req, timeout=30):
+        captured["url"] = req.full_url
+        yield _Resp()
+
+    monkeypatch.setattr(oc.urllib.request, "urlopen", fake_urlopen)
+    oc._graph_request("GET", "/me/items/x", None, "tkn")
+    assert captured["url"].startswith("https://graph.internal.example/v1.0/me/items/x")
+
+
 def test_find_item_parses(monkeypatch):
     monkeypatch.setenv("GRAPH_ACCESS_TOKEN", "tkn")
     monkeypatch.setattr(oc, "_graph_request",

@@ -18,7 +18,8 @@ import json
 import urllib.request
 import urllib.error
 
-_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+# 사내 전용/Sovereign M365는 그래프 엔드포인트가 다를 수 있어 환경변수로 재정의 가능
+_GRAPH_BASE = os.environ.get("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0").rstrip("/")
 
 
 def _token() -> str:
