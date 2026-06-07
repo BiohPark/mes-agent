@@ -146,6 +146,88 @@ function renderWorkflow(wf) {
     }
     workflowStepsEl.appendChild(card)
   })
+
+  // 연결선 SVG 렌더링 (단순 직렬이면 생략, 분기가 있을 때만 표시)
+  _renderConnectionsSVG(wf)
+}
+
+// ── SVG 연결선 렌더링 ─────────────────────────────────────────
+
+function _renderConnectionsSVG(wf) {
+  // 기존 SVG 제거
+  const old = workflowStepsEl.querySelector('.wf-connections-svg')
+  if (old) old.remove()
+
+  const conns = wf.connections || []
+  const steps = wf.steps || []
+
+  // 단순 직렬(1→2→3…)이면 SVG 생략 — 시각적으로 순서가 명확하므로
+  const isLinear = _isLinearConnections(steps, conns)
+  if (isLinear || conns.length === 0) return
+
+  // 비동기적으로 DOM이 레이아웃된 뒤 좌표 계산
+  requestAnimationFrame(() => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.classList.add('wf-connections-svg')
+    // defs for arrowhead
+    svg.innerHTML = `<defs>
+      <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" class="wf-conn-arrow"/>
+      </marker>
+      <marker id="arrowhead-true" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" class="wf-conn-arrow branch-true"/>
+      </marker>
+      <marker id="arrowhead-false" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" class="wf-conn-arrow branch-false"/>
+      </marker>
+    </defs>`
+
+    const containerRect = workflowStepsEl.getBoundingClientRect()
+    const cardMap = {}
+    steps.forEach(s => {
+      const el = workflowStepsEl.querySelector(`[data-step-id="${s.id}"]`)
+      if (el) cardMap[s.id] = el.getBoundingClientRect()
+    })
+
+    conns.forEach(conn => {
+      const fromRect = cardMap[conn.from_node]
+      const toRect = cardMap[conn.to_node]
+      if (!fromRect || !toRect) return
+
+      const x1 = fromRect.left - containerRect.left + fromRect.width / 2
+      const y1 = fromRect.bottom - containerRect.top
+      const x2 = toRect.left - containerRect.left + toRect.width / 2
+      const y2 = toRect.top - containerRect.top
+
+      const isBranchTrue = conn.from_output === 1
+      const isBranchFalse = conn.from_output === 2
+      const cls = isBranchTrue ? 'wf-conn-line branch-true'
+        : isBranchFalse ? 'wf-conn-line branch-false'
+        : 'wf-conn-line'
+      const markerId = isBranchTrue ? 'arrowhead-true'
+        : isBranchFalse ? 'arrowhead-false'
+        : 'arrowhead'
+
+      // 베지에 곡선
+      const cy = (y1 + y2) / 2
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('d', `M${x1},${y1} C${x1},${cy} ${x2},${cy} ${x2},${y2}`)
+      path.setAttribute('class', cls)
+      path.setAttribute('marker-end', `url(#${markerId})`)
+      svg.appendChild(path)
+    })
+
+    workflowStepsEl.appendChild(svg)
+  })
+}
+
+function _isLinearConnections(steps, conns) {
+  if (conns.length !== steps.length - 1) return false
+  for (let i = 0; i < steps.length - 1; i++) {
+    const c = conns[i]
+    if (!c || c.from_node !== steps[i].id || c.to_node !== steps[i + 1].id) return false
+  }
+  return true
 }
 
 function clearWorkflow() {
@@ -220,12 +302,74 @@ function renderEditMode() {
     renderEditMode()
   })
   workflowStepsEl.appendChild(addBtn)
+
+  // ── 연결 편집 섹션 ─────────────────────────────────────────
+  const connSection = document.createElement('div')
+  connSection.className = 'wf-connections-section'
+  connSection.innerHTML = `<div class="wf-connections-title">연결 (분기)</div>`
+
+  const conns = _editDraft.connections || []
+  const stepsById = Object.fromEntries(_editDraft.steps.filter(s => s.id).map(s => [s.id, s]))
+
+  conns.forEach((conn, ci) => {
+    const fromTitle = stepsById[conn.from_node]?.title || conn.from_node
+    const toTitle = stepsById[conn.to_node]?.title || conn.to_node
+    const label = conn.from_output === 1 ? ' ✔' : conn.from_output === 2 ? ' ✘' : ''
+    const item = document.createElement('div')
+    item.className = 'wf-conn-item'
+    item.innerHTML = `
+      <span class="wf-conn-item-label">${escapeWf(fromTitle)}${label} → ${escapeWf(toTitle)}</span>
+      <button class="wf-conn-del-btn" title="연결 삭제">✕</button>
+    `
+    item.querySelector('.wf-conn-del-btn').addEventListener('click', () => {
+      _editDraft.connections.splice(ci, 1)
+      renderEditMode()
+    })
+    connSection.appendChild(item)
+  })
+
+  // 연결 추가 폼
+  const validSteps = _editDraft.steps.filter(s => s.id || s.title)
+  const stepOptions = validSteps.map((s, i) =>
+    `<option value="${escapeAttr(s.id || '')}">${escapeWf(s.title || `단계 ${i + 1}`)}</option>`
+  ).join('')
+
+  const addConnForm = document.createElement('div')
+  addConnForm.className = 'wf-add-conn-form'
+  addConnForm.innerHTML = `
+    <select class="wf-conn-select" id="wf-conn-from" title="출발 단계">${stepOptions}</select>
+    <select class="wf-conn-select" id="wf-conn-output" title="출력 포트">
+      <option value="0">→ 기본</option>
+      <option value="1">✔ true</option>
+      <option value="2">✘ false</option>
+    </select>
+    <select class="wf-conn-select" id="wf-conn-to" title="도착 단계">${stepOptions}</select>
+    <button class="wf-add-conn-btn" id="wf-add-conn-btn">+ 연결</button>
+  `
+  connSection.appendChild(addConnForm)
+
+  addConnForm.querySelector('#wf-add-conn-btn').addEventListener('click', () => {
+    const fromNode = addConnForm.querySelector('#wf-conn-from').value
+    const toNode = addConnForm.querySelector('#wf-conn-to').value
+    const fromOutput = parseInt(addConnForm.querySelector('#wf-conn-output').value, 10)
+    if (!fromNode || !toNode || fromNode === toNode) return
+    const already = (_editDraft.connections || []).some(
+      c => c.from_node === fromNode && c.to_node === toNode && c.from_output === fromOutput
+    )
+    if (already) return
+    if (!_editDraft.connections) _editDraft.connections = []
+    _editDraft.connections.push({ from_node: fromNode, to_node: toNode, from_output: fromOutput })
+    renderEditMode()
+  })
+
+  workflowStepsEl.appendChild(connSection)
 }
 
 function _enterEdit() {
   if (!_currentWorkflow) return
   _editMode = true
   _editDraft = JSON.parse(JSON.stringify(_currentWorkflow))
+  if (!_editDraft.connections) _editDraft.connections = []
   workflowEditBtn.classList.add('hidden')
   workflowClearBtn.classList.add('hidden')
   workflowSaveBtn.classList.remove('hidden')
@@ -251,7 +395,7 @@ async function _saveEdit() {
     const res = await fetch(`${base}/threads/${task_type}/${thread_id}/workflow`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: _editDraft.title, steps: _editDraft.steps }),
+      body: JSON.stringify({ title: _editDraft.title, steps: _editDraft.steps, connections: _editDraft.connections || [] }),
     })
     const saved = await res.json()
     _leaveEdit()

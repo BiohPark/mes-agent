@@ -110,6 +110,33 @@ def _workflow_remove_step(task_type: str, thread_id: str, step_id: str) -> str:
     return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
+def _workflow_add_connection(
+    task_type: str, thread_id: str, from_node: str, to_node: str, from_output: int = 0
+) -> str:
+    defn = wf_storage.load_definition(task_type, thread_id)
+    node_ids = {n.id for n in defn.nodes}
+    if from_node not in node_ids:
+        return json.dumps({"ok": False, "error": f"from_node '{from_node}' 없음"}, ensure_ascii=False)
+    if to_node not in node_ids:
+        return json.dumps({"ok": False, "error": f"to_node '{to_node}' 없음"}, ensure_ascii=False)
+    if any(c.from_node == from_node and c.to_node == to_node and c.from_output == from_output
+           for c in defn.connections):
+        return json.dumps({"ok": False, "error": "이미 존재하는 연결입니다"}, ensure_ascii=False)
+    defn.connections.append(WorkflowConnection(from_node=from_node, to_node=to_node, from_output=from_output))
+    wf_storage.save_definition(defn)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
+
+
+def _workflow_remove_connection(task_type: str, thread_id: str, from_node: str, to_node: str) -> str:
+    defn = wf_storage.load_definition(task_type, thread_id)
+    before = len(defn.connections)
+    defn.connections = [c for c in defn.connections if not (c.from_node == from_node and c.to_node == to_node)]
+    if len(defn.connections) == before:
+        return json.dumps({"ok": False, "error": f"연결 ({from_node}→{to_node}) 없음"}, ensure_ascii=False)
+    wf_storage.save_definition(defn)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
+
+
 def _workflow_reorder(task_type: str, thread_id: str, ordered_step_ids: list) -> str:
     defn = wf_storage.load_definition(task_type, thread_id)
     by_id = {n.id: n for n in defn.nodes}
@@ -306,5 +333,62 @@ MANIFEST = [
             },
         },
         "handler": lambda a: _workflow_reorder(a["task_type"], a["thread_id"], a["ordered_step_ids"]),
+    },
+    {
+        "name": "workflow_add_connection",
+        "label": "워크플로우 연결 추가",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "workflow_add_connection",
+                "description": (
+                    "두 단계 사이에 연결(엣지)을 추가한다. from_output=0이면 기본(단일) 경로, "
+                    "1이면 true 분기, 2이면 false 분기다. "
+                    "같은 from_node에서 여러 갈래 연결로 조건 분기를 표현한다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_type": {"type": "string"},
+                        "thread_id": {"type": "string"},
+                        "from_node": {"type": "string", "description": "출발 단계 id"},
+                        "to_node": {"type": "string", "description": "도착 단계 id"},
+                        "from_output": {
+                            "type": "integer",
+                            "description": "출력 포트 번호 (0=기본, 1=true 분기, 2=false 분기)",
+                            "default": 0,
+                        },
+                    },
+                    "required": ["task_type", "thread_id", "from_node", "to_node"],
+                },
+            },
+        },
+        "handler": lambda a: _workflow_add_connection(
+            a["task_type"], a["thread_id"], a["from_node"], a["to_node"], a.get("from_output", 0)
+        ),
+    },
+    {
+        "name": "workflow_remove_connection",
+        "label": "워크플로우 연결 삭제",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "workflow_remove_connection",
+                "description": "두 단계 사이의 연결을 제거한다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_type": {"type": "string"},
+                        "thread_id": {"type": "string"},
+                        "from_node": {"type": "string", "description": "출발 단계 id"},
+                        "to_node": {"type": "string", "description": "도착 단계 id"},
+                    },
+                    "required": ["task_type", "thread_id", "from_node", "to_node"],
+                },
+            },
+        },
+        "handler": lambda a: _workflow_remove_connection(
+            a["task_type"], a["thread_id"], a["from_node"], a["to_node"]
+        ),
     },
 ]

@@ -499,25 +499,48 @@ async def get_workflow(task_type: str, thread_id: str):
 class WorkflowSaveRequest(BaseModel):
     title: str
     steps: list
+    connections: list = []  # 편집 모드에서 연결 정보 포함 가능
 
 
 @app.post("/threads/{task_type}/{thread_id}/workflow")
 async def save_workflow_endpoint(task_type: str, thread_id: str, body: WorkflowSaveRequest):
-    from agent.workflow.model import Workflow, WorkflowStep
+    from agent.workflow.model import WorkflowDefinition, WorkflowNode, WorkflowConnection, WorkflowRunState
     import uuid as _uuid
-    steps = [
-        WorkflowStep(
+
+    nodes = [
+        WorkflowNode(
             id=s.get("id") or _uuid.uuid4().hex[:8],
             title=s["title"],
             type=s.get("type", "auto"),
-            status=s.get("status", "pending"),
-            notes=s.get("notes", ""),
         )
         for s in body.steps
     ]
-    wf = Workflow(thread_id=thread_id, task_type=task_type, title=body.title, steps=steps)
+    if body.connections:
+        connections = [WorkflowConnection.from_dict(c) for c in body.connections]
+    else:
+        connections = [
+            WorkflowConnection(from_node=nodes[i].id, to_node=nodes[i + 1].id)
+            for i in range(len(nodes) - 1)
+        ]
+    defn = WorkflowDefinition(
+        id=thread_id, task_type=task_type, title=body.title,
+        nodes=nodes, connections=connections,
+    )
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, wf_storage.save_workflow, wf)
+    # 기존 RunState를 보존하고 새 노드 id 기준으로 재구성
+    existing_rs = await loop.run_in_executor(None, wf_storage.load_run_state, task_type, thread_id)
+    rs = WorkflowRunState(definition_id=thread_id)
+    step_status_map = {s.get("id"): s.get("status", "pending") for s in body.steps if s.get("id")}
+    for n in nodes:
+        status = step_status_map.get(n.id, "pending")
+        if existing_rs and n.id in existing_rs.node_states:
+            ns = existing_rs.node_states[n.id]
+            rs.set_node_status(n.id, ns.status, ns.notes)
+        else:
+            rs.set_node_status(n.id, status)
+    await loop.run_in_executor(None, wf_storage.save_definition, defn)
+    await loop.run_in_executor(None, wf_storage.save_run_state, task_type, thread_id, rs)
+    wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
     return wf.to_dict()
 
 

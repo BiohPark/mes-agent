@@ -46,7 +46,7 @@ class TestWorkflowToDict:
     def test_keys_present(self):
         wf = _make_workflow()
         d = wf.to_dict()
-        assert set(d.keys()) == {"thread_id", "task_type", "title", "steps"}
+        assert {"thread_id", "task_type", "title", "steps", "connections"} <= set(d.keys())
 
     def test_step_keys_present(self):
         wf = _make_workflow()

@@ -134,7 +134,7 @@ def load_workflow(task_type: str, thread_id: str) -> Workflow:
 
 
 def _graph_data_to_workflow(data: dict, task_type: str, thread_id: str) -> Workflow:
-    """그래프 포맷 데이터를 선형 Workflow로 변환한다 (하위 호환)."""
+    """그래프 포맷 데이터를 Workflow로 변환한다 (하위 호환 + connections 포함)."""
     defn = WorkflowDefinition.from_dict(data)
     rs = load_run_state(task_type, thread_id)
     steps = []
@@ -148,7 +148,9 @@ def _graph_data_to_workflow(data: dict, task_type: str, thread_id: str) -> Workf
             notes=ns.notes if ns else "",
             max_retry=n.retry,
         ))
-    return Workflow(thread_id=defn.id, task_type=defn.task_type, title=defn.title, steps=steps)
+    wf = Workflow(thread_id=defn.id, task_type=defn.task_type, title=defn.title, steps=steps)
+    wf.connections = [c.to_dict() for c in defn.connections]
+    return wf
 
 
 def save_workflow(workflow: Workflow) -> None:

@@ -1191,6 +1191,112 @@ body {
 }
 .wf-add-step-btn:hover { background: #0f2030; color: #9cc8ff; border-color: #2a558a; }
 
+/* ── 워크플로우 연결선 (SVG 오버레이) ───────────────────────── */
+
+#workflow-steps {
+  position: relative; /* SVG 오버레이 기준점 */
+}
+
+.wf-connections-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.wf-conn-line {
+  stroke: #2a558a;
+  stroke-width: 2;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+  transition: stroke 0.15s;
+}
+
+.wf-conn-line:hover { stroke: #4488cc; stroke-width: 3; }
+
+.wf-conn-line.branch-true  { stroke: #4caf50; }
+.wf-conn-line.branch-false { stroke: #e94560; }
+
+.wf-conn-arrow {
+  fill: #2a558a;
+}
+.wf-conn-arrow.branch-true  { fill: #4caf50; }
+.wf-conn-arrow.branch-false { fill: #e94560; }
+
+/* ── 연결 편집 UI ────────────────────────────────────────────── */
+
+.wf-connections-section {
+  margin-top: 10px;
+  border-top: 1px solid #1a2a3a;
+  padding-top: 10px;
+}
+
+.wf-connections-title {
+  font-size: 11px;
+  color: #5a8aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.wf-conn-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #0d1b2a;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #8aaccc;
+}
+
+.wf-conn-item-label { flex: 1; }
+.wf-conn-del-btn {
+  background: none;
+  border: none;
+  color: #e94560;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+.wf-conn-del-btn:hover { opacity: 1; }
+
+.wf-add-conn-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.wf-conn-select {
+  flex: 1;
+  min-width: 60px;
+  background: #0d1b2a;
+  border: 1px solid #1a3050;
+  color: #c0d8f0;
+  border-radius: 4px;
+  padding: 3px 4px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.wf-add-conn-btn {
+  background: #0a1a2a;
+  border: 1px solid #2a558a;
+  color: #6aaae0;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wf-add-conn-btn:hover { background: #0f2030; color: #9cc8ff; }
+
 /* ── 실행 로그 패널 ──────────────────────────────────────────── */
 
 #log-entries {
