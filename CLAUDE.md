@@ -12,6 +12,7 @@
 | 설정 항목 추가 (`.env`) | `.env.example`, `SETUP.md` 환경 설정 섹션 |
 | 의존성 추가 (`requirements.txt` / `package.json`) | `SETUP.md` 사전 요구사항 |
 | 버그 수정 | `CLAUDE.md` 현재 상태의 해당 항목에 ✅ 표시 또는 노트 추가 |
+| 새 툴 추가 / 삭제 | `tests/smoke/test_tool_schemas.py`의 `EXPECTED_TOOL_COUNT` 상수도 업데이트 |
 
 **체크리스트 형식**: 구현 완료 항목은 `- [ ]` → `- [x]` 로, 상태 표기는 `🔲 개발 예정` → `🚧 개발 중` → `✅ 완성` 순서로 변경한다.
 
@@ -34,6 +35,7 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 98개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
