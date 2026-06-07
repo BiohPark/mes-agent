@@ -34,6 +34,8 @@ _AUTO_EXEC = (
     " COM 도구(word_edit_text·excel_set_cells)로 편집하는 라운드트립을 우선해라(브라우저 편집보다 정확)."
     " 로컬 사본이 없을 때만 office_web_open으로 편집화면을 열고 키보드 단축키(Ctrl+H 찾아바꾸기, Ctrl+S 저장)와"
     " UI Automation으로 편집해라."
+    " M365 클라우드 Excel은 GRAPH_ACCESS_TOKEN이 설정돼 있으면 graph_find_item으로 item_id를 찾고"
+    " graph_excel_set_range로 셀/수식을 직접 편집할 수 있다(Excel 엔진 재계산)."
     " 편집 콘텐츠가 필요하면 obsidian_search(RAG)와 사용자가 준 URL 브라우저 조사를 병행해 근거를 모으고,"
     " 삽입 시 출처를 함께 적어라. 비가역 저장(기존 파일 덮어쓰기) 직전에는 ask_user로 확인하고,"
     " Office 편집 작업을 모두 마치면 office_close로 세션을 정리해라."

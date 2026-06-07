@@ -140,6 +140,9 @@
 | `ppt_export_pdf(path, pdf_path)` | PPT→PDF 내보내기 (PowerPoint COM 필요) |
 | `office_close()` | Word/Excel/PowerPoint COM 세션 종료(좀비 프로세스 정리) |
 | `libre_convert(path, to_format, outdir)` | LibreOffice 헤드리스 변환(MS Office 불필요, 오프라인). pdf/docx/xlsx/pptx 등. `word_export_pdf`/`ppt_export_pdf`의 COM 불가 시 자동 폴백 엔진 |
+| `graph_find_item(name, drive)` | M365 드라이브에서 파일 item_id 검색 (`GRAPH_ACCESS_TOKEN` 필요) |
+| `graph_excel_get_range(item_id, worksheet, address, drive)` | 클라우드 Excel 범위 읽기(MS Graph) |
+| `graph_excel_set_range(item_id, worksheet, address, values/formulas, drive)` | 클라우드 Excel 셀/수식 편집(MS Graph, Excel 엔진 재계산) |
 
 > **클라우드 문서**(SharePoint/OneDrive/365)는 `office_web_open(url)`(browser.py)로 편집화면을 연 뒤 키보드(Ctrl+H/Ctrl+S)+UI Automation으로 편집한다. 로컬 파일은 위 COM 도구가 더 정확하다. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동.
 >
