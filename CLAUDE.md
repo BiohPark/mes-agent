@@ -58,9 +58,9 @@
 | 에이전트 상태 바 | `electron/renderer/chat.js` + `style.css` | thinking/running/waiting/idle 상태 표시, 중단 버튼 |
 | 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` | 토큰 추정치 헤더 바 표시 |
 | 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` | 리사이즈 핸들, 탭(워크플로우/실행로그), 접기/펼치기, **단계 카드 클릭 시 상세 펼침**, **편집모드(제목·단계 CUD·드래그앤드롭 순서변경)** |
-| 워크플로우 편집 툴 | `agent/tools/workflow.py` | `workflow_init`·`set_step`·**`add_step`·`update_step`·`remove_step`·`reorder`** (6종), AI 코웍 편집 |
+| 워크플로우 편집 툴 | `agent/tools/workflow.py` | `workflow_init`·`set_step`·**`add_step`·`update_step`·`remove_step`·`reorder`** (6종), AI 코웍 편집, **내부적으로 그래프 모델 사용 (Phase 1 완결)** |
 | 워크플로우 데이터 모델 | `agent/workflow/model.py` + `storage.py` | Vault `agent/workflows/{type}/{id}.json` 저장, **기본 템플릿 최초 1회 영속화로 단계 id 고정** |
-| 워크플로우 그래프 모델 (Phase 1) | `agent/workflow/model.py` | `WorkflowNode`·`WorkflowConnection`·`WorkflowDefinition`(불변)·`NodeState`·`WorkflowRunState`(가변), `migrate_linear_to_graph()` |
+| 워크플로우 그래프 모델 (Phase 1 ✅) | `agent/workflow/model.py` | `WorkflowNode`·`WorkflowConnection`·`WorkflowDefinition`(불변)·`NodeState`·`WorkflowRunState`(가변), `migrate_linear_to_graph()` |
 | 그래프 스토리지 + 마이그레이션 | `agent/workflow/storage.py` | `detect_format`·`load_definition`·`save_definition`·`load_run_state`·`save_run_state`, 구 포맷 자동 마이그레이션, 하위 호환 |
 | RunState 동기화 | `agent/server.py` | workflow 툴 결과 + 툴 실패 auto-error 시 RunState 파일(`*_state.json`) 자동 동기화 |
 | 워크플로우 API | `agent/server.py` | `GET/POST/DELETE /threads/{type}/{id}/workflow` |

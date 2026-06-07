@@ -1,102 +1,126 @@
 import json
 import uuid
 
-from agent.workflow.model import Workflow, WorkflowStep
+from agent.workflow.model import (
+    WorkflowDefinition,
+    WorkflowNode,
+    WorkflowConnection,
+    WorkflowRunState,
+)
 from agent.workflow import storage as wf_storage
 
 
+def _merged_dict(task_type: str, thread_id: str) -> dict:
+    """Definition + RunState를 병합한 Workflow.to_dict()를 반환한다 (프론트엔드 호환)."""
+    return wf_storage.load_workflow(task_type, thread_id).to_dict()
+
+
+def _rebuild_connections(nodes: list) -> list:
+    """노드 목록을 순서대로 잇는 단순 직렬 연결 목록을 반환한다."""
+    return [
+        WorkflowConnection(from_node=nodes[i].id, to_node=nodes[i + 1].id)
+        for i in range(len(nodes) - 1)
+    ]
+
+
 def _workflow_init(task_type: str, thread_id: str, title: str, steps: list) -> str:
-    wf_steps = [
-        WorkflowStep(
+    nodes = [
+        WorkflowNode(
             id=uuid.uuid4().hex[:8],
             title=s["title"],
             type=s.get("type", "auto"),
-            status="pending",
-            notes="",
         )
         for s in steps
     ]
-    wf = Workflow(thread_id=thread_id, task_type=task_type, title=title, steps=wf_steps)
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+    defn = WorkflowDefinition(
+        id=thread_id, task_type=task_type, title=title,
+        nodes=nodes, connections=_rebuild_connections(nodes),
+    )
+    rs = WorkflowRunState(definition_id=thread_id)
+    for n in nodes:
+        rs.set_node_status(n.id, "pending")
+    wf_storage.save_definition(defn)
+    wf_storage.save_run_state(task_type, thread_id, rs)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 def _workflow_set_step(
     task_type: str, thread_id: str, step_id: str, status: str, notes: str = ""
 ) -> str:
-    wf = wf_storage.load_workflow(task_type, thread_id)
-    if not wf:
-        return json.dumps({"ok": False, "error": "워크플로우 없음"}, ensure_ascii=False)
-    for step in wf.steps:
-        if step.id == step_id:
-            step.status = status
-            if notes:
-                step.notes = notes
-            break
-    else:
-        return json.dumps(
-            {"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False
-        )
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+    defn = wf_storage.load_definition(task_type, thread_id)
+    if not any(n.id == step_id for n in defn.nodes):
+        return json.dumps({"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False)
+    rs = wf_storage.load_run_state(task_type, thread_id) or WorkflowRunState(definition_id=thread_id)
+    rs.set_node_status(step_id, status, notes=notes)
+    wf_storage.save_run_state(task_type, thread_id, rs)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 def _workflow_add_step(
     task_type: str, thread_id: str, title: str, type: str = "auto", after_step_id: str = ""
 ) -> str:
-    wf = wf_storage.load_workflow(task_type, thread_id)
-    new_step = WorkflowStep(id=uuid.uuid4().hex[:8], title=title, type=type, status="pending", notes="")
+    defn = wf_storage.load_definition(task_type, thread_id)
+    new_node = WorkflowNode(id=uuid.uuid4().hex[:8], title=title, type=type)
     if after_step_id:
-        idx = next((i for i, s in enumerate(wf.steps) if s.id == after_step_id), None)
+        idx = next((i for i, n in enumerate(defn.nodes) if n.id == after_step_id), None)
         if idx is None:
-            wf.steps.append(new_step)
+            defn.nodes.append(new_node)
         else:
-            wf.steps.insert(idx + 1, new_step)
+            defn.nodes.insert(idx + 1, new_node)
     else:
-        wf.steps.append(new_step)
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+        defn.nodes.append(new_node)
+    defn.connections = _rebuild_connections(defn.nodes)
+    wf_storage.save_definition(defn)
+    rs = wf_storage.load_run_state(task_type, thread_id) or WorkflowRunState(definition_id=thread_id)
+    rs.set_node_status(new_node.id, "pending")
+    wf_storage.save_run_state(task_type, thread_id, rs)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 def _workflow_update_step(
     task_type: str, thread_id: str, step_id: str, title: str = "", type: str = ""
 ) -> str:
     """단계의 구조(제목·유형)를 수정한다. 진행 상태(status)는 workflow_set_step이 담당한다."""
-    wf = wf_storage.load_workflow(task_type, thread_id)
-    for step in wf.steps:
-        if step.id == step_id:
+    defn = wf_storage.load_definition(task_type, thread_id)
+    for node in defn.nodes:
+        if node.id == step_id:
             if title:
-                step.title = title
+                node.title = title
             if type:
-                step.type = type
+                node.type = type
             break
     else:
         return json.dumps({"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False)
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+    wf_storage.save_definition(defn)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 def _workflow_remove_step(task_type: str, thread_id: str, step_id: str) -> str:
-    wf = wf_storage.load_workflow(task_type, thread_id)
-    before = len(wf.steps)
-    wf.steps = [s for s in wf.steps if s.id != step_id]
-    if len(wf.steps) == before:
+    defn = wf_storage.load_definition(task_type, thread_id)
+    before = len(defn.nodes)
+    defn.nodes = [n for n in defn.nodes if n.id != step_id]
+    if len(defn.nodes) == before:
         return json.dumps({"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False)
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+    defn.connections = _rebuild_connections(defn.nodes)
+    wf_storage.save_definition(defn)
+    rs = wf_storage.load_run_state(task_type, thread_id)
+    if rs and step_id in rs.node_states:
+        del rs.node_states[step_id]
+        wf_storage.save_run_state(task_type, thread_id, rs)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 def _workflow_reorder(task_type: str, thread_id: str, ordered_step_ids: list) -> str:
-    wf = wf_storage.load_workflow(task_type, thread_id)
-    by_id = {s.id: s for s in wf.steps}
+    defn = wf_storage.load_definition(task_type, thread_id)
+    by_id = {n.id: n for n in defn.nodes}
     reordered = [by_id[i] for i in ordered_step_ids if i in by_id]
-    # 목록에 빠진 기존 단계는 끝에 보존 (유실 방지)
-    for s in wf.steps:
-        if s.id not in ordered_step_ids:
-            reordered.append(s)
-    wf.steps = reordered
-    wf_storage.save_workflow(wf)
-    return json.dumps({"ok": True, "workflow": wf.to_dict()}, ensure_ascii=False)
+    for n in defn.nodes:
+        if n.id not in ordered_step_ids:
+            reordered.append(n)
+    defn.nodes = reordered
+    defn.connections = _rebuild_connections(defn.nodes)
+    wf_storage.save_definition(defn)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
 
 MANIFEST = [
