@@ -200,11 +200,41 @@ class WorkflowRunState:
         return rs
 
     @classmethod
-    def from_definition(cls, defn: WorkflowDefinition) -> "WorkflowRunState":
+    def from_definition(cls, defn: "WorkflowDefinition") -> "WorkflowRunState":
         """WorkflowDefinition의 모든 노드를 pending 상태로 초기화한다."""
         rs = cls(definition_id=defn.id)
         rs.node_states = {n.id: NodeState() for n in defn.nodes}
         return rs
+
+    def find_next_nodes(
+        self, defn: "WorkflowDefinition", node_id: str, branch_output: int | None = None
+    ) -> list[str]:
+        """node_id 완료 후 런타임 라우팅으로 이동할 다음 노드 ID 목록을 반환한다.
+
+        - branch_output 지정: 해당 출력 포트(1=true, 2=false)의 연결만 따라감
+        - branch_output=None:
+            * from_output=0 연결 있으면 그것을 따라감 (직렬 기본 경로)
+            * from_output=0 없고 단일 연결이면 그것을 따라감 (하위 호환)
+            * 다중 분기(from_output≠0)만 있으면 빈 리스트 (사용자 선택 필요)
+        """
+        outgoing = [c for c in defn.connections if c.from_node == node_id]
+        if not outgoing:
+            return []
+
+        if branch_output is not None:
+            return [c.to_node for c in outgoing if c.from_output == branch_output]
+
+        # branch_output 미지정: from_output=0 경로 우선
+        default_path = [c.to_node for c in outgoing if c.from_output == 0]
+        if default_path:
+            return default_path
+
+        # from_output=0 없고 단일 연결이면 따라감 (구 데이터 하위 호환)
+        if len(outgoing) == 1:
+            return [outgoing[0].to_node]
+
+        # 다중 분기인데 선택 없음 → 자동 진행 불가
+        return []
 
 
 def migrate_linear_to_graph(

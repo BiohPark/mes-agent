@@ -45,13 +45,23 @@ def _workflow_init(task_type: str, thread_id: str, title: str, steps: list) -> s
 
 
 def _workflow_set_step(
-    task_type: str, thread_id: str, step_id: str, status: str, notes: str = ""
+    task_type: str, thread_id: str, step_id: str, status: str,
+    notes: str = "", branch_output: int | None = None,
 ) -> str:
     defn = wf_storage.load_definition(task_type, thread_id)
     if not any(n.id == step_id for n in defn.nodes):
         return json.dumps({"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False)
     rs = wf_storage.load_run_state(task_type, thread_id) or WorkflowRunState(definition_id=thread_id)
     rs.set_node_status(step_id, status, notes=notes)
+
+    # 런타임 라우팅: done 완료 시 다음 노드 자동 진행
+    if status == "done":
+        for next_id in rs.find_next_nodes(defn, step_id, branch_output):
+            curr = rs.node_states.get(next_id)
+            # pending이거나 아직 상태가 없는 노드만 running으로 전환
+            if curr is None or curr.status == "pending":
+                rs.set_node_status(next_id, "running")
+
     wf_storage.save_run_state(task_type, thread_id, rs)
     return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
@@ -216,13 +226,22 @@ MANIFEST = [
                             "type": "string",
                             "description": "단계 실행 결과나 메모 (선택)",
                         },
+                        "branch_output": {
+                            "type": "integer",
+                            "description": (
+                                "분기 선택 (done 상태 시에만 유효). "
+                                "1=true 경로, 2=false 경로. "
+                                "생략 시 from_output=0 단일 경로 자동 진행."
+                            ),
+                        },
                     },
                     "required": ["task_type", "thread_id", "step_id", "status"],
                 },
             },
         },
         "handler": lambda a: _workflow_set_step(
-            a["task_type"], a["thread_id"], a["step_id"], a["status"], a.get("notes", "")
+            a["task_type"], a["thread_id"], a["step_id"], a["status"],
+            a.get("notes", ""), a.get("branch_output"),
         ),
     },
     {

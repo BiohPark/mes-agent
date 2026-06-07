@@ -543,6 +543,27 @@ async def workflow_file_events(request: Request, task_type: str, thread_id: str)
     )
 
 
+class WorkflowNodeUpdateRequest(BaseModel):
+    status: str
+    notes: str = ""
+    branch_output: int | None = None
+
+
+@app.patch("/threads/{task_type}/{thread_id}/workflow/nodes/{node_id}")
+async def patch_workflow_node(
+    task_type: str, thread_id: str, node_id: str, body: WorkflowNodeUpdateRequest
+):
+    """UI에서 노드를 수동으로 완료/건너뛰기/재시도할 때 사용한다.
+    done 상태 시 런타임 라우팅이 자동 적용된다."""
+    from agent.tools.workflow import _workflow_set_step
+    loop = asyncio.get_event_loop()
+    result_str = await loop.run_in_executor(
+        None, _workflow_set_step,
+        task_type, thread_id, node_id, body.status, body.notes, body.branch_output,
+    )
+    return json.loads(result_str)
+
+
 class WorkflowSaveRequest(BaseModel):
     title: str
     steps: list
