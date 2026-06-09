@@ -123,7 +123,7 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (127종)
+### 툴 (128종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -139,7 +139,7 @@
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
 | 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
-| 멀티모달 비전 (전체화면·영역 분석, VISION_ENABLED 게이트) | 2 | ✅ |
+| 멀티모달 화면 (capture_screen 메인루프 이미지 주입·전체화면·영역 분석, VISION_ENABLED 기본 켬) | 3 | ✅ |
 | Windows UI Automation (접근성 트리, OCR 없이 Win32 컨트롤 파악) | 3 | ✅ |
 
 > 상세 툴 목록 → **[docs/agent-guide.md](docs/agent-guide.md)**
@@ -166,7 +166,7 @@ pillow                         — 이미지 처리
 openpyxl / python-docx / pdfplumber  — 문서 처리
 zipfile + xml.etree             — Office OpenXML 검토메모·수정추적·PPT 파싱 (추가 설치 불필요)
 Obsidian Local REST API        — Vault 읽기·쓰기 (fallback: 직접 파일)
-VISION_ENABLED=true            — 멀티모달 LLM 비전 게이트 (사내 LLM 지원 여부 선확인)
+VISION_ENABLED=true            — 멀티모달 화면 게이트(기본 켬): capture_screen·analyze_* (비전 미지원 모델만 false)
 ```
 
 ---
@@ -230,7 +230,7 @@ mes-agent/
 │   ├── workflow/
 │   │   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
-│   └── tools/               — 127종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 128종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)
@@ -244,7 +244,7 @@ mes-agent/
 │       ├── obsidian_rag.py  — Obsidian PKM 탐색·편집·이동 (18종)
 │       ├── interaction.py   — 사용자 확인 팝업 ask_user (1종)
 │       ├── workflow.py      — 워크플로우 관리 (8종)
-│       ├── vision.py        — 멀티모달 비전 분석 (2종, VISION_ENABLED 게이트)
+│       ├── vision.py        — 멀티모달 화면: capture_screen(메인루프 주입)·analyze_* (3종, VISION_ENABLED 기본 켬)
 │       ├── ui_automation.py — Windows UI Automation / 접근성 트리 (3종)
 │       └── _safety.py       — 파괴적 작업 가드 + 위험도 분류 (툴 아님)
 ├── docs/
@@ -358,7 +358,7 @@ Vault/
 ### Phase 8 — Office 문서 심화 + 비전 + 템플릿 편집 ✅
 
 - [x] Office 문서 검토 읽기 — Word 검토메모(`read_word_comments`)·수정추적(`read_word_track_changes`), Excel 셀메모(`read_excel_comments`), PPT 슬라이드+노트(`read_ppt_content`) (OpenXML 파싱, 추가 설치 불필요)
-- [x] 멀티모달 비전 — `analyze_screen`·`analyze_region` (VISION_ENABLED 런타임 게이트, 사용 전 LLM 지원 여부 유저 확인 흐름)
+- [x] 멀티모달 화면 이해 — `capture_screen`(실제 이미지를 메인 LLM 대화에 주입, 작업자와 호흡)·`analyze_screen`·`analyze_region` (VISION_ENABLED 기본 켬, 캡처 썸네일 채팅 표시)
 - [x] Windows UI Automation — `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` (pywin32 접근성 트리, OCR 없이 Win32 컨트롤 파악)
 - [x] 기본 워크플로우 템플릿 편집 UI — "📋 기본 템플릿 편집" 버튼, Vault `_templates/{type}.md` 저장
 - [x] 패널 접기 UX 버그 수정 — `width:0` 대신 `.collapsed` CSS 클래스, `‹` 버튼이 항상 보이는 26px 스트립 유지

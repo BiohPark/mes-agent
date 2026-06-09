@@ -10,7 +10,8 @@ import io
 
 
 def _check_vision() -> tuple[bool, str]:
-    enabled = os.environ.get('VISION_ENABLED', '').lower() in ('1', 'true', 'yes')
+    # 사내 멀티모달 LLM 확인됨 → 기본 켬. 비전 미지원 모델 사용 시 .env에서 false로 끌 수 있다.
+    enabled = os.environ.get('VISION_ENABLED', 'true').lower() in ('1', 'true', 'yes')
     if not enabled:
         return False, (
             "멀티모달 비전이 비활성화되어 있습니다. "
@@ -78,7 +79,80 @@ def analyze_region(x: int, y: int, width: int, height: int, prompt: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+# ── 메인 루프 이미지 주입 (capture_screen) ───────────────────────────
+# analyze_* 가 "별도 LLM 호출 → 텍스트 요약"인 것과 달리, capture_screen 은
+# 실제 스크린샷을 메인 에이전트 대화에 그대로 흘려보낸다. server.generate() 루프가
+# 이 봉투를 감지해 user 멀티모달 메시지(image_url)로 주입하고, 메인 LLM이 화면을
+# 직접 본다. tool_call 짝(I1)을 깨지 않으려 tool 메시지는 짧은 텍스트로 채우고
+# 이미지는 별도 user 메시지로 넣는다.
+_CAPTURE_NOTE = "화면을 캡처했습니다. 다음 user 메시지의 이미지를 직접 보고 작업 상황을 파악하세요."
+
+
+def capture_screen(prompt: str = "", x: int = 0, y: int = 0, width: int = 0, height: int = 0) -> str:
+    """화면을 캡처해 메인 LLM이 직접 보도록 이미지를 대화에 주입합니다.
+    OCR/UI 트리로 파악 안 되는 화면을 실제 이미지로 확인하거나, 작업자와
+    호흡하며 진행 상황을 능동적으로 이해해야 할 때 사용합니다.
+    영역 인자(x,y,width,height)가 모두 0이면 전체 화면을 캡처합니다."""
+    ok, msg = _check_vision()
+    if not ok:
+        return json.dumps({"error": msg})
+    try:
+        png = _screenshot(x, y, width, height)
+        return json.dumps({
+            "__capture__": True,
+            "image_b64": base64.b64encode(png).decode(),
+            "prompt": prompt or "",
+            "note": _CAPTURE_NOTE,
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def parse_capture_envelope(result: str):
+    """run_tool 결과가 capture_screen 봉투면 dict, 아니면 None을 반환한다(순수·테스트용)."""
+    try:
+        obj = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(obj, dict) and obj.get("__capture__") and obj.get("image_b64"):
+        return obj
+    return None
+
+
 MANIFEST = [
+    {
+        "name": "capture_screen",
+        "label": "화면 캡처(메인 LLM 직접 확인)",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "capture_screen",
+                "description": (
+                    "화면을 캡처해 너(메인 LLM)가 이미지를 직접 본다. "
+                    "OCR/UI 트리로 안 되는 화면을 실제 이미지로 확인하거나, 작업 상황 파악·"
+                    "작업자와 호흡이 필요할 때 사용한다. 캡처 후 다음 메시지에 이미지가 첨부된다. "
+                    "영역 인자를 비우면 전체 화면을 캡처한다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "이미지에서 무엇을 확인할지(선택). 예: '진행 상태 표시줄이 끝났는지 확인'"
+                        },
+                        "x": {"type": "integer", "description": "영역 왼쪽 상단 X (전체 화면이면 생략)"},
+                        "y": {"type": "integer", "description": "영역 왼쪽 상단 Y (전체 화면이면 생략)"},
+                        "width": {"type": "integer", "description": "영역 너비 (전체 화면이면 생략)"},
+                        "height": {"type": "integer", "description": "영역 높이 (전체 화면이면 생략)"}
+                    },
+                    "required": []
+                }
+            }
+        },
+        "handler": lambda a: capture_screen(
+            a.get("prompt", ""), a.get("x", 0), a.get("y", 0), a.get("width", 0), a.get("height", 0)
+        )
+    },
     {
         "name": "analyze_screen",
         "label": "화면 비전 분석",

@@ -8,7 +8,7 @@ import pytest
 from agent.tools import _registry, TOOLS, TOOL_LABELS
 
 
-EXPECTED_TOOL_COUNT = 127
+EXPECTED_TOOL_COUNT = 128
 REQUIRED_MANIFEST_KEYS = {"name", "label", "schema", "handler"}
 
 
@@ -136,6 +136,7 @@ class TestModuleCoverage:
         assert tool_name in _registry
 
     @pytest.mark.parametrize("tool_name", [
+        "capture_screen",
         "analyze_screen",
         "analyze_region",
     ])

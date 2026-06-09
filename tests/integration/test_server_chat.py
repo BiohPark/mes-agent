@@ -155,6 +155,35 @@ async def client_gate(vault, monkeypatch):
         yield c
 
 
+@pytest.fixture
+async def client_vision(vault, monkeypatch):
+    """스크립트 LLM + capture_screen 봉투를 반환하는 run_tool. 이미지 주입 검증용."""
+    import agent.server as srv
+    import base64
+    srv._session_allowlists.clear()
+    monkeypatch.setattr("agent.server.get_client", lambda: _ScriptedLLM())
+    monkeypatch.setattr("agent.server.get_model", lambda: "gpt-test")
+
+    fake_b64 = base64.b64encode(b"\x89PNG_fake_capture").decode()
+
+    def _rec(name, args):
+        if name == "capture_screen":
+            return json.dumps({
+                "__capture__": True, "image_b64": fake_b64,
+                "prompt": "", "note": "화면을 캡처했습니다.",
+            })
+        return '{"ok": true}'
+
+    monkeypatch.setattr("agent.server.run_tool", _rec)
+
+    from httpx import AsyncClient, ASGITransport
+    from agent.server import app
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        c._fake_b64 = fake_b64
+        yield c
+
+
 async def _stream_answering(client, payload, answers):
     """채팅 SSE를 받으며, 서버가 confirm 대기에 들어가면 동시 태스크로 /confirm 응답한다.
 
@@ -700,6 +729,77 @@ class TestPlanMode:
         }, [])
         assert "read_file" in [c[0] for c in client_gate._tool_calls]
         assert not self._plan_confirms(events)
+
+
+class TestVisionInjection:
+    """멀티모달 화면 이해 — capture_screen 결과를 메인 대화에 이미지로 주입(I1 짝 보존)."""
+
+    async def _new_thread(self, client):
+        r = await client.post("/threads/general", json={})
+        return r.json()["thread_id"]
+
+    def _saved(self, tid):
+        from agent.obsidian_session import get_session_manager
+        return get_session_manager().get_thread_messages("general", tid)
+
+    async def test_vision_capture_event_emitted(self, client_vision):
+        """capture_screen 호출 시 VISION_CAPTURE SSE에 이미지가 실려 발행된다."""
+        tid = await self._new_thread(client_vision)
+        _ScriptedStream.reset([
+            ("tool", "capture_screen", '{}'),
+            ("text", "화면에 버튼이 보입니다"),
+        ])
+        events = await _stream_answering(client_vision, {
+            "message": "화면 봐줘", "thread_id": tid, "task_type": "general"}, [])
+        caps = [e for e in events if e.get("type") == ev.VISION_CAPTURE]
+        assert caps, "VISION_CAPTURE 이벤트 없음"
+        assert caps[0].get("image_b64") == client_vision._fake_b64
+
+    async def test_image_injected_as_user_multimodal_message(self, client_vision):
+        """캡처 후 image_url 블록을 가진 user 메시지가 대화에 주입된다."""
+        tid = await self._new_thread(client_vision)
+        _ScriptedStream.reset([
+            ("tool", "capture_screen", '{}'),
+            ("text", "확인했습니다"),
+        ])
+        await _stream_answering(client_vision, {
+            "message": "화면 봐줘", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        img_msgs = [
+            m for m in saved
+            if m.get("role") == "user" and isinstance(m.get("content"), list)
+            and any(isinstance(b, dict) and b.get("type") == "image_url" for b in m["content"])
+        ]
+        assert img_msgs, "이미지 user 메시지가 주입되지 않음"
+
+    async def test_pairs_preserved_and_tool_message_is_short(self, client_vision):
+        """tool 메시지는 거대한 base64가 아닌 짧은 텍스트이고, orphan tool이 없어야 한다(I1)."""
+        from agent.core.compaction import has_orphan_tool
+        tid = await self._new_thread(client_vision)
+        _ScriptedStream.reset([
+            ("tool", "capture_screen", '{}'),
+            ("text", "끝"),
+        ])
+        await _stream_answering(client_vision, {
+            "message": "화면 봐줘", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        assert not has_orphan_tool(saved), "이미지 주입으로 tool 짝이 깨짐"
+        tool_msgs = [m for m in saved if m.get("role") == "tool"]
+        assert tool_msgs, "tool 메시지가 없음"
+        assert all("__capture__" not in str(m.get("content")) for m in tool_msgs), \
+            "거대한 봉투가 tool content로 새어 들어감"
+
+    async def test_capture_no_confirm_gate(self, client_vision):
+        """capture_screen은 관찰형이라 안전게이트 확인 없이 실행된다."""
+        tid = await self._new_thread(client_vision)
+        _ScriptedStream.reset([
+            ("tool", "capture_screen", '{}'),
+            ("text", "끝"),
+        ])
+        events = await _stream_answering(client_vision, {
+            "message": "화면 봐줘", "thread_id": tid, "task_type": "general"}, [])
+        assert ev.CONFIRM not in [e.get("type") for e in events]
+        assert ev.DONE in [e.get("type") for e in events]
 
 
 class TestLongTermMemory:

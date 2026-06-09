@@ -472,6 +472,19 @@ function handleEvent(event, agentEl, bubble) {
       if (window.workflowPanel) window.workflowPanel.handleUpdate(event.workflow)
       break
 
+    case 'vision_capture': {
+      // 에이전트가 직접 본 화면을 채팅에 썸네일로 표시
+      if (event.image_b64) {
+        const img = document.createElement('img')
+        img.className = 'chat-screenshot'
+        img.src = `data:image/png;base64,${event.image_b64}`
+        img.alt = '캡처한 화면'
+        agentEl.querySelector('.msg-bubble').before(img)
+        scrollToBottom()
+      }
+      break
+    }
+
     case 'done':
       currentRequestId = ''
       if (!bubble.textContent) bubble.textContent = '완료되었습니다.'

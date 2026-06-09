@@ -78,6 +78,9 @@ def test_classify_safe_read_observe_input():
     assert classify_risk("ask_user", {"question": "ok?"}) == "safe"
     assert classify_risk("screen_ocr_region", {}) == "safe"
     assert classify_risk("obsidian_search", {"query": "메모"}) == "safe"
+    # 화면 캡처(관찰형)는 승인 없이 실행 — capture_screen / analyze_*
+    assert classify_risk("capture_screen", {}) == "safe"
+    assert classify_risk("analyze_screen", {"prompt": "뭐가 보임?"}) == "safe"
 
 
 def test_classify_run_command_content_based():

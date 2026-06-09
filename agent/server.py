@@ -30,6 +30,7 @@ from agent.config import get_active, active_llm, list_profiles, set_active_profi
 from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
+from agent.tools.vision import parse_capture_envelope
 from agent.core.compaction import compact_messages
 from agent.memory import MemoryStore
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
@@ -144,6 +145,10 @@ def _estimate_tokens(messages: list) -> int:
             for block in content:
                 if isinstance(block, dict):
                     total += len(block.get("text", ""))
+                    # 이미지 블록은 base64 길이가 아니라 고정 비용(~1000토큰)으로 계산한다.
+                    # base64 char 수로 세면 과대계상되고, text만 세면 과소계상돼 compaction 타이밍이 어긋난다.
+                    if block.get("type") == "image_url":
+                        total += 4000  # // 4 → ~1000 토큰
         tool_calls = m.get("tool_calls") or []
         for tc in tool_calls:
             fn = tc.get("function", {})
@@ -234,6 +239,18 @@ def _history_to_text(history: list) -> str:
         content = m.get("content")
         if isinstance(content, str) and content:
             lines.append(f"[{role}] {content}")
+        elif isinstance(content, list):
+            # 멀티모달 메시지(capture_screen 주입): text는 살리고 이미지는 자리표시자로
+            parts = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "image_url":
+                    parts.append("[화면 이미지]")
+                elif block.get("text"):
+                    parts.append(block["text"])
+            if parts:
+                lines.append(f"[{role}] {' '.join(parts)}")
         elif m.get("tool_calls"):
             names = ", ".join(tc.get("function", {}).get("name", "?") for tc in m["tool_calls"])
             lines.append(f"[{role}] (도구 호출: {names})")
@@ -455,6 +472,10 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
 
             yield sse({"type": ev.AGENT_STATE, "state": "running"})
 
+            # capture_screen 이 만든 이미지는 tool 묶음 연속성(I1)을 깨지 않도록
+            # 여기 모았다가 tool 루프가 끝난 뒤 user 메시지로 주입한다.
+            pending_images: list[dict] = []
+
             for tc in tool_calls_raw.values():
                 if _stop_flags.get(request_id):
                     break
@@ -622,12 +643,34 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     except (json.JSONDecodeError, AttributeError):
                         pass
 
+                # capture_screen 봉투 감지: 거대한 base64를 tool content/로그/SSE로 흘리지 않고
+                # 짧은 텍스트로 짝(I1)을 맞춘 뒤, 실제 이미지는 루프 종료 후 user 메시지로 주입한다.
+                _cap = parse_capture_envelope(result)
+                if _cap is not None:
+                    _note = _cap.get("note", "화면을 캡처했습니다.")
+                    yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": _note})
+                    yield sse({"type": ev.VISION_CAPTURE, "image_b64": _cap["image_b64"]})
+                    if session_id:
+                        await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], _note)
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": _note})
+                    pending_images.append(_cap)
+                    continue
+
                 yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result[:1000]})
 
                 if session_id:
                     await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
 
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+
+            # tool 묶음이 끝났으므로(연속성 보장) 캡처 이미지를 user 멀티모달 메시지로 주입한다.
+            for _img in pending_images:
+                _txt = _img.get("prompt") or "방금 캡처한 화면입니다. 상황을 직접 보고 다음 행동을 결정하세요."
+                messages.append({"role": "user", "content": [
+                    {"type": "text", "text": _txt},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{_img['image_b64']}", "detail": "high"}},
+                ]})
         else:
             # for 루프가 break 없이 끝남 = 최대 단계 도달 (자연 종료 아님)
             yield sse({"type": ev.TEXT, "content":

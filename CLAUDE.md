@@ -69,7 +69,7 @@
 | SSE 파일 감지 엔드포인트 (Phase 4B ✅) | `agent/server.py` | `GET /threads/{type}/{id}/workflow/events` — mtime 폴링 SSE, `WF_POLL_INTERVAL` 환경변수(기본 2s), heartbeat 30s 주기 |
 | 워크플로우 파일 감지 (Phase 4 frontend ✅) | `electron/renderer/workflow.js` | `_startFileWatcher()`·`_stopFileWatcher()` EventSource, 스레드 전환 시 자동 연결·해제, 편집 중 캐시 갱신 |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
-| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/DONE/ERROR |
+| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/PLAN/VISION_CAPTURE/DONE/ERROR |
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
@@ -83,7 +83,8 @@
 | Templater 명령 툴 (Phase 7B ✅) | `agent/tools/obsidian_rag.py` | `obsidian_list_commands`·`obsidian_run_command` — REST API `/commands/` 엔드포인트 |
 | RAG-first 지침 전파 (Phase 7B ✅) | `agent/obsidian_session.py` | `_AUTO_EXEC` + syncade/knox/obsidian 시스템 프롬프트에 Obsidian 선조회·결과저장 지시 추가 |
 | Office 문서 검토·메모 읽기 ✅ | `agent/tools/document.py` | Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드+노트 (OpenXML 파싱, 설치 불필요) |
-| 멀티모달 비전 분석 ✅ | `agent/tools/vision.py` | `analyze_screen`·`analyze_region` — VISION_ENABLED=true + 멀티모달 LLM 필요, 사용 전 유저 확인 |
+| 멀티모달 비전 분석 ✅ | `agent/tools/vision.py` | `analyze_screen`·`analyze_region` — 별도 LLM 호출로 화면을 텍스트 요약. VISION_ENABLED(기본 true) + 멀티모달 LLM 필요 |
+| 멀티모달 화면 이해(메인 루프 주입) ✅ | `agent/tools/vision.py` + `agent/server.py` + `chat.js` | `capture_screen` — 화면을 캡처해 **실제 이미지를 메인 에이전트 대화에 user 멀티모달 메시지로 주입**, 메인 LLM이 화면을 직접 보고 이후 턴 맥락으로 활용(작업자와 호흡). `__capture__` 봉투를 루프가 감지→**tool 짝(I1) 보존**(tool은 짧은 텍스트, 이미지는 tool 묶음 종료 후 user 주입), `VISION_CAPTURE` SSE로 채팅에 썸네일 표시. `_estimate_tokens`/`_history_to_text`가 이미지 블록 처리(고정비용·`[화면 이미지]` 평탄화). 에이전트 온디맨드 |
 | Windows UI Automation ✅ | `agent/tools/ui_automation.py` | `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` — 접근성 트리 읽기, OCR 없이 Win32 컨트롤 구조 파악 |
 | 스레드 사이드바 접이식 그룹 ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 탭 → 그룹 접기/펼치기, 스레드 인라인 표시, 그룹별 보관 서브섹션, 빨간 배지 |
 | 브라우저 greenlet 스레드 버그 수정 ✅ | `agent/tools/browser.py` | 전용 단일 스레드 executor(`_on_pw_thread`)로 모든 Playwright 핸들러 위임 → "Cannot switch to a different thread" 해결 (웹 조사 실패 수정) |
@@ -103,7 +104,7 @@
 | plan 모드 (G4 / PLAN1) ✅ | `agent/server.py` + `agent/core/events.py` + `chat.js`/`index.html`/`style.css` | `agent_mode='plan'`이면 **계획 먼저 → 승인 → 실행**. 계획 단계엔 `workflow_*`/`ask_user` 외 실행 도구를 구조적으로 차단(프롬프트 의존 X), 계획 완료 시 `plan_approval` CONFIRM(승인/수정/취소)으로 G3 팝업 재사용. 승인 후 실행 진입. 계획=기존 WorkflowDefinition·패널 재사용, 헤더 ⚡자동/📋계획 토글. `PLAN` 이벤트 추가 |
 | 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 턴 종료 시 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
 
-**총 툴 수: 127종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 128종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -117,7 +118,7 @@
 | `interaction.py` | 1 |
 | `workflow.py` | 8 |
 | `obsidian_session.py` | 4 |
-| `vision.py` | 2 |
+| `vision.py` | 3 |
 | `ui_automation.py` | 3 |
 | `office_com.py` | 11 |
 | `office_libre.py` | 1 |
@@ -280,7 +281,7 @@ mes-agent/
 │       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + 폴백 (11종) ✅
 │       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 폴백) (1종) ✅
 │       ├── office_cloud.py    ← MS Graph 클라우드 Excel 편집(셀/수식 REST) (3종) ✅
-│       ├── vision.py        ← 멀티모달 화면 분석 analyze_screen/region (2종) ✅
+│       ├── vision.py        ← 멀티모달 화면: capture_screen(메인루프 이미지 주입)·analyze_screen/region (3종) ✅
 │       ├── ui_automation.py ← Windows UI Automation 접근성 트리 읽기 (3종) ✅
 │       ├── _safety.py       ← 파괴적 작업 가드 + G3 위험도 분류(classify_risk) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅

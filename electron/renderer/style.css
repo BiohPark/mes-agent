@@ -499,6 +499,17 @@ body {
   white-space: pre-wrap;
 }
 
+/* 에이전트가 캡처해 직접 본 화면 썸네일 */
+.chat-screenshot {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 6px 0;
+  border: 1px solid #1b3a5c;
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+
 /* 입력 영역 */
 #input-area {
   display: flex;

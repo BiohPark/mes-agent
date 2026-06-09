@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (127종)
+## 구현된 툴 목록 (128종)
 
 > 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
 > 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
@@ -419,7 +419,7 @@ agent/
     ├── obsidian_rag.py  — MANIFEST(18종) 탐색·편집·이동·고급검색
     ├── interaction.py   — MANIFEST(1종) ask_user
     ├── workflow.py      — MANIFEST(8종) init·set_step·add/update/remove_step·reorder·add/remove_connection
-    ├── vision.py        — MANIFEST(2종) 멀티모달 화면 분석
+    ├── vision.py        — MANIFEST(3종) capture_screen(메인루프 이미지 주입)·analyze_screen/region
     ├── ui_automation.py — MANIFEST(3종) Windows 접근성 트리
     └── _safety.py       — 파괴적 작업 가드 + classify_risk (툴 아님)
 ```
