@@ -47,7 +47,7 @@
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결** |
 | Obsidian PKM (Phase 7 ✅) | `agent/tools/obsidian_rag.py` | 2-tier 탐색(preview/scan/backlinks/section), 편집(edit/replace_section/update_frontmatter), 이동, 고급검색 (16종) |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
-| 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **마크다운→진짜 docx 변환(write_word)**, Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기 (14종) |
+| 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **마크다운→진짜 docx 변환(write_word)**, Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기 (15종) |
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
@@ -146,88 +146,27 @@
 
 ---
 
-### 🚧 개발 예정 기능 상세
+### 🔲 개발 예정 기능 (미착수만)
+
+> 완료 기능은 위 "현재 상태" 표 참조. 아래는 남은 항목만.
+
+#### Electron 패키징 / 배포 (`electron-builder`)
+- `package.json` `build` 섹션 추가 → `npm run dist`로 `.exe` 인스톨러 빌드.
+- Python 환경 번들(`conda-pack`) 또는 별도 설치 가이드. 완료 시 `README.md`·`SETUP.md` 배포 섹션 갱신.
+
+#### Office 편집 백엔드 확정 (회사 PC 확인 필요)
+- 사내 문서 백엔드(네트워크 드라이브 / 온프렘 SharePoint / 사내 M365) 확인 후 경로 구현. → `docs/office-editing-next-steps.md`
+
+#### 장기기억 후속 (선택)
+- 명시적 `memory_*` 도구("이거 기억해/잊어"), 기억 관리 UI, 스레드 close 시 일괄 추출(비용 최적화).
 
 ---
 
-#### 1. ✅ 멀티모달 비전 (`agent/tools/vision.py`) — 완성
+## 외부 하니스 패턴 도입 시 규칙 (클린룸)
 
-**구현 완료** (2026-06-07):
-- `analyze_screen(prompt)` — 전체화면 base64 → LLM `image_url` 전달
-- `analyze_region(x,y,width,height,prompt)` — 영역 지정 분석
-- `VISION_ENABLED=true` 환경변수 게이트 — 비활성 시 안내 메시지 반환
-- 사용 전 사내 LLM 비전 지원 여부 유저 확인 흐름 (`ask_user` 연동)
-
----
-
-#### 2. ✅ 대화 간 장기기억 (`agent/memory.py`) — 완성
-
-> **스레드 내 멀티턴은 원래부터 동작**(스레드 대화는 Obsidian에 전체 히스토리 저장+매 턴 재주입). 원 백로그의 "스레드 미사용 단일 메시지" 항목은 스레드 리팩토링으로 무의미해졌고, 대신 **스레드/대화를 넘는 장기기억**으로 구현했다.
-
-**구현 완료** (2026-06-10):
-- `agent/memory.py` `MemoryStore` — `<vault>/agent/memory/long_term.md`에 사실·선호·결정 저장(dedup·cap·키워드 검색), 사용자가 직접 편집 가능
-- `agent/server.py` `_extract_memories`(턴 종료 시 LLM 추출, 주입식)·주입(진입 시 `search`로 관련 기억을 system에 삽입)·`GET /memory`·`MEMORY_ENABLED` 게이트
-- 후순위: 명시적 `memory_*` 도구, UI 표시, 스레드 close 시 일괄 추출(비용 최적화)
-
----
-
-#### 3. ✅ 업무 워크플로우 패널 — 완성
-
-**구현 완료** (2026-05-29):
-- `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스
-- `agent/workflow/storage.py` — Vault JSON 저장 + 태스크별 기본 템플릿
-- `agent/tools/workflow.py` — `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder` (6종)
-- `electron/renderer/workflow.js` — 우측 패널 렌더링·리사이즈·탭
-- `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` API
-- Phase 0: task_type/thread_id 시스템 프롬프트 주입으로 LLM이 툴 호출 가능
-
----
-
-#### 4. ✅ Obsidian RAG 연동 — 완성
-
-**구현 완료**: `agent/tools/obsidian_rag.py` (16종 툴, Phase 7 확장)
-- `obsidian_search` — Vault 전체 키워드 검색
-- `obsidian_read_note` — 노트 읽기
-- `obsidian_list_notes` — 폴더 목록
-- `obsidian_write_note` — 노트 생성/덮어쓰기
-- `obsidian_append_note` — 노트에 내용 추가
-- `obsidian_get_tags` — 태그 조회
-- `obsidian_follow_links` — `[[wikilink]]` BFS 다중 뎁스 스캔
-
-접근: Local REST API (`OBSIDIAN_HOST`) → 직접 파일 fallback (`OBSIDIAN_VAULT_PATH`)
-
----
-
-#### 5. Electron 패키징 / 배포 (`electron-builder`)
-
-**무엇**: 앱을 `.exe` 인스톨러로 패키징하여 사내 PC에 배포한다.
-
-**왜 필요**: 현재는 개발 환경(`npm start`)으로만 실행 가능. 일반 사용자에게는 설치 파일 필요.
-
-**구현 계획**:
-- `electron-builder` 설정 (`package.json`에 `build` 섹션 추가)
-- Python 환경을 앱에 번들하거나 별도 설치 가이드 제공
-- `npm run dist` 명령으로 빌드
-
-완료 시 `CLAUDE.md` + `README.md` + `SETUP.md` 배포 섹션 업데이트.
-
----
-
-## 리팩토링 작업 규칙 (L1 루프 개선)
-
-### 출처 거버넌스 (절대)
-- 설계 출처는 ① 이 레포 코드 ② openclaw(MIT) ③ LangGraph/Temporal 공개 문서뿐.
-- 유출된 Claude Code 소스("openclaude"/query.ts 등) 및 그 파생물은 **금지 소스**.
-  읽지도, 참고하지도, 인용하지도 마라. ref/ 는 절대 커밋 금지(.gitignore 확인).
-
-### 작업 방식
-- 구현 기준은 docs/contracts/L1_loop_contract.md (이 계약서만 따른다).
-- 전체 맥락은 docs/CLAW_PORT_PLAN.md 참고.
-- TDD: 계약서의 불변조건(§10) → 실패 테스트 먼저 → 최소 구현.
-- 한 번에 한 격차(G3→G1→G2→G4 순). 다른 파일 광범위 수정 금지.
-- 외부 네트워크 호출 추가 금지. 모델 엔드포인트는 기존 설정(config) 사용.
-- 설치 명령(pip/conda) 실행 금지 — 필요하면 알려만 줘라.
-- git push 금지. 커밋 메시지 초안만 제안.
+L1 루프 강화는 클린룸 거버넌스 하에 완료됨(G3·G1·G2·G4). 향후 외부 에이전트 하니스 패턴을
+도입할 때는 **유출 소스(openclaude·claw-code 등) 금지**, 계약서(`docs/contracts/`) 먼저 → TDD 구현 원칙을 따른다.
+상세: `docs/CLAW_PORT_PLAN.md`(거버넌스), `docs/contracts/L1_loop_contract.md`(완료된 L1 명세).
 
 ---
 
@@ -318,29 +257,34 @@ mes-agent/
 │       ├── tool-test.js    ← 도구 직접 테스트 패널
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI (/health /chat /stop /profile /tool/test /task-config /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억. (/health /chat /stop /memory /profile /models /confirm /tool/test /task-config /threads/* /workflow)
 │   ├── llm.py              ← LLM 클라이언트 팩토리
-│   ├── config.py           ← LLM 프로파일 (openai/internal)
+│   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
+│   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
 │   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
 │   ├── core/
-│   │   └── events.py       ← SSE 이벤트 타입 상수
+│   │   ├── events.py       ← SSE 이벤트 타입 상수
+│   │   └── compaction.py   ← G1 컨텍스트 compaction 순수 로직(짝 보존) ✅
 │   ├── workflow/
-│   │   ├── model.py        ← Workflow·WorkflowStep 데이터클래스
-│   │   └── storage.py      ← Vault agent/workflows/ 파일 저장/로드
+│   │   ├── model.py        ← WorkflowDefinition/Node/Connection(불변) + RunState(가변) + 마이그레이션
+│   │   └── storage.py      ← Vault 저장/로드(YAML frontmatter) + 구포맷 자동 마이그레이션
 │   └── tools/
 │       ├── __init__.py     ← 자동 디스커버리 레지스트리 (수정 불필요)
 │       ├── ocr.py          ← 전체화면 OCR (1종) ✅
 │       ├── desktop.py      ← 마우스·키보드·클립보드·창 관리 (19종) ✅
 │       ├── screen.py       ← 화면 인텔리전스: 영역OCR·이미지매칭·텍스트위치·대기·비교·픽셀 (9종) ✅
-│       ├── browser.py      ← Playwright 브라우저 자동화 (22종) ✅
+│       ├── browser.py      ← Playwright 브라우저 자동화 + Office Online 진입 (23종) ✅
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
-│       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx (14종) ✅
-│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT 찾아바꾸기·삽입·셀/수식·메모·PDF) + 폴백 (11종) ✅
-│       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 PDF/포맷 폴백) (1종) ✅
+│       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx + office_locate (15종) ✅
+│       ├── obsidian_rag.py ← Obsidian PKM: 탐색·편집·이동·Templater (18종) ✅
+│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + 폴백 (11종) ✅
+│       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 폴백) (1종) ✅
 │       ├── office_cloud.py    ← MS Graph 클라우드 Excel 편집(셀/수식 REST) (3종) ✅
-│       ├── _safety.py       ← 파괴적 작업 가드(위험명령·보호경로·백업) — 툴 아님
+│       ├── vision.py        ← 멀티모달 화면 분석 analyze_screen/region (2종) ✅
+│       ├── ui_automation.py ← Windows UI Automation 접근성 트리 읽기 (3종) ✅
+│       ├── _safety.py       ← 파괴적 작업 가드 + G3 위험도 분류(classify_risk) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
-│       └── workflow.py     ← 워크플로우 init·set_step·add/update/remove_step·reorder (6종) ✅
+│       └── workflow.py     ← 워크플로우 init·set/add/update/remove_step·reorder·add/remove_connection (8종) ✅
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)
 ├── .env                    ← 로컬 설정 (git 제외)
 ├── .env.example            ← 설정 템플릿

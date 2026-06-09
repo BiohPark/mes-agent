@@ -15,7 +15,10 @@
 
 ---
 
-## 구현된 툴 목록 (98종)
+## 구현된 툴 목록 (127종)
+
+> 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
+> 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
 
 ### 화면 인식 (10종)
 
@@ -56,7 +59,7 @@
 | `move_window` | `desktop.py` | 창 위치 변경 |
 | `maximize_window` | `desktop.py` | 창 최대화 |
 
-### 브라우저 자동화 (22종, Playwright)
+### 브라우저 자동화 (23종, Playwright + Office Online 진입)
 
 > **사전 조건**: `python -m playwright install chromium` 실행 필요 (최초 1회)
 >
@@ -102,7 +105,7 @@
 | `file_exists(path)` | 파일 존재 여부 |
 | `get_system_info()` | CPU·메모리·디스크 사용량 |
 
-### 문서 처리 (9종)
+### 문서 처리 (15종)
 
 | 툴 이름 | 기능 |
 |---------|------|
@@ -154,7 +157,7 @@
 - **Origin 차단**: 원격 http(s) Origin의 요청은 403. 악성 웹페이지發 조종을 차단한다.
 - **파괴적 작업**: `run_command`/`start_process`의 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료)은 차단되고, 사용자 확인 후 `force=true`로만 실행한다. `write_file`은 시스템 보호경로 쓰기를 막고, 기존 파일 덮어쓰기 전 자동 백업한다(`agent/tools/_safety.py`).
 
-### Obsidian PKM — Vault 탐색·편집·정리 (16종)
+### Obsidian PKM — Vault 탐색·편집·정리 (18종)
 
 **환경 설정 (`.env`):**
 ```ini
@@ -330,22 +333,26 @@ init은 전체 교체이므로 진행 중 워크플로우 수정에는 단위 �
 
 ```
 POST /chat
-  └─ generate(message, thread_id, task_type)
-       ├─ 시스템 프롬프트 구성 (task_type·thread_id 주입)
-       ├─ for step in range(MAX_STEPS=20):
+  └─ generate(message, thread_id, task_type, agent_mode)
+       ├─ 시스템 프롬프트 구성 (task_type·thread_id 주입, plan 모드면 보강)
+       ├─ 장기기억 주입 (현재 메시지 관련 기억을 system에 삽입)
+       ├─ for step in range(_MAX_STEPS=40):
        │    ├─ [중단 플래그 확인]
-       │    ├─ SSE: context_usage (토큰 추정)
-       │    ├─ SSE: agent_state="thinking"
+       │    ├─ [G1] 컨텍스트 임계 초과 시 compaction → SSE: compaction
+       │    ├─ SSE: context_usage / agent_state="thinking"
        │    ├─ LLM streaming (tools=TOOLS)
-       │    ├─ finish_reason != "tool_calls" → break
-       │    ├─ SSE: agent_state="running"
+       │    ├─ finish_reason != "tool_calls" →
+       │    │     ├─ [G4] plan 단계면 승인 게이트(CONFIRM) → 승인 시 실행 진입
+       │    │     ├─ [G2] 작업 도중 조기종료면 continuation nudge 주입 후 계속
+       │    │     └─ 아니면 break
        │    └─ for tool_call in tool_calls:
        │         ├─ SSE: tool_start
-       │         ├─ run_tool() → 결과
-       │         ├─ __confirm__ 감지 → SSE: confirm → wait
-       │         ├─ workflow_* 감지 → SSE: workflow_update
+       │         ├─ [G4] plan 단계: workflow_*/ask_user 외 실행 차단
+       │         ├─ [G3] classify_risk → safe 아니면 승인 게이트(CONFIRM)
+       │         ├─ run_tool() → 결과 (workflow_* → SSE: workflow_update)
        │         └─ SSE: tool_done
-       └─ 스레드 저장 (Obsidian)
+       ├─ 스레드/세션 저장 (Obsidian)
+       └─ 장기기억 추출 (대화에서 사실·선호·결정 저장)
 ```
 
 ### SSE 이벤트 형식
@@ -390,23 +397,31 @@ agent/
 ├── server.py            — FastAPI 라우터 (모든 API 엔드포인트)
 ├── llm.py               — LLM 클라이언트 팩토리
 ├── config.py            — LLM 프로파일 (openai / internal)
+├── memory.py            — 대화 간 장기기억 MemoryStore (추출/주입/검색)
 ├── obsidian_session.py  — Obsidian 세션·스레드 관리 + TASK_CONFIGS + MANIFEST(4종)
 ├── core/
-│   └── events.py        — SSE 이벤트 타입 상수 (TEXT, TOOL_START, AGENT_STATE, ...)
+│   ├── events.py        — SSE 이벤트 타입 상수 (TEXT, TOOL_START, AGENT_STATE, COMPACTION, PLAN, ...)
+│   └── compaction.py    — 컨텍스트 compaction 순수 로직(짝 보존)
 ├── workflow/
-│   ├── model.py         — Workflow·WorkflowStep 데이터클래스
-│   └── storage.py       — Obsidian JSON 저장 + 태스크별 기본 템플릿
+│   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
+│   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
 └── tools/
     ├── __init__.py      — 자동 디스커버리 레지스트리 (수정 불필요)
     ├── ocr.py           — MANIFEST(1종)
     ├── screen.py        — MANIFEST(9종)
     ├── desktop.py       — MANIFEST(19종)
-    ├── browser.py       — MANIFEST(22종)
+    ├── browser.py       — MANIFEST(23종)
     ├── process.py       — MANIFEST(9종)
-    ├── document.py      — MANIFEST(14종)
-    ├── obsidian_rag.py  — MANIFEST(16종) 탐색·편집·이동·고급검색
+    ├── document.py      — MANIFEST(15종)
+    ├── office_com.py    — MANIFEST(11종) MS Office COM 편집 + 폴백
+    ├── office_libre.py  — MANIFEST(1종) LibreOffice 변환
+    ├── office_cloud.py  — MANIFEST(3종) MS Graph 클라우드 Excel
+    ├── obsidian_rag.py  — MANIFEST(18종) 탐색·편집·이동·고급검색
     ├── interaction.py   — MANIFEST(1종) ask_user
-    └── workflow.py      — MANIFEST(8종) init·set_step·add_step·update_step·remove_step·reorder·add_connection·remove_connection
+    ├── workflow.py      — MANIFEST(8종) init·set_step·add/update/remove_step·reorder·add/remove_connection
+    ├── vision.py        — MANIFEST(2종) 멀티모달 화면 분석
+    ├── ui_automation.py — MANIFEST(3종) Windows 접근성 트리
+    └── _safety.py       — 파괴적 작업 가드 + classify_risk (툴 아님)
 ```
 
 ---

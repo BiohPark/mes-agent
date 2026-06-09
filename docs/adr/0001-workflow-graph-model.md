@@ -1,6 +1,7 @@
 # ADR-0001: 워크플로우 모델 — 선형 리스트에서 분기 그래프로
 
-> 상태: 제안됨 | 작성일: 2026-06-07 | 관련 브리프: §5, §6(C1·C3)
+> 상태: **채택됨 · 구현 완료(2026-06)** | 작성일: 2026-06-07
+> 구현: `agent/workflow/model.py`(`WorkflowDefinition`·`WorkflowNode`·`WorkflowConnection`·`WorkflowRunState`·`migrate_linear_to_graph`), `storage.py`(포맷 감지·YAML frontmatter 마이그레이션), `agent/tools/workflow.py`(connection 툴 포함 8종).
 
 ---
 

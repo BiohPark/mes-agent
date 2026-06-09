@@ -1,8 +1,9 @@
 # L1 — 에이전트 실행 루프 계약서 (clean)
 
+> **상태: G1·G2·G3·G4 전부 구현 완료(2026-06-10).** 본 계약서는 구현의 기준 명세로 보존한다.
 > 대상: `agent/server.py`의 `generate()` 루프 개선.
 > **출처(클린)**: ① mes-agent 본인 코드, ② 일반 에이전트 루프 지식,
-> ③ openclaw(MIT)·LangGraph/Temporal 공개 패턴. **유출 소스 미사용.**
+> ③ openclaw(MIT)·LangGraph/Temporal 공개 패턴. **유출 소스 미사용.** (거버넌스: `docs/CLAW_PORT_PLAN.md`)
 > 목표: 현 루프를 "강한 에이전트급 문제해결력"으로. 4개 격차(G1~G4) 해소.
 
 ---
