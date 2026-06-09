@@ -30,6 +30,7 @@ from agent.config import get_active, active_llm, list_profiles, set_active_profi
 from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
+from agent.core.compaction import compact_messages
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
 from agent.workflow.model import WorkflowRunState
@@ -169,6 +170,44 @@ _AUTONOMOUS_INSTRUCTION = (
 _MAX_STEPS = 40
 _CONTEXT_MAX_TOKENS = 128_000
 
+# G1 컨텍스트 compaction: 임계 비율·보존 메시지 수·최대 압축 횟수
+COMPACT_RATIO = 0.8
+COMPACT_KEEP_RECENT = 8
+MAX_COMPACT = 3
+
+
+def _history_to_text(history: list) -> str:
+    """요약 입력용으로 메시지 리스트를 role:내용 텍스트로 평탄화한다."""
+    lines = []
+    for m in history:
+        role = m.get("role", "?")
+        content = m.get("content")
+        if isinstance(content, str) and content:
+            lines.append(f"[{role}] {content}")
+        elif m.get("tool_calls"):
+            names = ", ".join(tc.get("function", {}).get("name", "?") for tc in m["tool_calls"])
+            lines.append(f"[{role}] (도구 호출: {names})")
+    return "\n".join(lines)
+
+
+def _summarize_history(history: list) -> str:
+    """오래된 대화 구간을 진행/결정/미해결 중심으로 요약한다(비스트리밍 1회 호출).
+
+    테스트는 이 함수를 monkeypatch로 대체해 실제 LLM 호출을 차단한다.
+    """
+    resp = get_client().chat.completions.create(
+        model=get_model(),
+        stream=False,
+        messages=[
+            {"role": "system", "content": (
+                "다음은 진행 중인 작업 대화 일부다. 이후 작업에 필요한 진행 상황·내린 결정·"
+                "미해결 과제를 한국어로 500토큰 이내로 압축 요약하라. 군더더기 없이 핵심만."
+            )},
+            {"role": "user", "content": _history_to_text(history)},
+        ],
+    )
+    return (resp.choices[0].message.content or "").strip()
+
 
 async def generate(message: str, thread_id: str = "", task_type: str = ""):
     client = get_client()
@@ -206,12 +245,35 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         ]
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
 
+    compaction_count = 0
     try:
         for _step in range(_MAX_STEPS):
             # 중단 플래그 확인
             if _stop_flags.get(request_id):
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
+
+            # G1 compaction: 임계치 초과 시 system+최근 N턴 보존하고 중간을 요약으로 치환
+            if (
+                compaction_count < MAX_COMPACT
+                and _estimate_tokens(messages) > _CONTEXT_MAX_TOKENS * COMPACT_RATIO
+            ):
+                _before = len(messages)
+                messages = await loop.run_in_executor(
+                    None,
+                    lambda: compact_messages(
+                        messages,
+                        keep_recent=COMPACT_KEEP_RECENT,
+                        summarize_fn=lambda h: _summarize_history(h),
+                    ),
+                )
+                if len(messages) < _before:
+                    compaction_count += 1
+                    yield sse({
+                        "type": ev.COMPACTION,
+                        "removed": _before - len(messages),
+                        "tokens_used": _estimate_tokens(messages),
+                    })
 
             # 컨텍스트 사용량 전송
             tokens_used = _estimate_tokens(messages)

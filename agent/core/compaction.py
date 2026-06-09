@@ -35,7 +35,7 @@ def _safe_tail_start(body: list, cut: int) -> int:
     body는 선두 system을 제외한 부분. tool 메시지의 주인은 직전 assistant(tool_calls)이므로,
     cut이 tool을 가리키면 그 tool 묶음의 주인 assistant까지 포함하도록 cut을 감소시킨다.
     """
-    while cut > 0 and body[cut].get("role") == "tool":
+    while cut > 0 and cut < len(body) and body[cut].get("role") == "tool":
         cut -= 1
     return cut
 

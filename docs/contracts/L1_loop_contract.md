@@ -134,8 +134,10 @@
 1. **G3 안전 게이트(APPROVE1)** — 위험 직접 통제, 가장 시급. (I2) ✅ **완료(2026-06-10)**
    - `classify_risk()`(`_safety.py`) + `generate()` 디스패치 직전 강제 + 기존 CONFIRM 팝업 재사용(예/항상/아니오) + 세션 허용목록 + 타임아웃=거부.
    - 테스트: `tests/unit/test_safety.py`(classify_risk), `tests/integration/test_server_chat.py::TestSafetyGate`(거부·승인·항상·safe무확인·타임아웃). 전체 374 passed.
-2. **G1 compaction** — 긴 작업 천장 제거. (I1·I5) 🔲 다음
-3. **G2 continuation nudge** — 조급한 종료 해소. (I3) 🔲
+2. **G1 compaction** — 긴 작업 천장 제거. (I1·I5) ✅ **완료(2026-06-10)**
+   - `agent/core/compaction.py`(`compact_messages`, 짝보존) + `server.generate()` 루프 진입부 배선 + `_summarize_history`(비스트리밍 요약, 주입식) + `COMPACTION` 이벤트 + `MAX_COMPACT=3`.
+   - 테스트: `tests/unit/test_compaction.py`(7), `tests/integration/test_server_chat.py::TestCompaction`(2). 전체 383 passed.
+3. **G2 continuation nudge** — 조급한 종료 해소. (I3) 🔲 **다음**
 4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) 🔲
 
 각 항목: 불변조건 → 실패 테스트 먼저 → 최소 구현. `agent/server.py`의 `generate()`와

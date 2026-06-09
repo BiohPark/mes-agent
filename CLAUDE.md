@@ -98,6 +98,7 @@
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
 | 중앙 집중 안전 게이트 (G3 / APPROVE1) ✅ | `agent/tools/_safety.py` + `agent/server.py` + `chat.js`/`style.css` | `classify_risk(safe/mutate/destructive)`를 **루프의 run_tool 직전에서 강제**(모델 force 우회 불가). 균형형: 읽기·관찰·입력형=safe, 쓰기·삭제·셸변경·office편집·네트워크만 확인. 기존 CONFIRM 팝업 재사용(예/항상/아니오), 타임아웃=거부(무인 자동승인 금지), "항상"은 세션 허용목록. tool 짝 보존(I1). `docs/contracts/L1_loop_contract.md` 기준 |
+| 컨텍스트 compaction (G1) ✅ | `agent/core/compaction.py` + `agent/server.py` | 컨텍스트가 임계(`_CONTEXT_MAX_TOKENS*0.8`) 초과 시 루프 진입부에서 자동 압축: 선두 system+최근 N턴(8) 보존, 중간을 LLM 요약(`_summarize_history`, 비스트리밍 1회) system 1개로 치환. **tool_calls↔tool 짝 보존(I1)**, `COMPACTION` SSE 고지, `MAX_COMPACT=3` 상한(I3). 요약 LLM은 주입식이라 순수·테스트 가능 |
 
 **총 툴 수: 127종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 

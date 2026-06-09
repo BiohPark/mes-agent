@@ -515,3 +515,63 @@ class TestSafetyGate:
         events = await _stream_answering(client_gate, {"message": "써줘"}, None)
         assert client_gate._tool_calls == []
         assert ev.DONE in [e.get("type") for e in events]
+
+
+class TestCompaction:
+    """G1: 컨텍스트 임계 초과 시 압축 — COMPACTION 고지 + 짝 보존(I1) + 상한(I3)."""
+
+    async def _seed_thread(self, client, msgs):
+        from agent.obsidian_session import get_session_manager
+        create = await client.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+        get_session_manager().save_thread_messages("general", tid, msgs)
+        return tid
+
+    async def test_compaction_fires_and_preserves_pairs(self, client, monkeypatch):
+        """임계 초과 시 COMPACTION SSE 발생, 정상 DONE, 저장 메시지에 orphan tool 없음."""
+        monkeypatch.setattr("agent.server._CONTEXT_MAX_TOKENS", 10)
+        monkeypatch.setattr("agent.server.COMPACT_KEEP_RECENT", 2)
+        monkeypatch.setattr("agent.server._summarize_history", lambda h: "요약")
+        seeded = [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "u0"},
+            {"role": "assistant", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "t", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "r1"},
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+        ]
+        tid = await self._seed_thread(client, seeded)
+        async with client.stream("POST", "/chat", json={
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            text = await resp.aread()
+        events = _parse_sse(text.decode())
+        types = [e.get("type") for e in events]
+        assert ev.COMPACTION in types, "COMPACTION 이벤트 없음"
+        assert ev.DONE in types
+        assert ev.ERROR not in types
+
+        from agent.core.compaction import has_orphan_tool
+        from agent.obsidian_session import get_session_manager
+        saved = get_session_manager().get_thread_messages("general", tid)
+        assert not has_orphan_tool(saved), "압축 후 저장 메시지에 orphan tool 발생"
+
+    async def test_compaction_capped_at_max(self, client_gate, monkeypatch):
+        """임계가 계속 초과돼도 COMPACTION 횟수는 MAX_COMPACT(3) 이하(I3)."""
+        monkeypatch.setattr("agent.server._CONTEXT_MAX_TOKENS", 10)
+        monkeypatch.setattr("agent.server.COMPACT_KEEP_RECENT", 2)
+        monkeypatch.setattr("agent.server._summarize_history", lambda h: "요약")
+        # 큰 스레드 시드 → 매 단계 압축할 중간이 충분
+        seeded = [{"role": "system", "content": "S"}]
+        seeded += [{"role": "user", "content": f"u{i}"} for i in range(12)]
+        from agent.obsidian_session import get_session_manager
+        create = await client_gate.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+        get_session_manager().save_thread_messages("general", tid, seeded)
+        # 안전 툴(read_file) 다단계 → 여러 단계 루프 → 압축 반복 시도
+        _ScriptedStream.reset([("tool", "read_file", '{"path":"a.txt"}')] * 6 + [("text", "끝")])
+        events = await _stream_answering(
+            client_gate, {"message": "반복", "thread_id": tid, "task_type": "general"}, [])
+        comp = [e for e in events if e.get("type") == ev.COMPACTION]
+        assert len(comp) <= 3, f"압축 횟수가 상한 초과: {len(comp)}"
