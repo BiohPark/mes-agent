@@ -4,6 +4,7 @@ LLM 클라이언트는 conftest의 FakeLLMClient로 교체되어 실제 API를 �
 SSE 이벤트 타입의 순서와 존재 여부를 검증한다.
 """
 
+import asyncio
 import json
 import pytest
 from agent.core import events as ev
@@ -18,7 +19,9 @@ class _Fn:
 
 
 class _TC:
-    def __init__(self, index=0, id="tc1", name="run_command", arguments='{"command":"x"}'):
+    # 기본 인자는 읽기전용 명령(Get-Process) → G3 안전게이트에서 safe로 분류되어
+    # 확인 없이 실행된다. 툴 실패/RunState 테스트는 이 경로(실행됨)를 검증한다.
+    def __init__(self, index=0, id="tc1", name="run_command", arguments='{"command":"Get-Process"}'):
         self.index = index
         self.id = id
         self.function = _Fn(name, arguments)
@@ -89,6 +92,101 @@ async def client_fail(vault, monkeypatch):
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+# ── G3 안전 게이트용 스크립트 LLM ────────────────────────────────
+# script: 단계별 ("tool", name, args_json) 또는 ("text", content)
+
+class _ScriptedStream:
+    script: list = []
+    _i = 0
+
+    @classmethod
+    def reset(cls, script):
+        cls.script = list(script)
+        cls._i = 0
+
+    def __iter__(self):
+        i = type(self)._i
+        type(self)._i += 1
+        phase = type(self).script[i] if i < len(type(self).script) else ("text", "완료")
+        if phase[0] == "tool":
+            yield _Chunk(tool_calls=[_TC(id=f"tc{i}", name=phase[1], arguments=phase[2])])
+            yield _Chunk(finish_reason="tool_calls")
+        else:
+            yield _Chunk(content=phase[1])
+            yield _Chunk(finish_reason="stop")
+
+
+class _ScriptedLLM:
+    class _Comp:
+        def create(self, **kw):
+            return _ScriptedStream()
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _ScriptedLLM._Comp()
+
+    def __init__(self):
+        self.chat = _ScriptedLLM._Chat()
+
+
+@pytest.fixture
+async def client_gate(vault, monkeypatch):
+    """스크립트 LLM + run_tool 호출 기록기. G3 안전 게이트 검증용."""
+    import agent.server as srv
+    srv._session_allowlists.clear()
+    monkeypatch.setattr("agent.server.get_client", lambda: _ScriptedLLM())
+    monkeypatch.setattr("agent.server.get_model", lambda: "gpt-test")
+
+    calls: list = []
+
+    def _rec(name, args):
+        calls.append((name, args))
+        return '{"ok": true}'
+
+    monkeypatch.setattr("agent.server.run_tool", _rec)
+
+    from httpx import AsyncClient, ASGITransport
+    from agent.server import app
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        c._tool_calls = calls  # 테스트에서 접근
+        yield c
+
+
+async def _stream_answering(client, payload, answers):
+    """채팅 SSE를 받으며, 서버가 confirm 대기에 들어가면 동시 태스크로 /confirm 응답한다.
+
+    ASGITransport 버퍼링과 무관하도록 _pending_confirms를 폴링해 응답한다.
+    answers=None이면 응답하지 않는다(타임아웃 경로 검증).
+    """
+    import agent.server as srv
+    pending = None if answers is None else list(answers)
+
+    async def _answerer():
+        seen = set()
+        while True:
+            await asyncio.sleep(0.02)
+            if not pending:
+                continue
+            for cid in list(srv._pending_confirms.keys()):
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                choice = pending.pop(0) if pending else "아니오"
+                await client.post(
+                    f"/confirm/{cid}", json={"choice": choice, "custom_text": ""}
+                )
+                break
+
+    task = asyncio.create_task(_answerer())
+    try:
+        async with client.stream("POST", "/chat", json=payload) as resp:
+            text = await resp.aread()
+    finally:
+        task.cancel()
+    return _parse_sse(text.decode())
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -354,3 +452,66 @@ class TestRunStateSync:
         rs = wf_storage.load_run_state("general", tid)
         assert rs is not None
         assert rs.node_states["sync3"].notes, "RunState notes가 비어있음"
+
+
+class TestSafetyGate:
+    """G3: 중앙 안전 게이트 — safe가 아닌 실행은 디스패치 경로에서 승인 이벤트를 거친다(I2)."""
+
+    async def test_destructive_denied_not_executed(self, client_gate):
+        """위험 명령은 CONFIRM을 거치고, '아니오' 시 run_tool 미호출 + 짝 결과 + 정상 종료."""
+        _ScriptedStream.reset([
+            ("tool", "run_command", '{"command":"Remove-Item C:/x -Recurse"}'),
+            ("text", "중단함"),
+        ])
+        events = await _stream_answering(client_gate, {"message": "삭제해"}, ["아니오"])
+        types = [e.get("type") for e in events]
+        assert ev.CONFIRM in types
+        conf = next(e for e in events if e.get("type") == ev.CONFIRM)
+        assert conf.get("risk") == "destructive"
+        assert client_gate._tool_calls == [], "거부했는데 run_tool이 호출됨"
+        assert ev.DONE in types
+        assert ev.ERROR not in types
+
+    async def test_approve_executes(self, client_gate):
+        """'예' 응답 시 run_tool이 1회 실행된다."""
+        _ScriptedStream.reset([
+            ("tool", "write_file", '{"path":"a.txt","content":"x"}'),
+            ("text", "완료"),
+        ])
+        events = await _stream_answering(client_gate, {"message": "써줘"}, ["예 (이번만)"])
+        assert len(client_gate._tool_calls) == 1
+        assert client_gate._tool_calls[0][0] == "write_file"
+        assert ev.DONE in [e.get("type") for e in events]
+
+    async def test_always_allow_skips_second_prompt(self, client_gate):
+        """'항상 허용' 후 동일 툴 2번째 호출은 확인 없이 실행된다(세션 허용목록)."""
+        _ScriptedStream.reset([
+            ("tool", "write_file", '{"path":"a.txt","content":"1"}'),
+            ("tool", "write_file", '{"path":"b.txt","content":"2"}'),
+            ("text", "완료"),
+        ])
+        events = await _stream_answering(client_gate, {"message": "두번 써줘"}, ["항상 허용"])
+        confirms = [e for e in events if e.get("type") == ev.CONFIRM]
+        assert len(confirms) == 1, "두번째 호출에 확인이 다시 떴음"
+        assert len(client_gate._tool_calls) == 2
+
+    async def test_safe_tool_no_confirm(self, client_gate):
+        """읽기형(read_file)은 확인 없이 즉시 실행된다."""
+        _ScriptedStream.reset([
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "완료"),
+        ])
+        events = await _stream_answering(client_gate, {"message": "읽어"}, [])
+        assert ev.CONFIRM not in [e.get("type") for e in events]
+        assert len(client_gate._tool_calls) == 1
+
+    async def test_timeout_denies(self, client_gate, monkeypatch):
+        """응답이 없으면(무인) 타임아웃=거부, run_tool 미호출, 정상 종료."""
+        monkeypatch.setattr("agent.server._CONFIRM_TIMEOUT", 0.2)
+        _ScriptedStream.reset([
+            ("tool", "write_file", '{"path":"a.txt","content":"x"}'),
+            ("text", "중단"),
+        ])
+        events = await _stream_answering(client_gate, {"message": "써줘"}, None)
+        assert client_gate._tool_calls == []
+        assert ev.DONE in [e.get("type") for e in events]

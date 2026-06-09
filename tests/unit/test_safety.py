@@ -3,7 +3,12 @@
 import json
 import os
 
-from agent.tools._safety import is_dangerous_command, is_protected_path, backup_file
+from agent.tools._safety import (
+    is_dangerous_command,
+    is_protected_path,
+    backup_file,
+    classify_risk,
+)
 from agent.tools.process import run_command, start_process
 from agent.tools.document import write_file
 
@@ -63,3 +68,48 @@ def test_write_file_backs_up_on_overwrite(tmp_path):
 
 def test_backup_file_none_when_missing(tmp_path):
     assert backup_file(str(tmp_path / "nope.txt")) is None
+
+
+# ── G3: 중앙 위험도 분류 classify_risk ────────────────────────────
+def test_classify_safe_read_observe_input():
+    assert classify_risk("read_file", {"path": "C:\\Users\\me\\a.txt"}) == "safe"
+    assert classify_risk("mouse_click", {"x": 10, "y": 20}) == "safe"
+    assert classify_risk("workflow_set_step", {"step_id": "s1"}) == "safe"
+    assert classify_risk("ask_user", {"question": "ok?"}) == "safe"
+    assert classify_risk("screen_ocr_region", {}) == "safe"
+    assert classify_risk("obsidian_search", {"query": "메모"}) == "safe"
+
+
+def test_classify_run_command_content_based():
+    assert classify_risk("run_command", {"command": "Get-Process"}) == "safe"
+    assert classify_risk("run_command", {"command": "dir C:\\"}) == "safe"
+    assert classify_risk("run_command", {"command": "pip install x"}) == "mutate"
+    # 복합 명령은 읽기전용으로 단정하지 않음(뒤에 변형 명령 가능) → 최소 mutate
+    assert classify_risk("run_command", {"command": "Get-Process; Set-Content a.txt b"}) == "mutate"
+    # 복합 명령 안에 위험 명령이 섞이면 destructive
+    assert classify_risk("run_command", {"command": "Get-Process; del /s C:\\x"}) == "destructive"
+    assert classify_risk("run_command", {"command": "Remove-Item C:\\ -Recurse"}) == "destructive"
+
+
+def test_classify_mutate_by_verb():
+    assert classify_risk("write_file", {"path": "C:\\tmp\\a.txt"}) == "mutate"
+    assert classify_risk("word_edit_text", {"path": "a.docx"}) == "mutate"
+    assert classify_risk("excel_set_cells", {"path": "a.xlsx"}) == "mutate"
+    assert classify_risk("obsidian_write_note", {"path": "n.md"}) == "mutate"
+    assert classify_risk("foo_delete_bar", {}) == "mutate"
+
+
+def test_classify_destructive_protected_path():
+    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
+    target = os.path.join(sysroot, "System32", "x.txt")
+    assert classify_risk("write_file", {"path": target}) == "destructive"
+
+
+def test_classify_allowlist_makes_safe():
+    assert classify_risk("run_command", {"command": "pip install x"}) == "mutate"
+    assert classify_risk("run_command", {"command": "pip install x"}, allowlist={"run_command"}) == "safe"
+
+
+def test_classify_accepts_json_string_args():
+    assert classify_risk("run_command", '{"command": "Get-Process"}') == "safe"
+    assert classify_risk("write_file", '{"path": "a.txt"}') == "mutate"

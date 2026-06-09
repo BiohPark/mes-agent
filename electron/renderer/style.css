@@ -837,6 +837,31 @@ body {
   white-space: pre-wrap;
 }
 
+/* G3 안전 게이트: 명령/대상 강조 + destructive 위험 강조 */
+.confirm-command {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  color: #ffd9a8;
+  background: #1a1206;
+  border: 1px solid #6b4a1a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.confirm-dialog.confirm-destructive {
+  border-color: #e94560;
+  box-shadow: 0 0 0 1px #e94560, 0 12px 40px rgba(233, 69, 96, 0.35);
+}
+
+.confirm-dialog.confirm-destructive .confirm-command {
+  color: #ff9ba8;
+  background: #2a0d12;
+  border-color: #e94560;
+}
+
 .confirm-options {
   display: grid;
   grid-template-columns: 1fr 1fr;

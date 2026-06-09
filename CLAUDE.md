@@ -97,6 +97,7 @@
 | Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
+| 중앙 집중 안전 게이트 (G3 / APPROVE1) ✅ | `agent/tools/_safety.py` + `agent/server.py` + `chat.js`/`style.css` | `classify_risk(safe/mutate/destructive)`를 **루프의 run_tool 직전에서 강제**(모델 force 우회 불가). 균형형: 읽기·관찰·입력형=safe, 쓰기·삭제·셸변경·office편집·네트워크만 확인. 기존 CONFIRM 팝업 재사용(예/항상/아니오), 타임아웃=거부(무인 자동승인 금지), "항상"은 세션 허용목록. tool 짝 보존(I1). `docs/contracts/L1_loop_contract.md` 기준 |
 
 **총 툴 수: 127종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
@@ -213,6 +214,24 @@ agent/server.py 내 generate() 수정
 - `npm run dist` 명령으로 빌드
 
 완료 시 `CLAUDE.md` + `README.md` + `SETUP.md` 배포 섹션 업데이트.
+
+---
+
+## 리팩토링 작업 규칙 (L1 루프 개선)
+
+### 출처 거버넌스 (절대)
+- 설계 출처는 ① 이 레포 코드 ② openclaw(MIT) ③ LangGraph/Temporal 공개 문서뿐.
+- 유출된 Claude Code 소스("openclaude"/query.ts 등) 및 그 파생물은 **금지 소스**.
+  읽지도, 참고하지도, 인용하지도 마라. ref/ 는 절대 커밋 금지(.gitignore 확인).
+
+### 작업 방식
+- 구현 기준은 docs/contracts/L1_loop_contract.md (이 계약서만 따른다).
+- 전체 맥락은 docs/CLAW_PORT_PLAN.md 참고.
+- TDD: 계약서의 불변조건(§10) → 실패 테스트 먼저 → 최소 구현.
+- 한 번에 한 격차(G3→G1→G2→G4 순). 다른 파일 광범위 수정 금지.
+- 외부 네트워크 호출 추가 금지. 모델 엔드포인트는 기존 설정(config) 사용.
+- 설치 명령(pip/conda) 실행 금지 — 필요하면 알려만 줘라.
+- git push 금지. 커밋 메시지 초안만 제안.
 
 ---
 

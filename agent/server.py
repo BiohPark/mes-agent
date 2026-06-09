@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
 from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
+from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
 from agent.workflow.model import WorkflowRunState
@@ -40,6 +41,28 @@ app = FastAPI()
 _pending_confirms: dict[str, asyncio.Event] = {}
 _confirm_results: dict[str, dict] = {}
 _stop_flags: dict[str, bool] = {}
+
+# G3 안전 게이트: 사용자 확인 대기 타임아웃(초). 타임아웃=거부(무인 자동승인 금지).
+_CONFIRM_TIMEOUT = 300
+# "항상 허용" 선택을 세션 동안 기억하는 허용목록(키=thread_id 또는 request_id).
+_session_allowlists: dict[str, set] = {}
+
+
+async def _resolve_confirm(cid: str) -> dict:
+    """confirm_id에 대한 사용자 응답을 대기해 회수한다(SSE는 호출부에서 emit).
+
+    Event 생성·타임아웃 대기·결과 회수·정리를 한곳에서 처리한다.
+    ask_user 확인과 G3 안전 게이트가 공통으로 사용한다.
+    """
+    ev_obj = asyncio.Event()
+    _pending_confirms[cid] = ev_obj
+    try:
+        await asyncio.wait_for(ev_obj.wait(), timeout=_CONFIRM_TIMEOUT)
+        return _confirm_results.pop(cid, {"choice": "타임아웃", "custom_text": ""})
+    except asyncio.TimeoutError:
+        return {"choice": "타임아웃으로 자동 중단", "custom_text": ""}
+    finally:
+        _pending_confirms.pop(cid, None)
 
 
 @app.on_event("startup")
@@ -264,7 +287,50 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
 
                 await asyncio.sleep(0)
+
+                # ── G3 중앙 안전 게이트 (APPROVE1) ──────────────────
+                # run_tool 직전 위험도를 분류해 safe가 아니면 사용자 승인을 강제한다.
+                # 모델 협조(force 등)에 의존하지 않고 디스패치 경로에서 차단한다.
+                _allow = _session_allowlists.setdefault(thread_id or request_id, set())
+                _risk = "safe" if tc["name"] == "ask_user" else classify_risk(
+                    tc["name"], tc["arguments"], _allow
+                )
+                _gate_denied = False
+                _gate_choice = ""
+                if _risk != "safe":
+                    _cid = uuid.uuid4().hex[:8]
+                    yield sse({
+                        "type": ev.CONFIRM,
+                        "confirm_id": _cid,
+                        "question": risk_confirm_message(tc["name"], _risk, tc["arguments"]),
+                        "options": ["예 (이번만)", "항상 허용", "아니오"],
+                        "risk": _risk,
+                        "command": command_excerpt(tc["arguments"]),
+                    })
+                    yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
+                    _cr = await _resolve_confirm(_cid)
+                    yield sse({"type": ev.AGENT_STATE, "state": "running"})
+                    _gate_choice = _cr.get("choice", "")
+                    if "항상" in _gate_choice:
+                        _allow.add(tc["name"])
+                    elif _gate_choice.startswith("예"):
+                        pass
+                    else:
+                        _gate_denied = True
+
                 _tool_failed = False
+                if _gate_denied:
+                    result = (
+                        f"[안전 게이트] 사용자가 '{tc['name']}' 실행을 거부했습니다"
+                        f"(선택: {_gate_choice}). 실행하지 않았습니다. "
+                        "다른 방법을 제안하거나 작업을 중단하라."
+                    )
+                    yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result[:1000]})
+                    if session_id:
+                        await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                    continue
+
                 try:
                     result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
                 except Exception as first_err:
@@ -328,8 +394,6 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                     robj = json.loads(result)
                     if isinstance(robj, dict) and robj.get("__confirm__"):
                         cid = robj["confirm_id"]
-                        ev_obj = asyncio.Event()
-                        _pending_confirms[cid] = ev_obj
                         yield sse({
                             "type": ev.CONFIRM,
                             "confirm_id": cid,
@@ -337,13 +401,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                             "options": robj["options"],
                         })
                         yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
-                        try:
-                            await asyncio.wait_for(ev_obj.wait(), timeout=300)
-                            cr = _confirm_results.pop(cid, {"choice": "타임아웃", "custom_text": ""})
-                        except asyncio.TimeoutError:
-                            cr = {"choice": "타임아웃으로 자동 중단", "custom_text": ""}
-                        finally:
-                            _pending_confirms.pop(cid, None)
+                        cr = await _resolve_confirm(cid)
                         choice = cr["choice"]
                         custom = cr.get("custom_text", "")
                         result = f"[사용자 응답] 선택: {choice}" + (f"\n추가 의견: {custom}" if custom else "")
@@ -398,6 +456,9 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         return
     finally:
         _stop_flags.pop(request_id, None)
+        # 스레드 없는 단발 요청의 허용목록은 정리(스레드 키는 세션 유지)
+        if not thread_id:
+            _session_allowlists.pop(request_id, None)
 
     # 스레드 또는 세션 종료
     if thread_id and task_type:

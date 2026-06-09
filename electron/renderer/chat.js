@@ -470,8 +470,9 @@ function handleEvent(event, agentEl, bubble) {
 // ── 사용자 확인 팝업 ─────────────────────────────────────────
 
 function getOptionIcon(label) {
-  if (label.includes('계속') || label.includes('진행')) return '✅'
-  if (label.includes('중단') || label.includes('취소')) return '❌'
+  if (label.includes('예') || label.includes('계속') || label.includes('진행')) return '✅'
+  if (label.includes('항상')) return '🔓'
+  if (label.includes('아니오') || label.includes('중단') || label.includes('취소')) return '❌'
   if (label.includes('방법') || label.includes('제안') || label.includes('변경')) return '💡'
   if (label.includes('의견') || label.includes('입력') || label.includes('전달')) return '✏️'
   return '•'
@@ -483,7 +484,7 @@ function needsTextInput(label) {
   return TEXT_INPUT_KEYWORDS.some(k => label.includes(k))
 }
 
-async function showConfirmDialog({ confirm_id, question, options }) {
+async function showConfirmDialog({ confirm_id, question, options, risk, command }) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
     overlay.className = 'confirm-overlay'
@@ -495,10 +496,17 @@ async function showConfirmDialog({ confirm_id, question, options }) {
       </button>
     `).join('')
 
+    const isDestructive = risk === 'destructive'
+    const header = isDestructive ? '⛔ 위험 작업 확인' : '⚠ 에이전트 확인 요청'
+    const cmdBlock = command
+      ? `<div class="confirm-command">${escapeHtml(command)}</div>`
+      : ''
+
     overlay.innerHTML = `
-      <div class="confirm-dialog">
-        <div class="confirm-header">⚠ 에이전트 확인 요청</div>
+      <div class="confirm-dialog${isDestructive ? ' confirm-destructive' : ''}">
+        <div class="confirm-header">${header}</div>
         <div class="confirm-question">${escapeHtml(question)}</div>
+        ${cmdBlock}
         <div class="confirm-options">${optBtns}</div>
         <div class="confirm-textarea-wrap hidden">
           <textarea class="confirm-textarea" placeholder="내용을 입력하세요..."></textarea>

@@ -92,3 +92,136 @@ def danger_block_message(cmd: str) -> str:
         f"명령: {cmd[:200]}\n"
         "정말 실행하려면 먼저 ask_user로 사용자 확인을 받고, 확인되면 force=true 로 다시 호출하세요."
     )
+
+
+# ── G3: 중앙 집중 위험도 분류 (APPROVE1) ──────────────────────────
+# 루프(server.generate)가 run_tool 직전에 호출해 강제하는 게이트의 판정부.
+# 철학: "막지 않고 게이팅" — 읽기/관찰/입력형은 그대로 실행(safe),
+#       상태를 바꾸는 것만 사용자 확인(mutate), 비가역 대량파괴는 강조 확인(destructive).
+# 균형형 기본: 명시적 변형 동사/명령에만 확인을 요구하고 나머지는 safe.
+
+import json as _json
+
+# 명령·경로가 담기는 대표 인자 키
+_CMD_ARG_KEYS = ("command", "cmd", "script", "powershell", "query", "sql")
+_PATH_ARG_KEYS = (
+    "path", "file_path", "out", "outdir", "dest", "destination", "target", "save_path",
+)
+
+# 읽기 전용으로 단정할 수 있는 명령 시작 패턴
+_READONLY_CMD_RE = re.compile(
+    r"^\s*(Get-\w+|Test-Path|Select-\w+|Measure-\w+|Resolve-Path|Out-String|"
+    r"SELECT\b|dir\b|ls\b|cat\b|type\b|echo\b|where\b|whoami|hostname|"
+    r"ipconfig|systeminfo|findstr\b|Write-Host|Write-Output)",
+    re.IGNORECASE,
+)
+# 복합 명령(여러 문장 연결)은 읽기전용으로 단정하지 않는다(뒤에 변형 명령이 숨을 수 있음).
+_CMD_SEPARATOR_RE = re.compile(r";|&&|\n|`")
+
+# 상태를 바꾸는 변형 동사(툴 이름 기반) — 미래 추가 툴도 명명규약으로 포착(fail-safe)
+_MUTATE_NAME_RE = re.compile(
+    r"(write|edit|delete|remove|set_|save|update|create|upload|move_|append|insert|"
+    r"convert|export|replace|kill|accept|add_)",
+    re.IGNORECASE,
+)
+
+# 확인 없이 실행해도 되는(읽기/관찰/입력형) 툴 이름 prefix
+_SAFE_PREFIXES = (
+    "read_", "get_", "list_", "search", "screen", "ocr", "ui_", "wait_for",
+    "mouse_", "keyboard_", "key_", "scroll", "find_", "capture", "analyze",
+    "pixel", "compare", "workflow_", "window_",
+    "obsidian_search", "obsidian_read", "obsidian_list", "obsidian_get",
+    "obsidian_follow", "obsidian_list_commands",
+    "browser_get", "browser_open", "browser_navigate", "browser_screenshot",
+    "browser_wait", "browser_eval", "browser_scroll",
+)
+_SAFE_EXACT = {"ask_user", "take_screenshot"}
+
+_CMD_TOOLS = {"run_command", "start_process", "run_powershell"}
+
+
+def _coerce_args(args) -> dict:
+    if isinstance(args, dict):
+        return args
+    if isinstance(args, str):
+        try:
+            obj = _json.loads(args)
+            return obj if isinstance(obj, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def _extract(args: dict, keys) -> list[str]:
+    out = []
+    for k in keys:
+        v = args.get(k)
+        if isinstance(v, str) and v.strip():
+            out.append(v)
+    return out
+
+
+def classify_risk(tool_name: str, args, allowlist=None) -> str:
+    """tool_call의 위험도를 'safe' | 'mutate' | 'destructive' 로 분류한다.
+
+    server.generate()가 run_tool 직전에 호출하여 mutate/destructive면 사용자 승인을 강제한다.
+    """
+    name = (tool_name or "").lower()
+    args = _coerce_args(args)
+
+    # 0) 세션 허용목록("항상 허용") → safe
+    if allowlist and tool_name in allowlist:
+        return "safe"
+    if name in _SAFE_EXACT:
+        return "safe"
+
+    cmds = _extract(args, _CMD_ARG_KEYS)
+    paths = _extract(args, _PATH_ARG_KEYS)
+
+    # 1) destructive: 위험 명령 또는 보호경로 쓰기 (모델 협조 무관, 내용 기반)
+    if any(is_dangerous_command(c) for c in cmds):
+        return "destructive"
+    if any(is_protected_path(p) for p in paths):
+        return "destructive"
+
+    # 2) 명령 실행 툴: 내용 기반 — 읽기전용이면 safe, 아니면 mutate
+    if name in _CMD_TOOLS:
+        if not cmds:
+            return "mutate"
+        for c in cmds:
+            if _CMD_SEPARATOR_RE.search(c) or not _READONLY_CMD_RE.match(c):
+                return "mutate"
+        return "safe"
+
+    # 3) 읽기/관찰/입력형 prefix → safe (균형형)
+    if name.startswith(_SAFE_PREFIXES):
+        return "safe"
+
+    # 4) 변형 동사 이름 → mutate
+    if _MUTATE_NAME_RE.search(name):
+        return "mutate"
+
+    # 5) 균형형 기본 = safe (위험만 게이팅)
+    return "safe"
+
+
+def command_excerpt(args) -> str:
+    """승인 UI 강조용으로 명령/대상 첫 줄을 추출한다(없으면 빈 문자열)."""
+    args = _coerce_args(args)
+    cmd = next(iter(_extract(args, _CMD_ARG_KEYS)), "")
+    if not cmd:
+        cmd = next(iter(_extract(args, _PATH_ARG_KEYS)), "")
+    return cmd[:300]
+
+
+def risk_confirm_message(tool_name: str, risk: str, args) -> str:
+    """승인 팝업에 띄울 질문 문구를 만든다."""
+    args = _coerce_args(args)
+    cmd = next(iter(_extract(args, _CMD_ARG_KEYS)), "")
+    detail = f"\n명령/대상: {cmd[:300]}" if cmd else ""
+    if risk == "destructive":
+        return (
+            f"⚠ 되돌릴 수 없는 위험 작업으로 판단됩니다: '{tool_name}'.{detail}\n"
+            "정말 실행할까요?"
+        )
+    return f"'{tool_name}' 실행은 시스템/데이터를 변경할 수 있습니다.{detail}\n실행할까요?"
