@@ -175,6 +175,13 @@ COMPACT_RATIO = 0.8
 COMPACT_KEEP_RECENT = 8
 MAX_COMPACT = 3
 
+# G2 continuation nudge: 작업 도중 텍스트로 조기 종료 시 '계속' 주입(상한)
+MAX_NUDGES = 2
+_NUDGE_MESSAGE = (
+    "[시스템] 작업이 아직 끝나지 않았다면 멈추지 말고 계속 진행하라. "
+    "정말 완료됐거나 사용자 입력이 꼭 필요하면 그 이유만 한 줄로 답하라."
+)
+
 
 def _history_to_text(history: list) -> str:
     """요약 입력용으로 메시지 리스트를 role:내용 텍스트로 평탄화한다."""
@@ -246,6 +253,8 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
 
     compaction_count = 0
+    nudge_count = 0
+    tool_rounds = 0
     try:
         for _step in range(_MAX_STEPS):
             # 중단 플래그 확인
@@ -326,6 +335,20 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
 
             # 중단 또는 종료
             if _stop_flags.get(request_id) or finish_reason != "tool_calls" or not tool_calls_raw:
+                # G2 continuation nudge: 작업 도중(도구 사용 이력 있음) 텍스트로 조기 종료하면
+                # 한도 내에서 '계속'을 주입해 끈질기게 진행시킨다. 잡담·되묻기·사용자중단은 제외.
+                _stopped = _stop_flags.get(request_id)
+                _text_only_stop = (not _stopped) and finish_reason != "tool_calls"
+                _last_text = "".join(text_chunks).strip()
+                if (
+                    _text_only_stop
+                    and tool_rounds > 0
+                    and nudge_count < MAX_NUDGES
+                    and not _last_text.endswith("?")
+                ):
+                    nudge_count += 1
+                    messages.append({"role": "user", "content": _NUDGE_MESSAGE})
+                    continue
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
 
@@ -338,6 +361,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 for tc in tool_calls_raw.values()
             ]
             messages.append({"role": "assistant", "tool_calls": assistant_tool_calls})
+            tool_rounds += 1
 
             yield sse({"type": ev.AGENT_STATE, "state": "running"})
 

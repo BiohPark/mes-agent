@@ -575,3 +575,71 @@ class TestCompaction:
             client_gate, {"message": "반복", "thread_id": tid, "task_type": "general"}, [])
         comp = [e for e in events if e.get("type") == ev.COMPACTION]
         assert len(comp) <= 3, f"압축 횟수가 상한 초과: {len(comp)}"
+
+
+class TestContinuationNudge:
+    """G2: 작업 도중 텍스트로 조기 종료 시 한도 내 '계속' 주입(끈질긴 진행). I3·I4."""
+
+    async def _new_thread(self, client):
+        r = await client.post("/threads/general", json={})
+        return r.json()["thread_id"]
+
+    def _saved(self, tid):
+        from agent.obsidian_session import get_session_manager
+        return get_session_manager().get_thread_messages("general", tid)
+
+    def _nudge_count(self, msgs):
+        return sum(
+            1 for m in msgs
+            if m.get("role") == "user" and isinstance(m.get("content"), str)
+            and "[시스템]" in m["content"]
+        )
+
+    async def test_nudge_injected_after_tool_then_text(self, client_gate):
+        """도구 사용 후 텍스트로 멈추면 nudge가 주입돼 한 번 더 진행한다."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "1차 결론"),
+            ("text", "최종"),
+        ])
+        events = await _stream_answering(
+            client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        assert self._nudge_count(saved) >= 1, "nudge가 주입되지 않음"
+        assert client_gate._tool_calls and client_gate._tool_calls[0][0] == "read_file"
+        types = [e.get("type") for e in events]
+        assert ev.DONE in types and ev.ERROR not in types
+
+    async def test_nudge_capped_at_max(self, client_gate):
+        """텍스트로 계속 멈춰도 nudge는 MAX_NUDGES(2) 이하, 결국 정상 종료(I3·I4)."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset(
+            [("tool", "read_file", '{"path":"a.txt"}')] + [("text", "계속")] * 8)
+        events = await _stream_answering(
+            client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        assert self._nudge_count(saved) <= 2, "nudge가 상한을 초과함"
+        assert ev.DONE in [e.get("type") for e in events]
+
+    async def test_no_nudge_for_pure_chat(self, client_gate):
+        """도구를 쓰지 않은 잡담은 nudge하지 않는다(tool_rounds==0)."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([("text", "안녕하세요")])
+        await _stream_answering(
+            client_gate, {"message": "안녕", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        assert self._nudge_count(saved) == 0
+        assert client_gate._tool_calls == []
+
+    async def test_no_nudge_when_asking_user(self, client_gate):
+        """모델이 사용자에게 되묻으며(? 종결) 멈추면 nudge하지 않는다."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "어느 파일로 할까요?"),
+        ])
+        await _stream_answering(
+            client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
+        saved = self._saved(tid)
+        assert self._nudge_count(saved) == 0

@@ -137,8 +137,10 @@
 2. **G1 compaction** — 긴 작업 천장 제거. (I1·I5) ✅ **완료(2026-06-10)**
    - `agent/core/compaction.py`(`compact_messages`, 짝보존) + `server.generate()` 루프 진입부 배선 + `_summarize_history`(비스트리밍 요약, 주입식) + `COMPACTION` 이벤트 + `MAX_COMPACT=3`.
    - 테스트: `tests/unit/test_compaction.py`(7), `tests/integration/test_server_chat.py::TestCompaction`(2). 전체 383 passed.
-3. **G2 continuation nudge** — 조급한 종료 해소. (I3) 🔲 **다음**
-4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) 🔲
+3. **G2 continuation nudge** — 조급한 종료 해소. (I3) ✅ **완료(2026-06-10)**
+   - `server.generate()` 종료 분기: 도구 사용 도중(`tool_rounds>0`) 텍스트 조기종료 시 `MAX_NUDGES=2` 내 '계속' 주입. 잡담·되묻기(`?`)·사용자중단 제외.
+   - 테스트: `tests/integration/test_server_chat.py::TestContinuationNudge`(4). 전체 387 passed.
+4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) 🔲 **다음**
 
 각 항목: 불변조건 → 실패 테스트 먼저 → 최소 구현. `agent/server.py`의 `generate()`와
 `agent/tools/_safety.py` 중심, 새 의존성 없이.
