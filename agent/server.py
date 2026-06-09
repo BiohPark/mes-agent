@@ -31,6 +31,7 @@ from agent.llm import get_client, get_model
 from agent.tools import TOOLS, TOOL_LABELS, run_tool
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
 from agent.core.compaction import compact_messages
+from agent.memory import MemoryStore
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
 from agent.workflow.model import WorkflowRunState
@@ -192,6 +193,38 @@ _PLAN_MODE_SUFFIX = (
 )
 _PLAN_APPROVED_MESSAGE = "[시스템] 계획이 승인되었다. 이제 계획대로 단계를 실행하라."
 
+# 대화 간 장기기억: 과거 대화에서 사실·선호·결정을 추출/주입 (끄려면 MEMORY_ENABLED=false)
+MEMORY_ENABLED = os.environ.get("MEMORY_ENABLED", "true").lower() != "false"
+
+
+def _memory_store() -> MemoryStore:
+    return MemoryStore(os.environ.get("OBSIDIAN_VAULT_PATH", "."))
+
+
+def _extract_memories(history: list) -> list:
+    """대화에서 앞으로 기억할 사실·선호·결정을 추출한다(비스트리밍 1회). 실패 시 []."""
+    try:
+        resp = get_client().chat.completions.create(
+            model=get_model(),
+            stream=False,
+            messages=[
+                {"role": "system", "content": (
+                    "다음 대화에서 앞으로의 작업에 도움이 될 '지속적 사실·사용자 선호·중요한 결정'만 "
+                    "추출하라. 일시적이거나 잡담성 내용은 제외한다. JSON 배열만 출력하라: "
+                    '[{"text":"기억할 내용","category":"fact|preference|decision"}]. 없으면 [].'
+                )},
+                {"role": "user", "content": _history_to_text(history)},
+            ],
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        start, end = raw.find("["), raw.rfind("]")
+        if start >= 0 and end > start:
+            data = json.loads(raw[start:end + 1])
+            return [d for d in data if isinstance(d, dict) and d.get("text")]
+    except Exception:
+        pass
+    return []
+
 
 def _history_to_text(history: list) -> str:
     """요약 입력용으로 메시지 리스트를 role:내용 텍스트로 평탄화한다."""
@@ -267,6 +300,18 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
     if plan_phase and messages and messages[0].get("role") == "system":
         messages[0]["content"] += _PLAN_MODE_SUFFIX
         yield sse({"type": ev.PLAN, "phase": "planning"})
+
+    # 장기기억 주입: 현재 메시지와 관련된 과거 기억을 system 프롬프트에 덧붙인다
+    if MEMORY_ENABLED and messages and messages[0].get("role") == "system":
+        try:
+            _mems = await loop.run_in_executor(None, lambda: _memory_store().search(message, 5))
+            if _mems:
+                messages[0]["content"] += (
+                    "\n\n[장기 기억] 과거 대화에서 기억해 둔 내용(참고):\n"
+                    + "\n".join(f"- {m.text}" for m in _mems)
+                )
+        except Exception:
+            pass
 
     compaction_count = 0
     nudge_count = 0
@@ -614,6 +659,19 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         )
         await loop.run_in_executor(None, session_mgr.close_session, session_id, final_text)
 
+    # 장기기억 추출: 사소하지 않은 턴이면 대화에서 기억할 사실을 저장(best-effort)
+    if MEMORY_ENABLED and (tool_rounds > 0 or len(message.strip()) >= 8):
+        try:
+            _facts = await loop.run_in_executor(None, _extract_memories, messages[-8:])
+            _store = _memory_store()
+            for _f in _facts:
+                await loop.run_in_executor(
+                    None, _store.add, _f.get("text", ""), _f.get("category", "fact"),
+                    thread_id or "general",
+                )
+        except Exception:
+            pass
+
     yield sse({"type": ev.DONE})
 
 
@@ -664,6 +722,14 @@ async def chat(body: ChatRequest):
 async def stop_agent(request_id: str):
     _stop_flags[request_id] = True
     return {"ok": True}
+
+
+@app.get("/memory")
+async def list_memory():
+    """저장된 장기기억 전체를 반환한다(가시성·디버깅용)."""
+    store = _memory_store()
+    mems = await asyncio.get_event_loop().run_in_executor(None, store.all)
+    return {"memories": [m.to_dict() for m in mems]}
 
 
 # ── 스레드 엔드포인트 ─────────────────────────────────────────

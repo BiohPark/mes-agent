@@ -101,6 +101,7 @@
 | 컨텍스트 compaction (G1) ✅ | `agent/core/compaction.py` + `agent/server.py` | 컨텍스트가 임계(`_CONTEXT_MAX_TOKENS*0.8`) 초과 시 루프 진입부에서 자동 압축: 선두 system+최근 N턴(8) 보존, 중간을 LLM 요약(`_summarize_history`, 비스트리밍 1회) system 1개로 치환. **tool_calls↔tool 짝 보존(I1)**, `COMPACTION` SSE 고지, `MAX_COMPACT=3` 상한(I3). 요약 LLM은 주입식이라 순수·테스트 가능 |
 | continuation nudge (G2) ✅ | `agent/server.py` | 모델이 도구 사용 도중 텍스트로 조기 종료하면(`finish_reason!=tool_calls`) 한도(`MAX_NUDGES=2`) 내에서 '계속' 메시지를 주입해 끈질기게 진행. 견고성 게이트: `tool_rounds>0`(잡담 제외)·되묻기(`?` 종결)·사용자 중단 시엔 nudge 안 함. 무한루프 방지(I3), 항상 `DONE` 마감(I4) |
 | plan 모드 (G4 / PLAN1) ✅ | `agent/server.py` + `agent/core/events.py` + `chat.js`/`index.html`/`style.css` | `agent_mode='plan'`이면 **계획 먼저 → 승인 → 실행**. 계획 단계엔 `workflow_*`/`ask_user` 외 실행 도구를 구조적으로 차단(프롬프트 의존 X), 계획 완료 시 `plan_approval` CONFIRM(승인/수정/취소)으로 G3 팝업 재사용. 승인 후 실행 진입. 계획=기존 WorkflowDefinition·패널 재사용, 헤더 ⚡자동/📋계획 토글. `PLAN` 이벤트 추가 |
+| 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 턴 종료 시 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
 
 **총 툴 수: 127종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
@@ -159,22 +160,14 @@
 
 ---
 
-#### 2. 일반 채팅 대화 기억 (`agent/memory.py`)
+#### 2. ✅ 대화 간 장기기억 (`agent/memory.py`) — 완성
 
-> ⚠️ **스레드 모드는 이미 구현됨**: 사이드바 업무 버튼을 통한 스레드 대화는 Obsidian에 전체 히스토리를 저장하고 이어서 대화 가능. 아래는 **기본업무 채팅(스레드 미사용 단일 메시지)** 에 대한 기억 기능이다.
+> **스레드 내 멀티턴은 원래부터 동작**(스레드 대화는 Obsidian에 전체 히스토리 저장+매 턴 재주입). 원 백로그의 "스레드 미사용 단일 메시지" 항목은 스레드 리팩토링으로 무의미해졌고, 대신 **스레드/대화를 넘는 장기기억**으로 구현했다.
 
-**무엇**: 기본업무 채팅에서도 이전 대화를 기억하고, 맥락을 참고해 답변한다.
-
-**왜 필요**: 현재 기본업무는 thread_id 없이 호출 시 매 메시지가 독립적이어서 "아까 했던 거 다시 해줘" 같은 지시가 불가능.
-
-**구현 계획**:
-```
-agent/server.py 내 generate() 수정
-  - messages 리스트를 세션 단위로 유지 (role: user/assistant/tool)
-  - 컨텍스트 한계 도달 시 요약 또는 슬라이딩 윈도우 적용
-```
-
-완료 시 `CLAUDE.md` + `README.md` 업데이트.
+**구현 완료** (2026-06-10):
+- `agent/memory.py` `MemoryStore` — `<vault>/agent/memory/long_term.md`에 사실·선호·결정 저장(dedup·cap·키워드 검색), 사용자가 직접 편집 가능
+- `agent/server.py` `_extract_memories`(턴 종료 시 LLM 추출, 주입식)·주입(진입 시 `search`로 관련 기억을 system에 삽입)·`GET /memory`·`MEMORY_ENABLED` 게이트
+- 후순위: 명시적 `memory_*` 도구, UI 표시, 스레드 close 시 일괄 추출(비용 최적화)
 
 ---
 
@@ -442,9 +435,9 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ---
 
-### E. 일반 채팅 대화 기억
+### E. 일반 채팅 대화 기억 — ✅ 완료(대화 간 장기기억으로 구현)
 
-기본업무 단일 메시지 채팅에서 멀티턴 컨텍스트 유지. `generate()` 내 세션 메시지 리스트 유지, 80% 도달 시 슬라이딩 윈도우 또는 자동 요약.
+스레드 내 멀티턴은 원래 동작. 스레드를 넘는 장기기억을 `agent/memory.py`로 구현(추출·주입·`MEMORY_ENABLED`). 위 "현재 상태" 표 + #### 2 참조.
 
 ### F. Electron 패키징 배포
 

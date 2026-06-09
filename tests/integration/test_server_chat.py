@@ -700,3 +700,64 @@ class TestPlanMode:
         }, [])
         assert "read_file" in [c[0] for c in client_gate._tool_calls]
         assert not self._plan_confirms(events)
+
+
+class TestLongTermMemory:
+    """대화 간 장기기억 — 관련 기억 주입(읽기) + 대화에서 사실 추출(쓰기)."""
+
+    async def _thread(self, client):
+        r = await client.post("/threads/general", json={})
+        return r.json()["thread_id"]
+
+    async def test_relevant_memory_injected_into_system(self, client, vault):
+        """저장된 기억 중 메시지와 관련된 것이 system 프롬프트에 주입된다."""
+        from agent.memory import MemoryStore
+        from agent.obsidian_session import get_session_manager
+        MemoryStore(vault).add("사용자는 한국어 답변을 선호한다", "preference")
+
+        tid = await self._thread(client)
+        async with client.stream("POST", "/chat", json={
+            "message": "한국어 관련해서 알려줘", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        saved = get_session_manager().get_thread_messages("general", tid)
+        sys_msg = saved[0]["content"] if saved and saved[0]["role"] == "system" else ""
+        assert "[장기 기억]" in sys_msg
+        assert "한국어 답변을 선호" in sys_msg
+
+    async def test_memory_extracted_and_stored(self, client, vault, monkeypatch):
+        """대화 종료 시 _extract_memories 결과가 저장소에 적재된다."""
+        from agent.memory import MemoryStore
+        monkeypatch.setattr("agent.server._extract_memories",
+                            lambda history: [{"text": "회사 도메인은 사내 전용이다", "category": "fact"}])
+
+        tid = await self._thread(client)
+        async with client.stream("POST", "/chat", json={
+            "message": "오늘 작업 내용을 정리해줘", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        texts = [m.text for m in MemoryStore(vault).all()]
+        assert any("회사 도메인은 사내 전용" in t for t in texts)
+
+    async def test_disabled_skips_injection_and_extraction(self, client, vault, monkeypatch):
+        """MEMORY_ENABLED=false면 주입도 추출도 하지 않는다."""
+        from agent.memory import MemoryStore
+        from agent.obsidian_session import get_session_manager
+        monkeypatch.setattr("agent.server.MEMORY_ENABLED", False)
+        called = {"n": 0}
+        monkeypatch.setattr("agent.server._extract_memories",
+                            lambda history: called.__setitem__("n", called["n"] + 1) or [])
+        MemoryStore(vault).add("한국어 선호", "preference")
+
+        tid = await self._thread(client)
+        async with client.stream("POST", "/chat", json={
+            "message": "한국어 관련 질문", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            await resp.aread()
+
+        saved = get_session_manager().get_thread_messages("general", tid)
+        sys_msg = saved[0]["content"] if saved and saved[0]["role"] == "system" else ""
+        assert "[장기 기억]" not in sys_msg
+        assert called["n"] == 0
