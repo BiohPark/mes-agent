@@ -190,6 +190,21 @@ busymodeMenu?.querySelectorAll('.hdr-menu-item').forEach(item => {
 document.addEventListener('click', () => busymodeMenu?.classList.add('hidden'))
 renderBusyMode()
 
+// ── 실행 모드 토글 (G4): 자동 ↔ 계획 후 승인 ──────────────────
+let currentAgentMode = localStorage.getItem('agentMode') || 'auto'
+const planmodeBtn = document.getElementById('planmode-btn')
+function renderPlanMode() {
+  if (!planmodeBtn) return
+  planmodeBtn.textContent = currentAgentMode === 'plan' ? '📋 계획 모드' : '⚡ 자동'
+  planmodeBtn.classList.toggle('active', currentAgentMode === 'plan')
+}
+planmodeBtn?.addEventListener('click', () => {
+  currentAgentMode = currentAgentMode === 'plan' ? 'auto' : 'plan'
+  localStorage.setItem('agentMode', currentAgentMode)
+  renderPlanMode()
+})
+renderPlanMode()
+
 function setContextUsage(tokensUsed, tokensTotal) {
   const pct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100))
   contextFill.style.width = pct + '%'
@@ -345,7 +360,8 @@ async function sendMessage(text) {
       body: JSON.stringify({
         message: text,
         thread_id: currentThreadId,
-        task_type: currentTaskType
+        task_type: currentTaskType,
+        agent_mode: currentAgentMode
       })
     })
 

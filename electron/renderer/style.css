@@ -42,6 +42,7 @@ body {
   transition: background 0.15s;
 }
 .hdr-btn:hover { background: #1a4a8a; }
+.hdr-btn.active { background: #1f6f43; border-color: #2e9e63; color: #d6ffe6; }
 .hdr-menu {
   position: absolute;
   right: 0;

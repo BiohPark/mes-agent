@@ -125,6 +125,7 @@ class ChatRequest(BaseModel):
     message: str
     thread_id: str = ""
     task_type: str = ""
+    agent_mode: str = "auto"  # "auto" | "plan"
 
 
 def sse(data: dict) -> str:
@@ -182,6 +183,15 @@ _NUDGE_MESSAGE = (
     "정말 완료됐거나 사용자 입력이 꼭 필요하면 그 이유만 한 줄로 답하라."
 )
 
+# G4 plan 모드: 계획만 세우게 하는 시스템 프롬프트 보강
+_PLAN_MODE_SUFFIX = (
+    "\n\n[계획 모드] 지금은 실제로 실행하지 말고, workflow_init과 "
+    "workflow_set_step/workflow_add_step 도구로 전체 작업을 단계로 설계만 하라. "
+    "설계가 끝나면 도구를 더 호출하지 말고 '계획 완료'라고만 답하라. "
+    "승인 전에는 실제 실행 도구(파일·셸·브라우저 등)를 절대 호출하지 마라."
+)
+_PLAN_APPROVED_MESSAGE = "[시스템] 계획이 승인되었다. 이제 계획대로 단계를 실행하라."
+
 
 def _history_to_text(history: list) -> str:
     """요약 입력용으로 메시지 리스트를 role:내용 텍스트로 평탄화한다."""
@@ -216,7 +226,7 @@ def _summarize_history(history: list) -> str:
     return (resp.choices[0].message.content or "").strip()
 
 
-async def generate(message: str, thread_id: str = "", task_type: str = ""):
+async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto"):
     client = get_client()
     model = get_model()
     session_mgr = get_session_manager()
@@ -251,6 +261,12 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
             {"role": "user", "content": message},
         ]
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
+
+    # G4 plan 모드: 계획 단계 동안 실행 도구 차단 + 계획만 세우도록 시스템 프롬프트 보강
+    plan_phase = (agent_mode == "plan")
+    if plan_phase and messages and messages[0].get("role") == "system":
+        messages[0]["content"] += _PLAN_MODE_SUFFIX
+        yield sse({"type": ev.PLAN, "phase": "planning"})
 
     compaction_count = 0
     nudge_count = 0
@@ -335,11 +351,40 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
 
             # 중단 또는 종료
             if _stop_flags.get(request_id) or finish_reason != "tool_calls" or not tool_calls_raw:
-                # G2 continuation nudge: 작업 도중(도구 사용 이력 있음) 텍스트로 조기 종료하면
-                # 한도 내에서 '계속'을 주입해 끈질기게 진행시킨다. 잡담·되묻기·사용자중단은 제외.
                 _stopped = _stop_flags.get(request_id)
                 _text_only_stop = (not _stopped) and finish_reason != "tool_calls"
                 _last_text = "".join(text_chunks).strip()
+
+                # G4 plan 모드: 계획이 끝나고 텍스트로 멈추면 실행 전 승인 게이트
+                if plan_phase and _text_only_stop:
+                    _cid = uuid.uuid4().hex[:8]
+                    yield sse({
+                        "type": ev.CONFIRM,
+                        "confirm_id": _cid,
+                        "question": "제안된 계획을 검토하세요. 이대로 실행할까요?",
+                        "options": ["승인 실행", "수정 요청", "취소"],
+                        "kind": "plan_approval",
+                    })
+                    yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
+                    _cr = await _resolve_confirm(_cid)
+                    yield sse({"type": ev.AGENT_STATE, "state": "running"})
+                    _ch = _cr.get("choice", "")
+                    _custom = _cr.get("custom_text", "")
+                    if "승인" in _ch:
+                        plan_phase = False
+                        yield sse({"type": ev.PLAN, "phase": "approved"})
+                        messages.append({"role": "user", "content": _PLAN_APPROVED_MESSAGE})
+                        continue
+                    if "수정" in _ch:
+                        messages.append({"role": "user", "content":
+                                         f"[시스템] 계획 수정 요청: {_custom or '재검토 필요'}. 계획을 갱신하라."})
+                        continue
+                    # 취소
+                    yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                    break
+
+                # G2 continuation nudge: 작업 도중(도구 사용 이력 있음) 텍스트로 조기 종료하면
+                # 한도 내에서 '계속'을 주입해 끈질기게 진행시킨다. 잡담·되묻기·사용자중단은 제외.
                 if (
                     _text_only_stop
                     and tool_rounds > 0
@@ -373,6 +418,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = ""):
                 yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
 
                 await asyncio.sleep(0)
+
+                # ── G4 계획-단계 실행 차단 ──────────────────────────
+                # 승인 전에는 workflow_*/ask_user 외 실행 도구를 실제로 돌리지 않는다(구조적 강제).
+                if plan_phase and not (tc["name"].startswith("workflow_") or tc["name"] == "ask_user"):
+                    result = "[계획 모드] 승인 전에는 실행할 수 없습니다. workflow_* 도구로 계획만 세우세요."
+                    yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result})
+                    if session_id:
+                        await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                    continue
 
                 # ── G3 중앙 안전 게이트 (APPROVE1) ──────────────────
                 # run_tool 직전 위험도를 분류해 safe가 아니면 사용자 승인을 강제한다.
@@ -599,7 +654,7 @@ async def switch_model(name: str):
 @app.post("/chat")
 async def chat(body: ChatRequest):
     return StreamingResponse(
-        generate(body.message, body.thread_id, body.task_type),
+        generate(body.message, body.thread_id, body.task_type, body.agent_mode),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

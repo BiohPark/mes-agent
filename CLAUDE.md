@@ -100,6 +100,7 @@
 | 중앙 집중 안전 게이트 (G3 / APPROVE1) ✅ | `agent/tools/_safety.py` + `agent/server.py` + `chat.js`/`style.css` | `classify_risk(safe/mutate/destructive)`를 **루프의 run_tool 직전에서 강제**(모델 force 우회 불가). 균형형: 읽기·관찰·입력형=safe, 쓰기·삭제·셸변경·office편집·네트워크만 확인. 기존 CONFIRM 팝업 재사용(예/항상/아니오), 타임아웃=거부(무인 자동승인 금지), "항상"은 세션 허용목록. tool 짝 보존(I1). `docs/contracts/L1_loop_contract.md` 기준 |
 | 컨텍스트 compaction (G1) ✅ | `agent/core/compaction.py` + `agent/server.py` | 컨텍스트가 임계(`_CONTEXT_MAX_TOKENS*0.8`) 초과 시 루프 진입부에서 자동 압축: 선두 system+최근 N턴(8) 보존, 중간을 LLM 요약(`_summarize_history`, 비스트리밍 1회) system 1개로 치환. **tool_calls↔tool 짝 보존(I1)**, `COMPACTION` SSE 고지, `MAX_COMPACT=3` 상한(I3). 요약 LLM은 주입식이라 순수·테스트 가능 |
 | continuation nudge (G2) ✅ | `agent/server.py` | 모델이 도구 사용 도중 텍스트로 조기 종료하면(`finish_reason!=tool_calls`) 한도(`MAX_NUDGES=2`) 내에서 '계속' 메시지를 주입해 끈질기게 진행. 견고성 게이트: `tool_rounds>0`(잡담 제외)·되묻기(`?` 종결)·사용자 중단 시엔 nudge 안 함. 무한루프 방지(I3), 항상 `DONE` 마감(I4) |
+| plan 모드 (G4 / PLAN1) ✅ | `agent/server.py` + `agent/core/events.py` + `chat.js`/`index.html`/`style.css` | `agent_mode='plan'`이면 **계획 먼저 → 승인 → 실행**. 계획 단계엔 `workflow_*`/`ask_user` 외 실행 도구를 구조적으로 차단(프롬프트 의존 X), 계획 완료 시 `plan_approval` CONFIRM(승인/수정/취소)으로 G3 팝업 재사용. 승인 후 실행 진입. 계획=기존 WorkflowDefinition·패널 재사용, 헤더 ⚡자동/📋계획 토글. `PLAN` 이벤트 추가 |
 
 **총 툴 수: 127종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 

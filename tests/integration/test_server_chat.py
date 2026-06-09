@@ -643,3 +643,60 @@ class TestContinuationNudge:
             client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
         saved = self._saved(tid)
         assert self._nudge_count(saved) == 0
+
+
+class TestPlanMode:
+    """G4: plan 모드 — 계획 먼저 → 승인 → 실행. 계획 단계 실행 차단(구조적)."""
+
+    async def _new_thread(self, client):
+        r = await client.post("/threads/general", json={})
+        return r.json()["thread_id"]
+
+    def _plan_confirms(self, events):
+        return [e for e in events
+                if e.get("type") == ev.CONFIRM and e.get("kind") == "plan_approval"]
+
+    async def test_plan_blocks_execution_tools(self, client_gate):
+        """계획 단계에서 비-workflow 실행 도구는 실제로 돌지 않고 승인 게이트가 뜬다."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "계획 완료"),
+        ])
+        events = await _stream_answering(client_gate, {
+            "message": "작업", "thread_id": tid, "task_type": "general", "agent_mode": "plan",
+        }, ["취소"])
+        assert client_gate._tool_calls == [], "계획 단계에서 실행 도구가 돌았음"
+        assert self._plan_confirms(events), "plan_approval 승인 게이트가 없음"
+        assert ev.DONE in [e.get("type") for e in events]
+
+    async def test_plan_approve_then_execute(self, client_gate):
+        """workflow 도구로 계획 후 승인하면 이후 실행 도구가 동작한다."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([
+            ("tool", "workflow_init", '{"task_type":"general"}'),
+            ("text", "계획 완료"),
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "끝"),
+        ])
+        events = await _stream_answering(client_gate, {
+            "message": "작업", "thread_id": tid, "task_type": "general", "agent_mode": "plan",
+        }, ["승인 실행"])
+        names = [c[0] for c in client_gate._tool_calls]
+        assert "workflow_init" in names, "계획 단계 workflow 도구가 막혔음"
+        assert "read_file" in names, "승인 후 실행 도구가 안 돌았음"
+        assert len(self._plan_confirms(events)) == 1
+        assert ev.DONE in [e.get("type") for e in events]
+
+    async def test_auto_mode_has_no_plan_gate(self, client_gate):
+        """기본(auto)에서는 plan 승인 게이트 없이 즉시 실행한다."""
+        tid = await self._new_thread(client_gate)
+        _ScriptedStream.reset([
+            ("tool", "read_file", '{"path":"a.txt"}'),
+            ("text", "끝"),
+        ])
+        events = await _stream_answering(client_gate, {
+            "message": "작업", "thread_id": tid, "task_type": "general",
+        }, [])
+        assert "read_file" in [c[0] for c in client_gate._tool_calls]
+        assert not self._plan_confirms(events)

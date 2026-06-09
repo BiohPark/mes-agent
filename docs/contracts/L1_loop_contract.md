@@ -140,7 +140,11 @@
 3. **G2 continuation nudge** — 조급한 종료 해소. (I3) ✅ **완료(2026-06-10)**
    - `server.generate()` 종료 분기: 도구 사용 도중(`tool_rounds>0`) 텍스트 조기종료 시 `MAX_NUDGES=2` 내 '계속' 주입. 잡담·되묻기(`?`)·사용자중단 제외.
    - 테스트: `tests/integration/test_server_chat.py::TestContinuationNudge`(4). 전체 387 passed.
-4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) 🔲 **다음**
+4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) ✅ **완료(2026-06-10)**
+   - `agent_mode='plan'`: 계획 단계 실행도구 차단 + 계획완료 시 `plan_approval` CONFIRM → 승인 후 `plan_phase=False`로 실행. 기존 workflow_*·패널·`_resolve_confirm` 재사용. 헤더 토글.
+   - 테스트: `tests/integration/test_server_chat.py::TestPlanMode`(3). 전체 390 passed.
+
+> **L1 루프 강화 트랙 완료** — G3·G1·G2·G4 모두 ✅. (계약서 §5·§4·§6·§7 충족)
 
 각 항목: 불변조건 → 실패 테스트 먼저 → 최소 구현. `agent/server.py`의 `generate()`와
 `agent/tools/_safety.py` 중심, 새 의존성 없이.
