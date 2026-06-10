@@ -8,7 +8,7 @@ import pytest
 from agent.tools import _registry, TOOLS, TOOL_LABELS
 
 
-EXPECTED_TOOL_COUNT = 128
+EXPECTED_TOOL_COUNT = 131
 REQUIRED_MANIFEST_KEYS = {"name", "label", "schema", "handler"}
 
 
@@ -149,4 +149,12 @@ class TestModuleCoverage:
         "ui_find_and_read",
     ])
     def test_ui_automation_tools_registered(self, tool_name):
+        assert tool_name in _registry
+
+    @pytest.mark.parametrize("tool_name", [
+        "memory_remember",
+        "memory_forget",
+        "memory_recall",
+    ])
+    def test_memory_tools_registered(self, tool_name):
         assert tool_name in _registry

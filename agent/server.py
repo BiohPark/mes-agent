@@ -171,7 +171,9 @@ _AUTONOMOUS_INSTRUCTION = (
     "[사용자 선택] 되돌릴 수 없거나 사용자 의도가 필요한 분기에서만 ask_user로 명확한 선택지를 제시해라. "
     "스스로 조사해 알 수 있는 것은 묻지 말고 먼저 조사해라. "
     "[종료 기준] 작업이 진짜 끝났거나 사용자 입력 없이는 더 진행할 수 없을 때만 멈추고, "
-    "그때는 시도한 것·막힌 지점·다음 선택지를 명확히 보고해라."
+    "그때는 시도한 것·막힌 지점·다음 선택지를 명확히 보고해라. "
+    "[기억] 사용자가 '이거 기억해/잊어'라고 하면 memory_remember/memory_forget을 호출하고, "
+    "과거에 기억해 둔 게 있는지 확인이 필요하면 memory_recall을 사용해라."
 )
 
 _MAX_STEPS = 40
@@ -200,6 +202,8 @@ _PLAN_APPROVED_MESSAGE = "[시스템] 계획이 승인되었다. 이제 계획�
 
 # 대화 간 장기기억: 과거 대화에서 사실·선호·결정을 추출/주입 (끄려면 MEMORY_ENABLED=false)
 MEMORY_ENABLED = os.environ.get("MEMORY_ENABLED", "true").lower() != "false"
+# 추출 타이밍: close(스레드 종료 시 1회 일괄, 비용↓) | turn(매 턴) | off(자동 추출 안 함)
+MEMORY_EXTRACT_MODE = os.environ.get("MEMORY_EXTRACT_MODE", "close").lower()
 
 
 def _memory_store() -> MemoryStore:
@@ -229,6 +233,16 @@ def _extract_memories(history: list) -> list:
     except Exception:
         pass
     return []
+
+
+def _extract_and_store(history: list, source: str) -> int:
+    """history에서 기억을 추출해 저장하고 저장 건수를 반환한다(동기, executor용)."""
+    store = _memory_store()
+    n = 0
+    for f in _extract_memories(history):
+        if store.add(f.get("text", ""), f.get("category", "fact"), source):
+            n += 1
+    return n
 
 
 def _history_to_text(history: list) -> str:
@@ -702,16 +716,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         )
         await loop.run_in_executor(None, session_mgr.close_session, session_id, final_text)
 
-    # 장기기억 추출: 사소하지 않은 턴이면 대화에서 기억할 사실을 저장(best-effort)
-    if MEMORY_ENABLED and (tool_rounds > 0 or len(message.strip()) >= 8):
+    # 장기기억 추출(MEMORY_EXTRACT_MODE): turn=매 턴, close=스레드 close에서 일괄(단발 요청만 여기서 폴백), off=안 함
+    _turn_extract = (
+        MEMORY_ENABLED
+        and MEMORY_EXTRACT_MODE != "off"
+        and (tool_rounds > 0 or len(message.strip()) >= 8)
+        and (MEMORY_EXTRACT_MODE == "turn" or not thread_id)
+    )
+    if _turn_extract:
         try:
-            _facts = await loop.run_in_executor(None, _extract_memories, messages[-8:])
-            _store = _memory_store()
-            for _f in _facts:
-                await loop.run_in_executor(
-                    None, _store.add, _f.get("text", ""), _f.get("category", "fact"),
-                    thread_id or "general",
-                )
+            await loop.run_in_executor(None, _extract_and_store, messages[-8:], thread_id or "general")
         except Exception:
             pass
 
@@ -767,12 +781,37 @@ async def stop_agent(request_id: str):
     return {"ok": True}
 
 
+class MemoryAddRequest(BaseModel):
+    text: str
+    category: str = "fact"
+
+
 @app.get("/memory")
 async def list_memory():
     """저장된 장기기억 전체를 반환한다(가시성·디버깅용)."""
     store = _memory_store()
     mems = await asyncio.get_event_loop().run_in_executor(None, store.all)
     return {"memories": [m.to_dict() for m in mems]}
+
+
+@app.post("/memory")
+async def add_memory(body: MemoryAddRequest):
+    """기억을 수동으로 추가한다(관리 UI). dedup이면 saved=false."""
+    store = _memory_store()
+    mem = await asyncio.get_event_loop().run_in_executor(
+        None, store.add, body.text, body.category or "fact", "manual"
+    )
+    if mem is None:
+        return {"ok": True, "saved": False}
+    return {"ok": True, "saved": True, "memory": mem.to_dict()}
+
+
+@app.delete("/memory/{mem_id}")
+async def delete_memory(mem_id: str):
+    """기억을 id로 삭제한다(관리 UI)."""
+    store = _memory_store()
+    ok = await asyncio.get_event_loop().run_in_executor(None, store.delete, mem_id)
+    return {"ok": ok}
 
 
 # ── 스레드 엔드포인트 ─────────────────────────────────────────
@@ -864,9 +903,16 @@ async def unarchive_thread(task_type: str, thread_id: str):
 @app.post("/threads/{task_type}/{thread_id}/close")
 async def close_thread(task_type: str, thread_id: str):
     mgr = get_session_manager()
-    await asyncio.get_event_loop().run_in_executor(
-        None, mgr.close_thread, task_type, thread_id
-    )
+    loop = asyncio.get_event_loop()
+    # 스레드 종료 시 전체 대화에서 기억을 1회 일괄 추출(비용 최적화). close 모드에서만.
+    if MEMORY_ENABLED and MEMORY_EXTRACT_MODE == "close":
+        try:
+            msgs = await loop.run_in_executor(None, mgr.get_thread_messages, task_type, thread_id)
+            if msgs:
+                await loop.run_in_executor(None, _extract_and_store, msgs, thread_id)
+        except Exception:
+            pass
+    await loop.run_in_executor(None, mgr.close_thread, task_type, thread_id)
     return {"status": "completed"}
 
 

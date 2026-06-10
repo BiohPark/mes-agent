@@ -827,8 +827,9 @@ class TestLongTermMemory:
         assert "한국어 답변을 선호" in sys_msg
 
     async def test_memory_extracted_and_stored(self, client, vault, monkeypatch):
-        """대화 종료 시 _extract_memories 결과가 저장소에 적재된다."""
+        """turn 모드에서 매 턴 _extract_memories 결과가 저장소에 적재된다."""
         from agent.memory import MemoryStore
+        monkeypatch.setattr("agent.server.MEMORY_EXTRACT_MODE", "turn")
         monkeypatch.setattr("agent.server._extract_memories",
                             lambda history: [{"text": "회사 도메인은 사내 전용이다", "category": "fact"}])
 

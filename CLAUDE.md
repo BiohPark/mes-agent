@@ -102,9 +102,10 @@
 | 컨텍스트 compaction (G1) ✅ | `agent/core/compaction.py` + `agent/server.py` | 컨텍스트가 임계(`_CONTEXT_MAX_TOKENS*0.8`) 초과 시 루프 진입부에서 자동 압축: 선두 system+최근 N턴(8) 보존, 중간을 LLM 요약(`_summarize_history`, 비스트리밍 1회) system 1개로 치환. **tool_calls↔tool 짝 보존(I1)**, `COMPACTION` SSE 고지, `MAX_COMPACT=3` 상한(I3). 요약 LLM은 주입식이라 순수·테스트 가능 |
 | continuation nudge (G2) ✅ | `agent/server.py` | 모델이 도구 사용 도중 텍스트로 조기 종료하면(`finish_reason!=tool_calls`) 한도(`MAX_NUDGES=2`) 내에서 '계속' 메시지를 주입해 끈질기게 진행. 견고성 게이트: `tool_rounds>0`(잡담 제외)·되묻기(`?` 종결)·사용자 중단 시엔 nudge 안 함. 무한루프 방지(I3), 항상 `DONE` 마감(I4) |
 | plan 모드 (G4 / PLAN1) ✅ | `agent/server.py` + `agent/core/events.py` + `chat.js`/`index.html`/`style.css` | `agent_mode='plan'`이면 **계획 먼저 → 승인 → 실행**. 계획 단계엔 `workflow_*`/`ask_user` 외 실행 도구를 구조적으로 차단(프롬프트 의존 X), 계획 완료 시 `plan_approval` CONFIRM(승인/수정/취소)으로 G3 팝업 재사용. 승인 후 실행 진입. 계획=기존 WorkflowDefinition·패널 재사용, 헤더 ⚡자동/📋계획 토글. `PLAN` 이벤트 추가 |
-| 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 턴 종료 시 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
+| 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
+| 장기기억 후속(도구·UI·비용) ✅ | `agent/tools/memory_tools.py` + `agent/server.py` + `electron/renderer/memory.js` | **① 명시적 도구** `memory_remember`/`memory_forget`/`memory_recall`(3종) — 사용자 "기억해/잊어" 즉시 반영(`_AUTONOMOUS_INSTRUCTION` 안내). **② 관리 UI** 헤더 `🧠 기억` 모달(목록·추가·삭제), `POST /memory`·`DELETE /memory/{id}`. **③ 비용 최적화** `MEMORY_EXTRACT_MODE`(close 기본): 스레드는 `close_thread`에서 1회 일괄 추출(`_extract_and_store`), 단발 요청만 턴 추출 폴백 — 매 턴 LLM 호출 제거 |
 
-**총 툴 수: 128종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -123,6 +124,7 @@
 | `office_com.py` | 11 |
 | `office_libre.py` | 1 |
 | `office_cloud.py` | 3 |
+| `memory_tools.py` | 3 |
 
 ---
 
@@ -158,8 +160,8 @@
 #### Office 편집 백엔드 확정 (회사 PC 확인 필요)
 - 사내 문서 백엔드(네트워크 드라이브 / 온프렘 SharePoint / 사내 M365) 확인 후 경로 구현. → `docs/office-editing-next-steps.md`
 
-#### 장기기억 후속 (선택)
-- 명시적 `memory_*` 도구("이거 기억해/잊어"), 기억 관리 UI, 스레드 close 시 일괄 추출(비용 최적화).
+> 장기기억 후속(명시적 `memory_*` 도구·관리 UI·close 일괄추출)은 ✅ 완료 — 위 "현재 상태" 표 참조.
+> 사용자 요청 신규 백로그(협업모드·MCP·Office base64·OpenHands 등)는 아래 "향후 개선 아이디어(Backlog) H~L" 참조.
 
 ---
 
@@ -283,6 +285,7 @@ mes-agent/
 │       ├── office_cloud.py    ← MS Graph 클라우드 Excel 편집(셀/수식 REST) (3종) ✅
 │       ├── vision.py        ← 멀티모달 화면: capture_screen(메인루프 이미지 주입)·analyze_screen/region (3종) ✅
 │       ├── ui_automation.py ← Windows UI Automation 접근성 트리 읽기 (3종) ✅
+│       ├── memory_tools.py  ← 명시적 장기기억 도구 remember/forget/recall (3종) ✅
 │       ├── _safety.py       ← 파괴적 작업 가드 + G3 위험도 분류(classify_risk) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
 │       └── workflow.py     ← 워크플로우 init·set/add/update/remove_step·reorder·add/remove_connection (8종) ✅
@@ -415,6 +418,56 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 > 참고 출처: ONLYOFFICE DocumentServer/DocumentBuilder(GitHub, api.onlyoffice.com), MS Graph Excel API(learn.microsoft.com/graph), LibreOffice headless/UNO·unoconv.
 
 **⏭ 다음 작업 가이드**: `docs/office-editing-next-steps.md` — 사내 문서 백엔드(네트워크드라이브 / 온프렘 SharePoint / 사내 M365 / OnlyOffice) 확인 절차 + 각 경로별 구현 스케치. **`sbiologics.com`이 일반 O365가 아닌 사내 전용이라, 회사 PC에서 실제 문서 URL/경로를 먼저 확인해야 정확한 경로 결정 가능.** `GRAPH_BASE_URL` 환경변수로 사내 M365 엔드포인트 재정의는 이미 지원.
+
+---
+
+### H. 협업모드(코치 모드) 🤝 — 🔲 대기
+
+**배경**: 사용자가 목표를 세우고 직접 작업하는 동안, 에이전트가 *실행자*가 아니라 *관찰자/조언자*로
+화면 맥락을 계속 파악하며 필요한 부분에 비간섭 힌트를 준다. (방금 만든 `capture_screen` 위에 쌓는 다음 1순위 후보)
+
+**확정된 설계 방향**(사용자 선택):
+- **트리거 = 하이브리드**: 주기적 자동 감시 + 변화 감지(`compare_screenshots` 재사용)로 의미 있는 변화 때만 LLM 호출(비용↓) + 사용자 수동 "지금 봐줘".
+- **힌트 UI = 항상-위 플로팅 HUD**: 작고 끌어다닐 수 있는 옅은 투명 오버레이 창(**포커스 비탈취**). 메인창을 안 띄워도 됨.
+
+**구현 스케치**:
+- `agent_mode='collaborate'` 신설(기존 auto/plan 패턴 확장). 협업모드에선 desktop/browser **제어 도구를 구조적으로 차단**(plan 모드 차단 패턴 재사용), `capture_screen`·관찰·`memory_*`·`ask_user`만 허용.
+- SSE `COLLABORATION_HINT` 이벤트 추가 → HUD 렌더.
+- Electron 별도 `BrowserWindow`(`alwaysOnTop:true`, `focusable:false`, `setIgnoreMouseEvents` 토글) — 백로그 C IPC 패턴 재사용.
+- 주기 감시: 백그라운드 폴링(워크플로우 `WF_POLL_INTERVAL` SSE 패턴 참고) + 변화 감지 게이트.
+
+### I. 협업 UX — 포커스 비탈취 🪟 — 🔲 대기
+
+**배경**: 현재 메신저(채팅창)를 화면에 상주시켜야 하고, 에이전트가 `browser.py _get_page()`(`headless=False`)로
+새 페이지를 열 때마다 브라우저가 **자동 전면화**되어 사용자 작업을 가로챈다.
+
+**아이디어**: `browser.py`에 `bring_to_front` 옵션 추가(기본 off, 협업모드에선 강제 off). 메신저 상주 필요는 H의 HUD로 해소.
+기존 백로그 C(창 최소화/반투명)와 결합해 "에이전트가 화면을 건드릴 때만 비키고, 평소엔 사용자 작업 우선".
+
+### J. MCP 클라이언트 + Oracle DB MCP 🔌 — 🔲 대기
+
+**배경**: 현재 MCP를 배제하고 만들었으나, MCP 클라이언트를 준비하면 외부 표준 도구(파일시스템·git·DB 등)를 손쉽게 붙일 수 있다. 기본으로 **Oracle DB MCP 1개** 연동 예정.
+
+**구현 스케치**(탐색 보고 기반):
+- `agent/mcp_client.py` 신설: `.env` MCP 서버 목록 → 연결 후 도구를 MANIFEST로 변환해 `_registry`에 **런타임 등록**(`tools/__init__.py` 동적 등록 지점 활용).
+- 비동기 MCP 호출은 `browser.py` 전용 single-thread executor 패턴으로 **sync 브릿지**(`run_tool`이 동기라).
+- `requirements.txt`에 `mcp` 추가(폐쇄망: USB 사전반입). G3 `_safety.classify_risk`에 MCP 도구 prefix 위험도 매핑(`*_query`=mutate 등).
+- **기존 기능 MCP 대체 검토** 후보: Obsidian(공식 `mcp-obsidian`), filesystem, git, fetch. 단 화면/데스크탑/Office COM 등 로컬 의존은 대체 불가.
+- Oracle **실연결은 회사 환경 필요**(인프라는 로컬/공개 MCP로 선검증).
+
+### K. Office 문서 base64 멀티모달 📄 — 🔲 대기 (회사 테스트 선행)
+
+**배경**: Office 문서를 base64로 인코딩해 멀티모달 LLM에 직접 보내 읽히는 경로. `capture_screen` 이미지 주입 패턴을 문서로 확장.
+
+**선행 블로커**: **회사 DRM 환경에서 base64 멀티모달 인식 여부를 먼저 테스트**해야 함(DRM이 바이트 접근을 막을 수 있음). 통과 시 `vision.py` 주입 패턴 재사용해 구현.
+
+### L. OpenHands 기능 이식 🛠 — 🔲 대기 (조사 중심)
+
+**배경**: 오픈소스 자율 에이전트 OpenHands의 좋은 패턴을 조사·선별해 이식.
+
+**후보**: 이벤트 스트림/상태머신, 마이크로에이전트(상황별 지식 주입), 샌드박스 런타임, 구조화된 브라우징 관찰(observation), 컨덴서(메모리 압축 — 기존 G1과 비교). **조사 중심 트랙** — 라이선스·출처 governance(클린룸 규칙, `docs/CLAW_PORT_PLAN.md`) 준수.
+
+> **참고**: office365 백엔드 확정(위 G + 개발 예정)·electron 패키징(F)은 기존 항목. 장기기억 후속은 ✅ 완료.
 
 ---
 

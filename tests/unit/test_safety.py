@@ -81,6 +81,10 @@ def test_classify_safe_read_observe_input():
     # 화면 캡처(관찰형)는 승인 없이 실행 — capture_screen / analyze_*
     assert classify_risk("capture_screen", {}) == "safe"
     assert classify_risk("analyze_screen", {"prompt": "뭐가 보임?"}) == "safe"
+    # 장기기억 도구(자기 메모 노트 한정, 사용자 발화 기반) → safe
+    assert classify_risk("memory_remember", {"text": "x"}) == "safe"
+    assert classify_risk("memory_forget", {"query": "x"}) == "safe"
+    assert classify_risk("memory_recall", {"query": "x"}) == "safe"
 
 
 def test_classify_run_command_content_based():

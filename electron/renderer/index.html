@@ -19,6 +19,8 @@
       <div id="header-right">
         <!-- 실행 모드 (G4): 자동 / 계획 후 승인 -->
         <button id="planmode-btn" class="hdr-btn" title="실행 모드 — 자동 실행 / 계획 후 승인">⚡ 자동</button>
+        <!-- 장기기억 관리 (장기기억 후속) -->
+        <button id="memory-btn" class="hdr-btn" title="장기기억 관리 — 무엇을 기억 중인지 보기/추가/삭제">🧠 기억</button>
         <!-- 실행 중 창 모드 (개선 아이디어 C) -->
         <div id="busymode-switcher">
           <button id="busymode-btn" class="hdr-btn" title="에이전트 실행 중 창 동작">🪟 최소화</button>
@@ -216,8 +218,29 @@
     </div>
   </div>
 
+  <!-- 장기기억 관리 모달 (장기기억 후속) -->
+  <div id="memory-overlay" class="hidden">
+    <div id="memory-modal">
+      <div id="memory-modal-header">
+        <span>🧠 장기기억 관리</span>
+        <button id="memory-modal-close" title="닫기">✕</button>
+      </div>
+      <div id="memory-add-row">
+        <input id="memory-add-input" type="text" placeholder="기억할 내용을 입력…" />
+        <select id="memory-add-category" title="분류">
+          <option value="fact">사실</option>
+          <option value="preference">선호</option>
+          <option value="decision">결정</option>
+        </select>
+        <button id="memory-add-btn">추가</button>
+      </div>
+      <div id="memory-list"></div>
+    </div>
+  </div>
+
   <script src="chat.js"></script>
   <script src="workflow.js"></script>
   <script src="tool-test.js"></script>
+  <script src="memory.js"></script>
 </body>
 </html>

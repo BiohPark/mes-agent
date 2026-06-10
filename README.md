@@ -101,6 +101,7 @@
 | 사용자 확인 팝업 | ✅ | `ask_user` 툴 → 선택지 팝업, 텍스트 입력 지원, 300초 타임아웃 |
 | 중앙 안전 게이트 (G3) | ✅ | 모든 툴 실행 직전 위험도 분류(safe/mutate/destructive). 위험 작업만 승인 팝업(예/항상/아니오), 모델 우회 불가, 타임아웃=거부 |
 | 대화 간 장기기억 | ✅ | 과거 대화에서 사실·선호·결정을 자동 추출해 Obsidian 노트에 저장, 새 대화에 관련 기억 주입. `MEMORY_ENABLED`로 on/off |
+| 장기기억 후속(도구·UI·비용) | ✅ | `memory_remember`/`forget`/`recall` 명시적 도구 + 헤더 `🧠 기억` 관리 모달(보기·추가·삭제) + `MEMORY_EXTRACT_MODE=close`(스레드 종료 시 1회 일괄 추출로 비용 절감) |
 | LLM 프로파일 전환 | ✅ | OpenAI ↔ 사내 LLM 런타임 전환 |
 | AI 모델 선택 | ✅ | 헤더 드롭다운, `/v1/models` 동적 조회 → `.env` 프리셋 폴백, 런타임 모델 전환 |
 | 보안 게이트 | ✅ | 원격 Origin 차단 + 토큰 인증(실행마다 자동 생성), 위험명령 차단(force 필요), 보호경로 쓰기 차단·자동백업 |
@@ -123,7 +124,7 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (128종)
+### 툴 (131종)
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -141,6 +142,7 @@
 | 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
 | 멀티모달 화면 (capture_screen 메인루프 이미지 주입·전체화면·영역 분석, VISION_ENABLED 기본 켬) | 3 | ✅ |
 | Windows UI Automation (접근성 트리, OCR 없이 Win32 컨트롤 파악) | 3 | ✅ |
+| 장기기억 도구 (memory_remember·forget·recall — 명시적 기억/삭제/회수) | 3 | ✅ |
 
 > 상세 툴 목록 → **[docs/agent-guide.md](docs/agent-guide.md)**
 
@@ -230,7 +232,7 @@ mes-agent/
 │   ├── workflow/
 │   │   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
-│   └── tools/               — 128종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 131종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)
@@ -295,7 +297,8 @@ Vault/
 | GET | `/health` | 서버 상태 확인 |
 | POST | `/chat` | 에이전트 채팅 (SSE 스트리밍) |
 | POST | `/stop/{request_id}` | 에이전트 중단 |
-| GET | `/memory` | 장기기억 조회 |
+| GET/POST | `/memory` | 장기기억 조회 / 수동 추가 |
+| DELETE | `/memory/{id}` | 장기기억 삭제 |
 | GET/POST | `/models`, `/models/{name}` | 모델 목록 / 모델 전환 |
 | GET | `/profile` | LLM 프로파일 조회 |
 | POST | `/profile/{name}` | 프로파일 전환 |
@@ -376,10 +379,15 @@ Vault/
 > 과거 백로그(IDE식 탭·반응형 워크플로우 패널·실행 중 창 최소화·모델 선택 UI·대화 기억 등)는 모두 구현 완료.
 > 루프 강화(안전 게이트·컨텍스트 compaction·continuation nudge·plan 모드)와 대화 간 장기기억도 완료.
 
-**남은 항목:**
-- **Electron 패키징 배포** — `electron-builder`로 `.exe` 인스톨러, Python 환경 `conda-pack` 동봉.
-- **Office 편집 백엔드 확정** — 사내 문서 백엔드(네트워크/온프렘 SharePoint/M365) 확인 후 경로 구현 → [docs/office-editing-next-steps.md](docs/office-editing-next-steps.md)
-- **장기기억 후속(선택)** — 명시적 기억 도구·관리 UI·스레드 close 시 일괄 추출.
+**남은 항목:** (상세는 [CLAUDE.md](CLAUDE.md) "향후 개선 아이디어 H~L")
+- **협업모드(코치 모드)** 🤝 — 에이전트가 관찰자로 화면 맥락을 파악하며 비간섭 힌트(하이브리드 트리거 + 항상-위 플로팅 HUD).
+- **협업 UX — 포커스 비탈취** 🪟 — 브라우저 `bring_to_front` 옵션, 메신저 상주 해소.
+- **MCP 클라이언트 + Oracle DB MCP** 🔌 — MCP 서버 도구 런타임 등록, 기존 기능 대체 검토.
+- **Office 문서 base64 멀티모달** 📄 — 회사 DRM 환경 인식 테스트 선행.
+- **OpenHands 기능 이식** 🛠 — 좋은 패턴 조사·선별(클린룸 규칙).
+- **Electron 패키징 배포** — `electron-builder` `.exe` 인스톨러 + `conda-pack`.
+- **Office 편집 백엔드 확정** — 사내 문서 백엔드 확인 후 경로 구현 → [docs/office-editing-next-steps.md](docs/office-editing-next-steps.md)
+- ~~장기기억 후속~~ — ✅ 완료(명시적 도구·관리 UI·close 일괄추출).
 
 ---
 
