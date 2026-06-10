@@ -100,6 +100,8 @@
 | 컨텍스트 사용량 | ✅ | 헤더 프로그레스 바, 토큰 추정치 표시 |
 | 사용자 확인 팝업 | ✅ | `ask_user` 툴 → 선택지 팝업, 텍스트 입력 지원, 300초 타임아웃 |
 | 중앙 안전 게이트 (G3) | ✅ | 모든 툴 실행 직전 위험도 분류(safe/mutate/destructive). 위험 작업만 승인 팝업(예/항상/아니오), 모델 우회 불가, 타임아웃=거부 |
+| 협업모드(코치) | ✅ | 사용자가 직접 작업하는 동안 에이전트가 관찰자로 화면을 보며 비간섭 힌트(항상-위 플로팅 HUD, 포커스 비탈취). 변화율 게이트로 비용 통제, toolless 멀티모달 |
+| MCP 클라이언트 | ✅ | 외부 MCP 서버(예: Oracle DB) 도구를 런타임 등록(`mcp_servers.json`). `readOnlyHint` 안전 분류, sync 브릿지. 무설정 무해 |
 | 대화 간 장기기억 | ✅ | 과거 대화에서 사실·선호·결정을 자동 추출해 Obsidian 노트에 저장, 새 대화에 관련 기억 주입. `MEMORY_ENABLED`로 on/off |
 | 장기기억 후속(도구·UI·비용) | ✅ | `memory_remember`/`forget`/`recall` 명시적 도구 + 헤더 `🧠 기억` 관리 모달(보기·추가·삭제) + `MEMORY_EXTRACT_MODE=close`(스레드 종료 시 1회 일괄 추출로 비용 절감) |
 | LLM 프로파일 전환 | ✅ | OpenAI ↔ 사내 LLM 런타임 전환 |
@@ -227,6 +229,8 @@ mes-agent/
 │   ├── llm.py               — LLM 클라이언트 팩토리
 │   ├── config.py            — LLM 프로파일 (openai / internal) + 모델 오버라이드
 │   ├── memory.py            — 대화 간 장기기억 MemoryStore
+│   ├── collaborate.py       — 협업모드 코치(화면 변화감지 + toolless 힌트)
+│   ├── mcp_client.py        — MCP 클라이언트(외부 서버 도구 런타임 등록)
 │   ├── obsidian_session.py  — 세션·스레드 관리, TASK_CONFIGS 5종
 │   ├── core/
 │   │   ├── events.py        — SSE 이벤트 타입 상수
@@ -301,6 +305,7 @@ Vault/
 | POST | `/stop/{request_id}` | 에이전트 중단 |
 | GET/POST | `/memory` | 장기기억 조회 / 수동 추가 |
 | DELETE | `/memory/{id}` | 장기기억 삭제 |
+| POST | `/collaborate/start·tick·stop` | 협업모드(코치) — 목표 설정 / 화면 힌트 틱 / 종료 |
 | GET/POST | `/models`, `/models/{name}` | 모델 목록 / 모델 전환 |
 | GET | `/profile` | LLM 프로파일 조회 |
 | POST | `/profile/{name}` | 프로파일 전환 |
@@ -368,28 +373,16 @@ Vault/
 - [x] 기본 워크플로우 템플릿 편집 UI — "📋 기본 템플릿 편집" 버튼, Vault `_templates/{type}.md` 저장
 - [x] 패널 접기 UX 버그 수정 — `width:0` 대신 `.collapsed` CSS 클래스, `‹` 버튼이 항상 보이는 26px 스트립 유지
 
-### 다음 단계 (단기)
-- [ ] 도메인별 실제 시스템 URL을 .env + 시스템 프롬프트에 반영 (Syncade·Knox)
-- [ ] 컨텍스트 80% 도달 시 자동 압축
-- [ ] Electron 패키징 → `.exe` 인스톨러
-- [ ] COM Interop 오피스 편집 (`win32com`) — 현재 읽기만, 깊은 편집은 미구현
+## 향후 개선 아이디어 (Backlog) — 미착수만
 
----
+> 완료 기능은 위 **기능 현황** 표가 단일 기록. 완료된 백로그(IDE식 탭·반응형 패널·창 최소화·모델 선택·장기기억·
+> 루프 강화 G1~G4·**협업모드·포커스 비탈취·MCP 클라이언트**)는 표 참조. H·I·J 상세는 `docs/backlog/`.
 
-## 향후 개선 아이디어 (Backlog)
-
-> 과거 백로그(IDE식 탭·반응형 워크플로우 패널·실행 중 창 최소화·모델 선택 UI·대화 기억 등)는 모두 구현 완료.
-> 루프 강화(안전 게이트·컨텍스트 compaction·continuation nudge·plan 모드)와 대화 간 장기기억도 완료.
-
-**남은 항목:** (상세는 [CLAUDE.md](CLAUDE.md) "향후 개선 아이디어 H~L")
-- **협업모드(코치 모드)** 🤝 — 에이전트가 관찰자로 화면 맥락을 파악하며 비간섭 힌트(하이브리드 트리거 + 항상-위 플로팅 HUD).
-- **협업 UX — 포커스 비탈취** 🪟 — 브라우저 `bring_to_front` 옵션, 메신저 상주 해소.
-- **MCP 클라이언트 + Oracle DB MCP** 🔌 — MCP 서버 도구 런타임 등록, 기존 기능 대체 검토.
-- **Office 문서 base64 멀티모달** 📄 — 회사 DRM 환경 인식 테스트 선행.
-- **OpenHands 기능 이식** 🛠 — 좋은 패턴 조사·선별(클린룸 규칙).
+- **Office 문서 base64 멀티모달** 📄 — 회사 DRM 환경 인식 테스트 선행. → [CLAUDE.md K](CLAUDE.md)
+- **OpenHands 기능 이식** 🛠 — 좋은 패턴 조사·선별(클린룸 규칙). → [CLAUDE.md L](CLAUDE.md)
 - **Electron 패키징 배포** — `electron-builder` `.exe` 인스톨러 + `conda-pack`.
-- **Office 편집 백엔드 확정** — 사내 문서 백엔드 확인 후 경로 구현 → [docs/office-editing-next-steps.md](docs/office-editing-next-steps.md)
-- ~~장기기억 후속~~ — ✅ 완료(명시적 도구·관리 UI·close 일괄추출).
+- **Office 편집 백엔드 확정**(P3 OnlyOffice 포함) — 사내 문서 백엔드 확인 후 경로 구현 → [docs/office-editing-next-steps.md](docs/office-editing-next-steps.md)
+- 도메인별 실제 시스템 URL을 `.env` + 시스템 프롬프트에 반영 (Syncade·Knox)
 
 ---
 

@@ -44,7 +44,7 @@
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
-| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결** |
+| 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결**, **포커스 비탈취(백로그 I): open/navigate 시 사용자 foreground 창 복원, `bring_to_front`·`BROWSER_FOCUS_STEAL`** |
 | Obsidian PKM (Phase 7 ✅) | `agent/tools/obsidian_rag.py` | 2-tier 탐색(preview/scan/backlinks/section), 편집(edit/replace_section/update_frontmatter), 이동, 고급검색 (16종) |
 | 프로세스/시스템 | `agent/tools/process.py` | PowerShell/CMD 실행, 프로세스 관리, 파일 시스템, 시스템 정보 (9종) |
 | 문서 처리 + Office 검토 | `agent/tools/document.py` | Excel/Word/PDF/텍스트 읽기·쓰기 + **마크다운→진짜 docx 변환(write_word)**, Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드 읽기 (15종) |
@@ -105,6 +105,8 @@
 | 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
 | 장기기억 후속(도구·UI·비용) ✅ | `agent/tools/memory_tools.py` + `agent/server.py` + `electron/renderer/memory.js` | **① 명시적 도구** `memory_remember`/`memory_forget`/`memory_recall`(3종) — 사용자 "기억해/잊어" 즉시 반영(`_AUTONOMOUS_INSTRUCTION` 안내). **② 관리 UI** 헤더 `🧠 기억` 모달(목록·추가·삭제), `POST /memory`·`DELETE /memory/{id}`. **③ 비용 최적화** `MEMORY_EXTRACT_MODE`(close 기본): 스레드는 `close_thread`에서 1회 일괄 추출(`_extract_and_store`), 단발 요청만 턴 추출 폴백 — 매 턴 LLM 호출 제거 |
 | 요청당 툴 서브셋(128 한계) ✅ | `agent/tools/__init__.py` `select_tools` + `agent/server.py` | LLM API는 `tools` 배열을 **최대 128개**로 제한. 등록이 그보다 많으면 요청마다 **모듈 우선순위(core 우선) + 메시지/task_type 관련도**로 ≤`LLM_MAX_TOOLS`(기본 128)만 전송. 기본은 office_cloud(graph_*, 토큰 필요) 드롭, 관련 키워드 시 부스트 포함. `run_tool`·`/tool/test`·전체 등록은 그대로. (회귀: 테스트의 FakeLLM이 128 초과 시 예외) |
+| 협업모드(코치) (백로그 H) ✅ | `agent/collaborate.py` + `agent/server.py` + `electron`(HUD) | 사용자가 직접 작업하는 동안 에이전트가 관찰자로 화면을 보며 비간섭 힌트. `/collaborate/start·tick·stop`, **toolless 단발 멀티모달**(`make_hint`)로 실행 도구 구조적 차단. 변화율 게이트(`COLLAB_CHANGE_THRESHOLD`)로 비용 통제. 항상-위 플로팅 HUD(`hud.html`, focusable:false, 포커스 비탈취), 헤더 `🤝 협업` + 목표 입력 바, 클라이언트 30s 폴링 |
+| MCP 클라이언트 (백로그 J) ✅ | `agent/mcp_client.py` + `agent/tools/__init__.py` + `agent/server.py` | 외부 MCP 서버(예: Oracle DB) 도구를 런타임 등록(`register_tool` in-place, 전용 asyncio 루프 + `run_coroutine_threadsafe` sync 브릿지, `mcp` SDK 지연 import). `readOnlyHint`→`_risk`를 `classify_risk(risk_hint=)`로 반영(읽기=safe/쓰기=confirm). `mcp_servers.json`(.gitignore, `.example` 제공) + `MCP_ENABLED`. 무설정/미설치 무해. **Obsidian은 기존 유지**(대체 안 함). 실연결은 회사 환경 |
 
 **총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -129,40 +131,9 @@
 
 ---
 
-### ✅ 완성된 기능 (Phase 0 — 2026-05-29)
-
-| 항목 | 내용 |
-|------|------|
-| Phase 0 task_type/thread_id 주입 | `server.py generate()` — 시스템 프롬프트에 세션 컨텍스트 삽입, LLM이 workflow 툴 호출 시 올바른 값 사용 |
-| `_AUTO_EXEC` 워크플로우 지침 | `obsidian_session.py` — 작업 시작 시 `workflow_init` 강제, 각 단계 `workflow_set_step` 업데이트 지침 |
-| TASK_CONFIGS 시스템 프롬프트 보강 | `obsidian_session.py` — 5개 업무별 워크플로우 상세 지침, 브라우저 조작 전략 명시 |
-| 태스크별 기본 워크플로우 템플릿 | `agent/workflow/storage.py` — general(4)/syncade(6)/obsidian(5)/unscript(5)/knox(5) 단계 |
-| 워크플로우 데이터 모델 | `agent/workflow/model.py` — Workflow·WorkflowStep 데이터클래스, StepType·StepStatus Literal |
-| 워크플로우 스토리지 | `agent/workflow/storage.py` — Vault `agent/workflows/{type}/{id}.json` 저장/로드/삭제 |
-| 워크플로우 툴 | `agent/tools/workflow.py` — `workflow_init`·`set_step`·`add_step`·`update_step`·`remove_step`·`reorder` (6종) |
-| 워크플로우 API | `agent/server.py` — `GET/POST /threads/{type}/{id}/workflow` |
-| 우측 워크플로우 패널 | `electron/renderer/workflow.js` + `style.css` — 탭 전환, 드래그 리사이즈, 접기/펼치기 |
-| 에이전트 상태 바 + 중단 버튼 | `electron/renderer/chat.js` — thinking/running/waiting/idle, `POST /stop/{request_id}` |
-| 컨텍스트 사용량 표시 | `agent/server.py` + `chat.js` — 헤더 진행 바, 80%/95% 경고 |
-| 실행 로그 패널 | `electron/renderer/workflow.js` — 툴 실행 시간·결과 기록, 최대 50개 유지 |
-| 빠른 작업 버튼 | `electron/renderer/index.html` — OCR·파일·브라우저·타이핑 프롬프트 삽입 |
-| SSE 이벤트 상수 | `agent/core/events.py` — 모든 이벤트 타입 중앙화 |
-
----
-
-### 🔲 개발 예정 기능 (미착수만)
-
-> 완료 기능은 위 "현재 상태" 표 참조. 아래는 남은 항목만.
-
-#### Electron 패키징 / 배포 (`electron-builder`)
-- `package.json` `build` 섹션 추가 → `npm run dist`로 `.exe` 인스톨러 빌드.
-- Python 환경 번들(`conda-pack`) 또는 별도 설치 가이드. 완료 시 `README.md`·`SETUP.md` 배포 섹션 갱신.
-
-#### Office 편집 백엔드 확정 (회사 PC 확인 필요)
-- 사내 문서 백엔드(네트워크 드라이브 / 온프렘 SharePoint / 사내 M365) 확인 후 경로 구현. → `docs/office-editing-next-steps.md`
-
-> 장기기억 후속(명시적 `memory_*` 도구·관리 UI·close 일괄추출)은 ✅ 완료 — 위 "현재 상태" 표 참조.
-> 사용자 요청 신규 백로그(협업모드·MCP·Office base64·OpenHands 등)는 아래 "향후 개선 아이디어(Backlog) H~L" 참조.
+> **Phase 0 기반(2026-05-29) ✅ 완료**: task_type/thread_id 주입·`_AUTO_EXEC` 워크플로우 지침·TASK_CONFIGS 5종·태스크별 기본 템플릿·워크플로우 모델/스토리지/툴/API·우측 패널·상태 바·컨텍스트 바·실행 로그·빠른 작업·SSE 이벤트 상수. (상세는 위 "현재 상태" 표 + `agent/workflow/`·`obsidian_session.py`)
+>
+> **미착수 항목은 아래 "향후 개선 아이디어(Backlog)"가 단일 목록**(F·G·K·L).
 
 ---
 
@@ -252,19 +223,24 @@ mes-agent/
 ├── docs/
 │   └── agent-guide.md      ← 툴 추가 방법 가이드
 ├── electron/
-│   ├── main.js             ← Python 서버 자동 시작, 창 생성
-│   ├── preload.js          ← contextBridge (serverPort 노출)
+│   ├── main.js             ← Python 서버 자동 시작, 창 생성 + 협업 HUD 창(백로그 H)
+│   ├── preload.js          ← contextBridge (serverPort·협업 HUD 제어 노출)
+│   ├── hud-preload.js      ← 협업 HUD 창 전용 preload (백로그 H)
 │   └── renderer/
 │       ├── index.html      ← UI 레이아웃 (3-패널: 사이드바 + 채팅 + 우측 워크플로우)
-│       ├── chat.js         ← 채팅 + SSE 스트리밍 + 에이전트 상태 바 + 중단 버튼
+│       ├── chat.js         ← 채팅 + SSE 스트리밍 + 에이전트 상태 바 + 협업모드 컨트롤러
 │       ├── workflow.js     ← 우측 워크플로우 패널 + 실행 로그 탭 + 드래그 리사이즈
 │       ├── tool-test.js    ← 도구 직접 테스트 패널
+│       ├── memory.js       ← 🧠 장기기억 관리 모달
+│       ├── hud.html/hud.js ← 협업 코치 플로팅 HUD (백로그 H)
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억. (/health /chat /stop /memory /profile /models /confirm /tool/test /task-config /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억. (/health /chat /stop /memory /collaborate/* /profile /models /confirm /tool/test /task-config /threads/* /workflow)
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
 │   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
+│   ├── collaborate.py      ← 협업모드 코치: 화면 변화감지 + toolless 힌트 (백로그 H) ✅
+│   ├── mcp_client.py       ← MCP 클라이언트: 외부 서버 도구 런타임 등록 + sync 브릿지 (백로그 J) ✅
 │   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
 │   ├── core/
 │   │   ├── events.py       ← SSE 이벤트 타입 상수
@@ -323,152 +299,49 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ---
 
-## 향후 개선 아이디어 (Backlog)
+## 향후 개선 아이디어 (Backlog) — 미착수만
 
-> 우선순위 없음. 설계 전 타당성 검토 필요. README.md에도 동일 내용 기재.
+> **완료 항목은 위 "현재 상태" 표가 단일 기록**(중복 방지). 완료된 백로그 — A IDE식 탭·B 반응형 워크플로우 패널·
+> C 실행 중 창 최소화·D 모델 선택 UI·E 장기기억·**H 협업모드·I 포커스 비탈취·J MCP 클라이언트** — 는 표 참조.
+> H·I·J 상세 설계·구현 기록은 `docs/backlog/{H,I,J}-*.md`.
 
-> ✅ **A·B·C·D 완료 (2026-06-08)** — 아래 항목들은 구현되었습니다. 기록 보존을 위해 원문을 남겨둡니다.
+### F. Electron 패키징 배포 🔲
 
-### A. IDE식 탭 + 스레드 관리 개선 🖥️ — ✅ 완료
+`electron-builder` → `.exe` 인스톨러. Python 환경 `conda-pack` 동봉. `npm run dist` 한 명령 빌드. 완료 시 `README.md`·`SETUP.md` 배포 섹션 갱신.
 
-**배경**: 스레드가 조금만 쌓여도 사이드바 관리 어려움. 상단 채팅 탭 영역이 사이드바로 이전된 뒤 빈 공간으로 방치 중.
+### G. Office 편집 고도화 로드맵 🏢 — 대부분 완료, P3만 대기
 
-**아이디어**:
-- 상단 빈 탭 바를 IDE처럼 "활성 스레드 탭"으로 활용 (VS Code 스타일)
-- `×` 버튼은 **삭제 아닌 닫기** — 탭에서만 제거, 사이드바 목록 보존
-- 사이드바: 최근 N개 + 폴더 검색 + 접이식 그룹(진행 중 / 완료 / 보관)
-- 탭 overflow 시 스크롤 or `>` 드롭다운 메뉴
+> P1 LibreOffice 변환(`office_libre.py`)·P2 라운드트립 프롬프트(`office_locate_file`)·P4 MS Graph Excel(`office_cloud.py`)은 ✅ 완료(현재 상태 표). 아래 비교표·전략은 **P3(OnlyOffice) 설계 참고용**으로 남긴다.
 
-**구현 포인트**: `chat.js` 탭 렌더 로직 + `index.html` 레이아웃 수정. 탭 상태는 메모리 유지(새로고침 시 재로드).
-
----
-
-### B. 워크플로우 패널 컴팩트 + 반응형 레이아웃 📋 — ✅ 완료
-
-**배경**: 그래프 캔버스 화살표·노드가 커서 좁은 사이드바(300px)에 정보량이 너무 적음. 초기 선형 플로우가 좌우로 그려져 공간 낭비.
-
-**아이디어**:
-- **반응형**: 사이드바 너비 감지 → 좁음(<350px): 세로 1열 카드 목록, 넓음(≥350px): 2D 그래프
-- **컴팩트 노드**: 화살표 축소, 노드 높이 최소화, 완료 노드는 아이콘만 표시로 접기
-- **상태 중심 표시**: running/error 노드만 펼침, 나머지는 collapsed
-- 구현: `workflow.js` `_layout()` 및 `renderCanvas()` 분기 처리. `ResizeObserver`로 패널 너비 감지.
-
----
-
-### C. 에이전트 실행 중 창 최소화 UX 🪟 — ✅ 완료 (자동최소화·반투명·끄기 토글)
-
-**배경**: 에이전트가 화면 OCR/이미지 매칭을 수행하는 동안 앱 창이 화면을 가려 심각한 동작 실패. 현재 회피책 없음.
-
-**구현 가능성: 높음** — Electron BrowserWindow API로 즉시 구현 가능.
-
-**옵션 (난이도 낮은 순)**:
-1. **자동 최소화** (권장): `agentState=running` SSE → `ipcRenderer.send('minimize-window')` → `main.js`에서 `win.minimize()`. idle 수신 시 `win.restore()`.
-2. **뱃지 창 모드**: 100×60px 플로팅 윈도우로 전환. 진행 상태(단계명, 시간)만 표시. 클릭 시 복원.
-3. **반투명 모드**: `win.setOpacity(0.15)` — 창은 유지하되 화면 간섭 최소화.
-
-**구현 항목**: `main.js` IPC 핸들러 추가, `chat.js` agentState 이벤트 훅, (옵션 2의 경우) 별도 뱃지 창 `BrowserWindow` 생성.
-
----
-
-### D. AI 모델 다중 선택 UI 🤖 — ✅ 완료 (헤더 드롭다운, 동적/프리셋)
-
-**배경**: LLM 전환이 "프로파일" 단위만 가능. 같은 엔드포인트에서 모델명만 바꾸려면 `.env` 직접 수정 필요.
-
-**아이디어**:
-- 헤더 [LLM 프로파일] 버튼 → 드롭다운: 엔드포인트·모델명·temperature 선택
-- 모델 프리셋: 빠른(nano) / 균형(mini) / 정밀(full) / 비전(vision 지원 모델)
-- 스레드별 모델 오버라이드 지원
-- `GET /v1/models` API로 사내 LLM 모델 목록 동적 조회 (OpenAI 호환 시)
-
-**구현 항목**: `config.py` `MODEL_OVERRIDES` 추가, `/profile` API 확장, `index.html` 드롭다운 UI.
-
----
-
-### E. 일반 채팅 대화 기억 — ✅ 완료(대화 간 장기기억으로 구현)
-
-스레드 내 멀티턴은 원래 동작. 스레드를 넘는 장기기억을 `agent/memory.py`로 구현(추출·주입·`MEMORY_ENABLED`). 위 "현재 상태" 표 + #### 2 참조.
-
-### F. Electron 패키징 배포
-
-`electron-builder` → `.exe` 인스톨러. Python 환경 `conda-pack` 동봉. `npm run dist` 한 명령 빌드.
-
----
-
-### G. Office 편집 고도화 로드맵 (2026-06-08 웹조사 반영) 🏢
-
-**배경**: 기존 Office 편집은 ① 로컬+Office설치 → COM, ② Office 없음 → python-docx/openpyxl/pptx 폴백, ③ 클라우드 → 브라우저 진입(office_web_open)+UI Automation 까지 구현됨. 웹 조사로 더 나은 경로를 정리한다.
-
-**조사한 방식 비교 (출처는 커밋 메시지·세션노트 참조)**:
+**방식 비교**:
 
 | 방식 | 장점 | 한계 | 폐쇄망 적합 |
 |------|------|------|:---:|
 | **MS COM** (구현됨) | 로컬 파일 완전충실도(수식·서식·수정추적·메모·PDF) | Windows+Office 설치 필요 | 로컬 ◎ |
-| **MS Graph API** | Excel 셀/수식/서식 REST 편집 풍부(세션 기반), 클라우드 파일 직접 | **M365 테넌트+Azure AD OAuth 필요**, Word/PPT 콘텐츠 편집은 미지원(Aspose/Office.js 필요) | M365 연결 시만 △ |
-| **OnlyOffice Docs + Document Builder** | **오픈소스·Docker 자체호스팅**, OOXML(docx/xlsx/pptx) 완전 편집, 브라우저 협업 에디터 + **헤드리스 빌더 JS API**(UI 없이 생성·편집·변환) | 서버 호스팅 필요, 빌더 JS 스크립팅 학습, Community 동시 20연결 | **◎ (최적)** |
-| **LibreOffice headless / UNO** | 오픈소스·무료·크로스플랫폼, **MS Office 불필요**, 헤드리스 변환(docx→pdf)·UNO 편집 | pyuno가 Python 버전과 일치해야, MS 대비 미세 서식차 | ◎ (오프라인) |
-| **Edge UI 자동화 + OCR/UI Automation** (구현됨) | API 없는 어떤 웹 에디터도 가능(최후수단) | 깨지기 쉬움, 느림 | 보편 △ |
+| **MS Graph API** (구현됨) | Excel 셀/수식 REST 편집(세션 기반), 클라우드 파일 직접 | **M365+Azure AD OAuth 필요**, Word/PPT 콘텐츠 편집 미지원 | M365 연결 시만 △ |
+| **OnlyOffice Docs + Document Builder** | 오픈소스·Docker 자체호스팅, OOXML 완전 편집, 헤드리스 빌더 JS API | 서버 호스팅·JWT 설계 필요 | **◎ (P3 후보)** |
+| **LibreOffice headless** (구현됨) | 오픈소스·MS Office 불필요, 헤드리스 변환 | MS 대비 미세 서식차 | ◎ (오프라인) |
+| **Edge UI 자동화** (구현됨) | API 없는 웹 에디터도 가능(최후수단) | 깨지기 쉬움·느림 | 보편 △ |
 
-**핵심 전략 — 라운드트립이 최선**: 클라우드 문서(SharePoint/OneDrive)를 *브라우저에서 직접 편집*(취약)하지 말고, **다운로드(또는 OneDrive 동기화 로컬 파일) → COM/LibreOffice로 완전충실도 편집 → 업로드** 한다. OneDrive 동기화 폴더면 클라우드 문서가 곧 로컬 파일이라 COM이 바로 동작한다.
+**핵심 전략(라운드트립)**: 클라우드 문서를 브라우저 직접 편집(취약) 대신 **로컬(다운로드/OneDrive 동기화) → COM/LibreOffice 완전충실도 편집 → 업로드**.
 
-**구현 우선순위**:
-1. **P1 LibreOffice 변환 엔진** (`office_libre.py`) — MS Office 없는 PC의 고품질 오프라인 폴백. `soffice --headless --convert-to`로 신뢰성 높은 PDF/포맷 변환(`libre_convert` 툴). `word_export_pdf`/`ppt_export_pdf`가 COM 불가 시 자동 폴백. ✅ **완료** (단, 검증 PC에 LibreOffice 미설치 — 설치 환경에서 종단 검증 필요)
-2. **P2 라운드트립 프롬프트 전략** — 클라우드 문서는 동기화/다운로드 로컬 경로를 우선 탐색해 COM 편집 후 저장. ✅ **완료** (`office_locate_file` 툴: OneDrive/SharePoint 동기화 폴더 탐색 + 프롬프트 지침)
-3. **P3 OnlyOffice Document Server 연동** (폐쇄망 자체호스팅 시) — 헤드리스 Document Builder API로 대량 생성·편집·변환, 브라우저 협업 에디터 임베드. `.env`로 서버 URL 설정. 🔲 **대기**(서버 호스팅 + JWT 서명/콜백 설계 필요 — 라이브 환경 확정 시 진행)
-4. **P4 MS Graph Excel 클라이언트** (M365 사용 시) — 클라우드 Excel 셀/수식 REST 편집. ✅ **완료** (`office_cloud.py`: graph_find_item·graph_excel_get_range·graph_excel_set_range, `GRAPH_ACCESS_TOKEN` 게이트, urllib 무의존, 요청구성 mock 검증. Azure AD 토큰 발급은 사용자 환경)
+**P3 OnlyOffice Document Server** 🔲 대기 — 폐쇄망 자체호스팅 시 헤드리스 Document Builder로 대량 생성·편집·변환. 서버 호스팅 + JWT 서명/콜백 설계 필요(라이브 환경 확정 시).
 
-> 참고 출처: ONLYOFFICE DocumentServer/DocumentBuilder(GitHub, api.onlyoffice.com), MS Graph Excel API(learn.microsoft.com/graph), LibreOffice headless/UNO·unoconv.
-
-**⏭ 다음 작업 가이드**: `docs/office-editing-next-steps.md` — 사내 문서 백엔드(네트워크드라이브 / 온프렘 SharePoint / 사내 M365 / OnlyOffice) 확인 절차 + 각 경로별 구현 스케치. **`sbiologics.com`이 일반 O365가 아닌 사내 전용이라, 회사 PC에서 실제 문서 URL/경로를 먼저 확인해야 정확한 경로 결정 가능.** `GRAPH_BASE_URL` 환경변수로 사내 M365 엔드포인트 재정의는 이미 지원.
-
----
-
-### H. 협업모드(코치 모드) 🤝 — 🔲 대기
-
-**배경**: 사용자가 목표를 세우고 직접 작업하는 동안, 에이전트가 *실행자*가 아니라 *관찰자/조언자*로
-화면 맥락을 계속 파악하며 필요한 부분에 비간섭 힌트를 준다. (방금 만든 `capture_screen` 위에 쌓는 다음 1순위 후보)
-
-**확정된 설계 방향**(사용자 선택):
-- **트리거 = 하이브리드**: 주기적 자동 감시 + 변화 감지(`compare_screenshots` 재사용)로 의미 있는 변화 때만 LLM 호출(비용↓) + 사용자 수동 "지금 봐줘".
-- **힌트 UI = 항상-위 플로팅 HUD**: 작고 끌어다닐 수 있는 옅은 투명 오버레이 창(**포커스 비탈취**). 메인창을 안 띄워도 됨.
-
-**구현 스케치**:
-- `agent_mode='collaborate'` 신설(기존 auto/plan 패턴 확장). 협업모드에선 desktop/browser **제어 도구를 구조적으로 차단**(plan 모드 차단 패턴 재사용), `capture_screen`·관찰·`memory_*`·`ask_user`만 허용.
-- SSE `COLLABORATION_HINT` 이벤트 추가 → HUD 렌더.
-- Electron 별도 `BrowserWindow`(`alwaysOnTop:true`, `focusable:false`, `setIgnoreMouseEvents` 토글) — 백로그 C IPC 패턴 재사용.
-- 주기 감시: 백그라운드 폴링(워크플로우 `WF_POLL_INTERVAL` SSE 패턴 참고) + 변화 감지 게이트.
-
-### I. 협업 UX — 포커스 비탈취 🪟 — 🔲 대기
-
-**배경**: 현재 메신저(채팅창)를 화면에 상주시켜야 하고, 에이전트가 `browser.py _get_page()`(`headless=False`)로
-새 페이지를 열 때마다 브라우저가 **자동 전면화**되어 사용자 작업을 가로챈다.
-
-**아이디어**: `browser.py`에 `bring_to_front` 옵션 추가(기본 off, 협업모드에선 강제 off). 메신저 상주 필요는 H의 HUD로 해소.
-기존 백로그 C(창 최소화/반투명)와 결합해 "에이전트가 화면을 건드릴 때만 비키고, 평소엔 사용자 작업 우선".
-
-### J. MCP 클라이언트 + Oracle DB MCP 🔌 — 🔲 대기
-
-**배경**: 현재 MCP를 배제하고 만들었으나, MCP 클라이언트를 준비하면 외부 표준 도구(파일시스템·git·DB 등)를 손쉽게 붙일 수 있다. 기본으로 **Oracle DB MCP 1개** 연동 예정.
-
-**구현 스케치**(탐색 보고 기반):
-- `agent/mcp_client.py` 신설: `.env` MCP 서버 목록 → 연결 후 도구를 MANIFEST로 변환해 `_registry`에 **런타임 등록**(`tools/__init__.py` 동적 등록 지점 활용).
-- 비동기 MCP 호출은 `browser.py` 전용 single-thread executor 패턴으로 **sync 브릿지**(`run_tool`이 동기라).
-- `requirements.txt`에 `mcp` 추가(폐쇄망: USB 사전반입). G3 `_safety.classify_risk`에 MCP 도구 prefix 위험도 매핑(`*_query`=mutate 등).
-- **기존 기능 MCP 대체 검토** 후보: Obsidian(공식 `mcp-obsidian`), filesystem, git, fetch. 단 화면/데스크탑/Office COM 등 로컬 의존은 대체 불가.
-- Oracle **실연결은 회사 환경 필요**(인프라는 로컬/공개 MCP로 선검증).
+**⏭ 가이드**: `docs/office-editing-next-steps.md` — **`sbiologics.com`이 사내 전용이라 회사 PC에서 실제 문서 URL/경로 확인 선행.** `GRAPH_BASE_URL`로 사내 M365 엔드포인트 재정의 지원.
 
 ### K. Office 문서 base64 멀티모달 📄 — 🔲 대기 (회사 테스트 선행)
 
-**배경**: Office 문서를 base64로 인코딩해 멀티모달 LLM에 직접 보내 읽히는 경로. `capture_screen` 이미지 주입 패턴을 문서로 확장.
-
-**선행 블로커**: **회사 DRM 환경에서 base64 멀티모달 인식 여부를 먼저 테스트**해야 함(DRM이 바이트 접근을 막을 수 있음). 통과 시 `vision.py` 주입 패턴 재사용해 구현.
+Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`capture_screen` 주입 패턴을 문서로 확장).
+**선행 블로커**: 회사 DRM 환경에서 base64 멀티모달 인식 여부 테스트 필요(DRM이 바이트 접근 차단 가능). 통과 시 `vision.py` 패턴 재사용.
 
 ### L. OpenHands 기능 이식 🛠 — 🔲 대기 (조사 중심)
 
-**배경**: 오픈소스 자율 에이전트 OpenHands의 좋은 패턴을 조사·선별해 이식.
+오픈소스 자율 에이전트 OpenHands의 좋은 패턴 조사·선별 이식. 후보: 이벤트 스트림/상태머신, 마이크로에이전트(지식 주입),
+샌드박스 런타임, 구조화된 브라우징 관찰, 컨덴서(메모리 압축—기존 G1과 비교). **출처 governance(클린룸, `docs/CLAW_PORT_PLAN.md`) 준수.**
 
-**후보**: 이벤트 스트림/상태머신, 마이크로에이전트(상황별 지식 주입), 샌드박스 런타임, 구조화된 브라우징 관찰(observation), 컨덴서(메모리 압축 — 기존 G1과 비교). **조사 중심 트랙** — 라이선스·출처 governance(클린룸 규칙, `docs/CLAW_PORT_PLAN.md`) 준수.
+### (대기) Office 편집 백엔드 확정
 
-> **참고**: office365 백엔드 확정(위 G + 개발 예정)·electron 패키징(F)은 기존 항목. 장기기억 후속은 ✅ 완료.
+사내 문서 백엔드(네트워크 드라이브 / 온프렘 SharePoint / 사내 M365 / OnlyOffice) 확인 후 경로 구현 → G·`docs/office-editing-next-steps.md`. 회사 PC 확인 선행.
 
 ---
 
@@ -480,3 +353,4 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 - Playwright 브라우저 바이너리: `python -m playwright install chromium` 실행 후 `%LOCALAPPDATA%\ms-playwright\` 폴더 전체 이전
 - Electron 배포는 나중에 (현재는 개발 단계)
 - `npx -y`는 외부 다운로드 시도 → `mcp-obsidian`은 외부망에서 `npm pack`으로 챙길 것
+- MCP 클라이언트(백로그 J): Python `mcp` 패키지 + Oracle MCP 서버(python-oracledb 기반 권장)를 USB 사전반입. 미설치여도 앱은 동작(지연 import)
