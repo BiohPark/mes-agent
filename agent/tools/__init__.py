@@ -49,6 +49,24 @@ def run_tool(name: str, arguments: str) -> str:
     return _registry[name]["handler"](args)
 
 
+def register_tool(manifest: dict) -> None:
+    """런타임에 도구를 추가한다(MCP 등 늦은 등록용).
+
+    TOOLS/TOOL_LABELS를 **in-place** 갱신해 다른 모듈이 import한 참조가 유효하게 유지한다.
+    """
+    name = manifest["name"]
+    is_new = name not in _registry
+    _registry[name] = manifest
+    if is_new:
+        TOOLS.append(manifest["schema"])
+    TOOL_LABELS[name] = manifest["label"]
+
+
+def tool_risk_hint(name: str):
+    """레지스트리에 기록된 위험도 힌트(MCP readOnlyHint 등)를 반환한다(없으면 None)."""
+    return _registry.get(name, {}).get("_risk")
+
+
 # ── 요청당 도구 서브셋 선택 (128 한계 대응) ─────────────────────
 
 # OpenAI 호환 API의 tools 배열 최대 길이
@@ -59,11 +77,11 @@ LLM_MAX_TOOLS = int(os.environ.get("LLM_MAX_TOOLS", "128"))
 _MODULE_PRIORITY = [
     "ocr", "interaction", "memory_tools", "workflow", "vision",
     "screen", "desktop", "browser", "process", "document",
-    "obsidian_rag", "obsidian_session",
-    # ← 미등록 모듈은 여기(_UNKNOWN_RANK)에 들어간다
+    "obsidian_rag", "obsidian_session", "mcp",
+    # ← 그 밖의 미등록 모듈은 여기(_UNKNOWN_RANK)에 들어간다
     "ui_automation", "office_com", "office_libre", "office_cloud",
 ]
-_UNKNOWN_RANK = 12  # obsidian_session(11) 직후, ui_automation(12) 앞
+_UNKNOWN_RANK = 13  # mcp(12) 직후, ui_automation(13) 앞
 _RELEVANCE_BOOST = 100  # 관련 모듈을 우선순위 앞으로 당기는 폭
 _TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 

@@ -499,6 +499,37 @@ body {
   white-space: pre-wrap;
 }
 
+/* 협업모드 목표 입력 바 (백로그 H) */
+#collab-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #122a44;
+  border-bottom: 1px solid #1b3a5c;
+}
+#collab-bar.hidden { display: none; }
+.collab-bar-icon { font-size: 15px; flex-shrink: 0; }
+#collab-goal-input {
+  flex: 1;
+  background: #0d1b2a;
+  border: 1px solid #1b3a5c;
+  border-radius: 6px;
+  color: #e6edf3;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+#collab-start-btn {
+  background: #1f6f43; border: none; border-radius: 6px;
+  color: #d6ffe6; padding: 7px 14px; font-size: 13px; cursor: pointer;
+}
+#collab-start-btn:hover { background: #268a53; }
+#collab-cancel-btn {
+  background: transparent; border: none; color: #6b7a90;
+  font-size: 14px; cursor: pointer; padding: 4px 8px;
+}
+#collab-cancel-btn:hover { color: #e94560; }
+
 /* 에이전트가 캡처해 직접 본 화면 썸네일 */
 .chat-screenshot {
   display: block;

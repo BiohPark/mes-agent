@@ -21,6 +21,8 @@
         <button id="planmode-btn" class="hdr-btn" title="실행 모드 — 자동 실행 / 계획 후 승인">⚡ 자동</button>
         <!-- 장기기억 관리 (장기기억 후속) -->
         <button id="memory-btn" class="hdr-btn" title="장기기억 관리 — 무엇을 기억 중인지 보기/추가/삭제">🧠 기억</button>
+        <!-- 협업모드(코치) (백로그 H) -->
+        <button id="collab-btn" class="hdr-btn" title="협업모드 — 에이전트가 화면을 보며 비간섭 힌트를 띄움">🤝 협업</button>
         <!-- 실행 중 창 모드 (개선 아이디어 C) -->
         <div id="busymode-switcher">
           <button id="busymode-btn" class="hdr-btn" title="에이전트 실행 중 창 동작">🪟 최소화</button>
@@ -145,6 +147,14 @@
           <span id="current-thread-info"></span>
           <div class="ctb-spacer"></div>
           <button id="thread-close-current-btn" class="hidden" title="이 스레드를 완료하기">완료하기</button>
+        </div>
+
+        <!-- 협업모드 목표 입력 바 (백로그 H) -->
+        <div id="collab-bar" class="hidden">
+          <span class="collab-bar-icon">🤝</span>
+          <input id="collab-goal-input" type="text" placeholder="협업 목표를 입력하세요 (예: 분기 매출 보고서 완성)" />
+          <button id="collab-start-btn">시작</button>
+          <button id="collab-cancel-btn" title="협업 종료">✕</button>
         </div>
 
         <div id="messages"></div>

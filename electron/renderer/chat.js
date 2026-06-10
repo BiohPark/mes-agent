@@ -1148,3 +1148,91 @@ document.addEventListener('wf:retry-step', ({ detail: { stepTitle } }) => {
   if (!currentTaskType || !currentThreadId || inputEl.disabled) return
   sendMessage(`"${stepTitle}" 단계에서 오류가 발생했습니다. 이 단계를 다시 시도해주세요.`)
 })
+
+// ── 협업모드(코치 모드) 컨트롤러 (백로그 H) ───────────────────────
+// 메인 렌더러가 두뇌: 목표 설정 → 주기 틱(/collaborate/tick) → 힌트를 HUD로 중계.
+// 화면을 직접 보는 건 서버이고, 여기선 폴링·표시만 한다(포커스 비탈취 = HUD가 focusable:false).
+const COLLAB_TID = '__collab__'        // 스레드 전환과 무관한 고정 세션 키
+const COLLAB_TICK_MS = 30000           // 클라이언트 폴링 주기(서버 .env COLLAB_CHANGE_THRESHOLD로 변화 게이트)
+const collabBtn = document.getElementById('collab-btn')
+const collabBar = document.getElementById('collab-bar')
+const collabGoalInput = document.getElementById('collab-goal-input')
+const collabStartBtn = document.getElementById('collab-start-btn')
+const collabCancelBtn = document.getElementById('collab-cancel-btn')
+let collabActive = false
+let collabTimer = null
+
+function collabUpdateHud(payload) {
+  window.electronAPI?.collabUpdateHud?.(payload)
+}
+
+async function collabTick(force = false) {
+  if (!collabActive) return
+  if (force) collabUpdateHud({ state: 'thinking' })
+  try {
+    const res = await fetch(`${BASE_URL}/collaborate/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: COLLAB_TID, force }),
+    })
+    const data = await res.json()
+    if (data.hint) collabUpdateHud({ hint: data.hint })
+    else collabUpdateHud({ state: 'idle' })
+  } catch (e) {
+    collabUpdateHud({ state: 'idle' })
+  }
+}
+
+async function collabStart() {
+  const goal = collabGoalInput.value.trim()
+  try {
+    await fetch(`${BASE_URL}/collaborate/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: COLLAB_TID, goal }),
+    })
+  } catch (e) { /* 서버 미연결이어도 UI는 토글 */ }
+  collabActive = true
+  collabBar.classList.add('hidden')
+  collabBtn.classList.add('active')
+  window.electronAPI?.collabShowHud?.()
+  collabUpdateHud({ state: 'idle' })
+  if (collabTimer) clearInterval(collabTimer)
+  collabTimer = setInterval(() => collabTick(false), COLLAB_TICK_MS)
+  collabTick(true)  // 시작 즉시 한 번
+}
+
+async function collabStop() {
+  collabActive = false
+  collabBar.classList.add('hidden')
+  collabBtn.classList.remove('active')
+  if (collabTimer) { clearInterval(collabTimer); collabTimer = null }
+  window.electronAPI?.collabHideHud?.()
+  try {
+    await fetch(`${BASE_URL}/collaborate/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: COLLAB_TID }),
+    })
+  } catch (e) { /* noop */ }
+}
+
+collabBtn?.addEventListener('click', () => {
+  if (collabActive) { collabStop(); return }
+  // 목표 입력 바 토글
+  const showing = !collabBar.classList.contains('hidden')
+  collabBar.classList.toggle('hidden', showing)
+  if (!showing) collabGoalInput.focus()
+})
+collabStartBtn?.addEventListener('click', collabStart)
+collabGoalInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') collabStart() })
+collabCancelBtn?.addEventListener('click', () => {
+  if (collabActive) collabStop()
+  else collabBar.classList.add('hidden')
+})
+
+// HUD에서 올라온 사용자 동작 처리
+window.electronAPI?.onCollabCommand?.(({ type }) => {
+  if (type === 'manual') collabTick(true)
+  else if (type === 'stop') collabStop()
+})

@@ -36,6 +36,63 @@ def _on_pw_thread(fn):
     return wrapper
 
 
+# ── 포커스 비탈취 (백로그 I) ──────────────────────────────────
+# 브라우저를 열거나 페이지를 이동하면 OS가 브라우저 창을 자동 전면화해 사용자 작업을
+# 가로챈다. 작업 직전 사용자의 foreground 창을 기억했다가 작업 후 복원한다.
+# BROWSER_FOCUS_STEAL=true 거나 bring_to_front=True면 복원하지 않는다(기존 동작).
+
+def _focus_steal_allowed(bring_to_front=None) -> bool:
+    if bring_to_front is True:
+        return True
+    if bring_to_front is False:
+        return False
+    return os.environ.get("BROWSER_FOCUS_STEAL", "false").lower() in ("1", "true", "yes")
+
+
+def _capture_foreground():
+    """현재 foreground 창 핸들을 반환한다(win32 불가 시 None)."""
+    try:
+        import win32gui
+        return win32gui.GetForegroundWindow()
+    except Exception:
+        return None
+
+
+def _restore_foreground(hwnd) -> None:
+    """기억해 둔 사용자 창을 다시 전면화한다(win32 제약 우회: AttachThreadInput)."""
+    if not hwnd:
+        return
+    try:
+        import win32gui
+        import win32process
+        if not win32gui.IsWindow(hwnd):
+            return
+        cur = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())[0]
+        tgt = win32process.GetWindowThreadProcessId(hwnd)[0]
+        attached = False
+        try:
+            if cur and tgt and cur != tgt:
+                win32process.AttachThreadInput(cur, tgt, True)
+                attached = True
+            win32gui.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                win32process.AttachThreadInput(cur, tgt, False)
+    except Exception:
+        pass  # 포커스 복원은 best-effort — 실패해도 작업은 계속
+
+
+def _preserve_focus(bring_to_front, fn):
+    """fn 실행 동안 사용자 포커스를 보존한다. steal 허용 시 그대로 실행."""
+    if _focus_steal_allowed(bring_to_front):
+        return fn()
+    prev = _capture_foreground()
+    try:
+        return fn()
+    finally:
+        _restore_foreground(prev)
+
+
 def _get_page(headless: bool = False) -> Page:
     global _pw, _browser, _page
     if _page is None or _page.is_closed():
@@ -69,13 +126,17 @@ def _safe_call(fn):
 
 # ── 공개 툴 ───────────────────────────────────────────────────
 
-def browser_open(url: str, headless: bool = False) -> str:
+def browser_open(url: str, headless: bool = False, bring_to_front: bool = None) -> str:
     """브라우저를 열고 지정한 URL로 이동합니다.
-    headless=True 시 화면 없이 백그라운드로 실행됩니다."""
-    page = _get_page(headless)
-    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-    return json.dumps({"url": page.url, "title": page.title(),
-                       "message": f"페이지 로드 완료: {page.title()}"})
+    headless=True 시 화면 없이 백그라운드로 실행됩니다.
+    기본은 사용자 작업 포커스를 빼앗지 않습니다(창을 열되 전면화하지 않음).
+    bring_to_front=True면 브라우저를 전면으로 가져옵니다(키보드 조작이 필요할 때)."""
+    def _do():
+        page = _get_page(headless)
+        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        return json.dumps({"url": page.url, "title": page.title(),
+                           "message": f"페이지 로드 완료: {page.title()}"})
+    return _preserve_focus(bring_to_front, _do)
 
 
 def _resolve_doc_url(url: str) -> str:
@@ -157,11 +218,14 @@ def office_web_open(url: str, timeout: int = 60000) -> str:
     return _safe_call(_do)
 
 
-def browser_navigate(url: str) -> str:
-    """현재 브라우저 탭에서 다른 URL로 이동합니다."""
-    page = _get_page()
-    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-    return json.dumps({"url": page.url, "title": page.title()})
+def browser_navigate(url: str, bring_to_front: bool = None) -> str:
+    """현재 브라우저 탭에서 다른 URL로 이동합니다.
+    기본은 사용자 작업 포커스를 빼앗지 않습니다."""
+    def _do():
+        page = _get_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        return json.dumps({"url": page.url, "title": page.title()})
+    return _preserve_focus(bring_to_front, _do)
 
 
 def browser_get_url() -> str:
@@ -399,13 +463,14 @@ MANIFEST = [
                     "type": "object",
                     "properties": {
                         "url": {"type": "string"},
-                        "headless": {"type": "boolean", "description": "true=화면 없이 실행"}
+                        "headless": {"type": "boolean", "description": "true=화면 없이 실행"},
+                        "bring_to_front": {"type": "boolean", "description": "true=브라우저를 전면화(키보드 조작 필요 시). 기본은 사용자 포커스 비탈취"}
                     },
                     "required": ["url"]
                 }
             }
         },
-        "handler": lambda a: browser_open(a["url"], a.get("headless", False))
+        "handler": lambda a: browser_open(a["url"], a.get("headless", False), a.get("bring_to_front"))
     },
     {
         "name": "browser_navigate",

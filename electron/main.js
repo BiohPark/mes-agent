@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
@@ -24,6 +24,7 @@ const _envFromFile = loadDotEnv()
 const SERVER_PORT = parseInt(_envFromFile.AGENT_PORT || process.env.AGENT_PORT || '8000', 10)
 
 let mainWindow
+let hudWindow
 let pythonProcess
 
 function startPythonServer() {
@@ -71,7 +72,41 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
   if (process.env.DEV_TOOLS === '1') mainWindow.webContents.openDevTools()
+
+  mainWindow.on('closed', () => {
+    if (hudWindow && !hudWindow.isDestroyed()) hudWindow.close()
+  })
 }
+
+// ── 협업모드 플로팅 HUD (백로그 H) ──────────────────────────────
+// 포커스 비탈취: focusable:false, alwaysOnTop. 메인창을 안 띄워도 힌트만 떠 있음.
+function createHudWindow() {
+  if (hudWindow && !hudWindow.isDestroyed()) { hudWindow.show(); return }
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  hudWindow = new BrowserWindow({
+    width: 340, height: 160,
+    x: width - 360, y: height - 190,
+    frame: false, transparent: true, resizable: false,
+    alwaysOnTop: true, focusable: false, skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'hud-preload.js'),
+      contextIsolation: true, nodeIntegration: false
+    }
+  })
+  hudWindow.setAlwaysOnTop(true, 'screen-saver')
+  hudWindow.loadFile(path.join(__dirname, 'renderer', 'hud.html'))
+  hudWindow.on('closed', () => { hudWindow = null })
+}
+
+// 메인 렌더러가 HUD 표시/숨김·갱신을 제어하고, HUD의 사용자 동작은 메인으로 중계한다.
+ipcMain.on('collab-show-hud', () => createHudWindow())
+ipcMain.on('collab-hide-hud', () => { if (hudWindow && !hudWindow.isDestroyed()) hudWindow.close() })
+ipcMain.on('hud-update-fwd', (_e, payload) => {
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.webContents.send('hud-update', payload)
+})
+ipcMain.on('hud-event', (_e, payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('collab-command', payload)
+})
 
 // ── 실행 중 창 가림 회피 (개선 아이디어 C) ──────────────────────
 // 렌더러가 agentState=running 일 때 'agent-busy', idle 일 때 'agent-idle' 를 보낸다.

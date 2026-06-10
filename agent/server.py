@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
 from agent.llm import get_client, get_model
-from agent.tools import TOOLS, TOOL_LABELS, run_tool, select_tools
+from agent.tools import TOOLS, TOOL_LABELS, run_tool, select_tools, tool_risk_hint
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
 from agent.tools.vision import parse_capture_envelope
 from agent.core.compaction import compact_messages
@@ -71,6 +71,29 @@ async def _resolve_confirm(cid: str) -> dict:
 @app.on_event("startup")
 async def startup():
     get_session_manager().setup_vault()
+
+
+@app.on_event("startup")
+async def startup_mcp():
+    # MCP 서버 연결·도구 등록 (백로그 J). 무설정/미설치/실패여도 앱은 계속.
+    if os.environ.get("MCP_ENABLED", "true").lower() == "false":
+        return
+    try:
+        from agent.mcp_client import get_manager
+        n = await asyncio.get_event_loop().run_in_executor(None, get_manager().connect_all)
+        if n:
+            print(f"[mcp] {n}개 도구 등록됨")
+    except Exception as e:
+        print(f"[mcp] 초기화 건너뜀: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_mcp():
+    try:
+        from agent.mcp_client import get_manager
+        get_manager().shutdown()
+    except Exception:
+        pass
 
 
 app.add_middleware(
@@ -516,7 +539,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 # 모델 협조(force 등)에 의존하지 않고 디스패치 경로에서 차단한다.
                 _allow = _session_allowlists.setdefault(thread_id or request_id, set())
                 _risk = "safe" if tc["name"] == "ask_user" else classify_risk(
-                    tc["name"], tc["arguments"], _allow
+                    tc["name"], tc["arguments"], _allow, tool_risk_hint(tc["name"])
                 )
                 _gate_denied = False
                 _gate_choice = ""
@@ -814,6 +837,39 @@ async def delete_memory(mem_id: str):
     store = _memory_store()
     ok = await asyncio.get_event_loop().run_in_executor(None, store.delete, mem_id)
     return {"ok": ok}
+
+
+# ── 협업모드(코치 모드) 엔드포인트 (백로그 H) ─────────────────
+
+class CollaborateStartRequest(BaseModel):
+    thread_id: str = ""
+    goal: str = ""
+
+
+class CollaborateTickRequest(BaseModel):
+    thread_id: str = ""
+    force: bool = False
+
+
+@app.post("/collaborate/start")
+async def collaborate_start(body: CollaborateStartRequest):
+    """협업 세션 시작 — 목표 설정. 이후 클라이언트가 주기적으로 /collaborate/tick."""
+    from agent import collaborate
+    return collaborate.start(body.thread_id, body.goal)
+
+
+@app.post("/collaborate/stop")
+async def collaborate_stop(body: CollaborateStartRequest):
+    from agent import collaborate
+    return collaborate.stop(body.thread_id)
+
+
+@app.post("/collaborate/tick")
+async def collaborate_tick(body: CollaborateTickRequest):
+    """화면을 보고 비간섭 힌트를 만든다. 변화가 적으면 LLM 호출 없이 hint=null."""
+    from agent import collaborate
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, collaborate.tick, body.thread_id, body.force)
 
 
 # ── 스레드 엔드포인트 ─────────────────────────────────────────

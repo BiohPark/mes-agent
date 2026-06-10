@@ -161,10 +161,11 @@ def _extract(args: dict, keys) -> list[str]:
     return out
 
 
-def classify_risk(tool_name: str, args, allowlist=None) -> str:
+def classify_risk(tool_name: str, args, allowlist=None, risk_hint=None) -> str:
     """tool_call의 위험도를 'safe' | 'mutate' | 'destructive' 로 분류한다.
 
     server.generate()가 run_tool 직전에 호출하여 mutate/destructive면 사용자 승인을 강제한다.
+    risk_hint: MCP 도구의 readOnlyHint 등 레지스트리 위험도 힌트(허용목록 다음 우선).
     """
     name = (tool_name or "").lower()
     args = _coerce_args(args)
@@ -174,6 +175,10 @@ def classify_risk(tool_name: str, args, allowlist=None) -> str:
         return "safe"
     if name in _SAFE_EXACT:
         return "safe"
+
+    # 0.5) 레지스트리 위험도 힌트(MCP readOnlyHint 등) — 이름/내용 휴리스틱보다 신뢰
+    if risk_hint in ("safe", "mutate", "destructive"):
+        return risk_hint
 
     cmds = _extract(args, _CMD_ARG_KEYS)
     paths = _extract(args, _PATH_ARG_KEYS)

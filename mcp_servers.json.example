@@ -1,0 +1,33 @@
+{
+  "_comment": "MCP 서버 설정 예시. 이 파일을 mcp_servers.json 으로 복사해 채우세요(실파일은 .gitignore). 폐쇄망은 stdio(로컬 서브프로세스) 권장.",
+
+  "_oracle_option_A_python_oracledb": {
+    "_note": "권장(오프라인 pip 번들 쉬움). python-oracledb 기반 MCP 서버. ORACLE_READONLY=true면 읽기전용(쓰기 도구는 안전게이트가 확인).",
+    "command": "python",
+    "args": ["-m", "oracledb_mcp_server"],
+    "env": {
+      "ORACLE_CONNECTION_STRING": "user/password@host:1521/service",
+      "ORACLE_READONLY": "true"
+    },
+    "transport": "stdio"
+  },
+
+  "_oracle_option_B_official_sqlcl": {
+    "_note": "공식 Oracle SQLcl MCP(STDIO). SQLcl(+Java) 설치 + 저장된 연결 필요. DBTOOLS$MCP_LOG에 감사 로깅.",
+    "command": "sql",
+    "args": ["-mcp"],
+    "transport": "stdio"
+  },
+
+  "servers": {
+    "oracle": {
+      "command": "python",
+      "args": ["-m", "oracledb_mcp_server"],
+      "env": {
+        "ORACLE_CONNECTION_STRING": "user/password@host:1521/service",
+        "ORACLE_READONLY": "true"
+      },
+      "transport": "stdio"
+    }
+  }
+}

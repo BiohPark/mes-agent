@@ -24,4 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 실행 중 창 가림 회피 (개선 아이디어 C)
   agentBusy: (mode) => ipcRenderer.send('agent-busy', mode),
   agentIdle: () => ipcRenderer.send('agent-idle', ),
+  // 협업모드 HUD (백로그 H) — 메인 렌더러가 HUD를 제어
+  collabShowHud: () => ipcRenderer.send('collab-show-hud'),
+  collabHideHud: () => ipcRenderer.send('collab-hide-hud'),
+  collabUpdateHud: (payload) => ipcRenderer.send('hud-update-fwd', payload),
+  onCollabCommand: (cb) => ipcRenderer.on('collab-command', (_e, payload) => cb(payload)),
 })

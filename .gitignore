@@ -1,5 +1,7 @@
 # 보안 - 절대 커밋 금지
 .env
+# MCP 서버 설정(DB 접속정보 포함) — .example만 커밋
+mcp_servers.json
 
 # Node
 node_modules/
