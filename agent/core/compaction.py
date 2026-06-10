@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Callable
 
 SUMMARY_PREFIX = "[이전 진행 요약]\n"
+PRUNED_IMAGE_PLACEHOLDER = "[이전 화면 이미지 — 생략({n}번째 캡처)]"
 
 
 def _leading_system_count(messages: list) -> int:
@@ -76,6 +77,55 @@ def compact_messages(
     summary = summarize_fn(middle)
     summary_msg = {"role": "system", "content": SUMMARY_PREFIX + (summary or "")}
     return head + [summary_msg] + tail
+
+
+def prune_images(messages: list, *, keep_last_images: int) -> list:
+    """user 멀티모달 메시지의 image_url 블록 중 **최신 keep_last_images개만** 남기고,
+    더 오래된 이미지는 텍스트 자리표시자로 치환한 새 리스트를 반환한다(순수).
+
+    - 누적된 화면 캡처가 컨텍스트를 잠식하는 것을 막는다(텍스트 compaction과 독립).
+    - 이미지는 user 메시지에 있으므로 tool 짝(I1)에 영향이 없다(검증 테스트로 보장).
+    - 이미지 총수가 keep 이하면 원본을 그대로 반환(멱등/안전). 입력 메시지는 변형하지 않는다.
+    """
+    if keep_last_images < 0:
+        keep_last_images = 0
+
+    # 등장 순서대로 모든 image_url 블록 위치를 수집: (msg_index, block_index, 순번)
+    positions: list[tuple[int, int, int]] = []
+    ordinal = 0
+    for mi, m in enumerate(messages):
+        content = m.get("content")
+        if not isinstance(content, list):
+            continue
+        for bi, block in enumerate(content):
+            if isinstance(block, dict) and block.get("type") == "image_url":
+                ordinal += 1
+                positions.append((mi, bi, ordinal))
+
+    total = len(positions)
+    if total <= keep_last_images:
+        return messages
+
+    # 앞쪽(오래된) total-keep 개를 치환 대상으로
+    to_replace = {(mi, bi): ordn for (mi, bi, ordn) in positions[: total - keep_last_images]}
+
+    out: list = []
+    for mi, m in enumerate(messages):
+        content = m.get("content")
+        if not isinstance(content, list) or not any((mi, bi) in to_replace for bi in range(len(content))):
+            out.append(m)
+            continue
+        new_content = []
+        for bi, block in enumerate(content):
+            if (mi, bi) in to_replace:
+                new_content.append({"type": "text",
+                                    "text": PRUNED_IMAGE_PLACEHOLDER.format(n=to_replace[(mi, bi)])})
+            else:
+                new_content.append(block)
+        nm = dict(m)
+        nm["content"] = new_content
+        out.append(nm)
+    return out
 
 
 def has_orphan_tool(messages: list) -> bool:

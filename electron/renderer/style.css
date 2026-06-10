@@ -541,6 +541,16 @@ body {
   cursor: zoom-in;
 }
 
+.context-trim-note {
+  margin: 4px 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #6b85a8;
+  background: #0e1f33;
+  border-left: 2px solid #2a4a6e;
+  border-radius: 4px;
+}
+
 /* 입력 영역 */
 #input-area {
   display: flex;

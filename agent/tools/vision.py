@@ -34,6 +34,88 @@ def _screenshot(x: int = 0, y: int = 0, w: int = 0, h: int = 0) -> bytes:
         return buf.getvalue()
 
 
+# ── M1 적응형 이미지 다이어트 ────────────────────────────────────────
+# 원본 스크린샷(PNG·원본해상도)은 토큰·페이로드 비용이 커서 컨텍스트 초과를 유발한다.
+# 캡처 직후 긴 변을 캡(다운스케일)하고 JPEG로 압축해 비용을 낮춘다(detail은 봉투로 전달).
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _prepare_capture_image(png: bytes) -> dict:
+    """원본 PNG를 다운스케일·압축해 봉투용 메타와 함께 반환한다(순수·테스트 가능).
+
+    - VISION_MAX_EDGE(기본 1568): 긴 변이 이보다 크면 비율 유지 축소(0/음수면 비활성).
+    - VISION_IMAGE_FORMAT(jpeg|png, 기본 jpeg) + VISION_JPEG_QUALITY(기본 80).
+    디코딩/인코딩 실패 시 원본 PNG를 그대로 통과시킨다(안전 폴백).
+    반환: {image_b64, mime, width, height}.
+    """
+    max_edge = _int_env("VISION_MAX_EDGE", 1568)
+    fmt = os.environ.get("VISION_IMAGE_FORMAT", "jpeg").strip().lower()
+    quality = _int_env("VISION_JPEG_QUALITY", 80)
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(png))
+        w, h = img.size
+        if max_edge > 0 and max(w, h) > max_edge:
+            scale = max_edge / float(max(w, h))
+            img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+        buf = io.BytesIO()
+        if fmt in ("jpg", "jpeg"):
+            img.convert("RGB").save(buf, format="JPEG", quality=quality)
+            mime = "image/jpeg"
+        else:
+            img.save(buf, format="PNG")
+            mime = "image/png"
+        data = buf.getvalue()
+        return {
+            "image_b64": base64.b64encode(data).decode(),
+            "mime": mime,
+            "width": img.size[0],
+            "height": img.size[1],
+        }
+    except Exception:
+        # PIL 미가용·디코딩 실패 등 → 원본 그대로(주입 자체는 유지)
+        return {"image_b64": base64.b64encode(png).decode(), "mime": "image/png", "width": 0, "height": 0}
+
+
+def resolve_detail(configured: str, near_limit: bool):
+    """봉투 detail과 컨텍스트 임박 여부로 최종 detail을 결정한다(순수).
+
+    - 'off' → None(image_url에 detail 필드 자체를 넣지 않음; 미지원 엔드포인트 대비).
+    - near_limit(임계 근접)이면 high/auto를 'low'로 강등(비용 절감).
+    - 그 외에는 설정값(auto/high/low) 유지, 알 수 없으면 'auto'.
+    """
+    c = (configured or "auto").strip().lower()
+    if c == "off":
+        return None
+    if c not in ("auto", "high", "low"):
+        c = "auto"
+    if near_limit and c != "low":
+        return "low"
+    return c
+
+
+def build_capture_message(env: dict, near_limit: bool = False) -> dict:
+    """봉투 dict를 user 멀티모달 메시지로 변환한다(순수·테스트 가능).
+
+    mime/detail은 봉투 값을 따르고, near_limit이면 detail을 강등한다.
+    """
+    txt = env.get("prompt") or "방금 캡처한 화면입니다. 상황을 직접 보고 다음 행동을 결정하세요."
+    mime = env.get("mime") or "image/png"
+    image_url = {"url": f"data:{mime};base64,{env['image_b64']}"}
+    detail = resolve_detail(env.get("detail", "auto"), near_limit)
+    if detail is not None:
+        image_url["detail"] = detail
+    return {"role": "user", "content": [
+        {"type": "text", "text": txt},
+        {"type": "image_url", "image_url": image_url},
+    ]}
+
+
 def _call_llm(prompt: str, image_bytes: bytes) -> str:
     from agent.llm import get_client, get_model
     b64 = base64.b64encode(image_bytes).decode()
@@ -98,9 +180,14 @@ def capture_screen(prompt: str = "", x: int = 0, y: int = 0, width: int = 0, hei
         return json.dumps({"error": msg})
     try:
         png = _screenshot(x, y, width, height)
+        prepared = _prepare_capture_image(png)
         return json.dumps({
             "__capture__": True,
-            "image_b64": base64.b64encode(png).decode(),
+            "image_b64": prepared["image_b64"],
+            "mime": prepared["mime"],
+            "width": prepared["width"],
+            "height": prepared["height"],
+            "detail": os.environ.get("VISION_DETAIL", "auto").strip().lower(),
             "prompt": prompt or "",
             "note": _CAPTURE_NOTE,
         })

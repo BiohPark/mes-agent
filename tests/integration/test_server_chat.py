@@ -566,7 +566,7 @@ class TestCompaction:
 
     async def test_compaction_fires_and_preserves_pairs(self, client, monkeypatch):
         """임계 초과 시 COMPACTION SSE 발생, 정상 DONE, 저장 메시지에 orphan tool 없음."""
-        monkeypatch.setattr("agent.server._CONTEXT_MAX_TOKENS", 10)
+        monkeypatch.setattr("agent.server.get_context_window", lambda m: 10)
         monkeypatch.setattr("agent.server.COMPACT_KEEP_RECENT", 2)
         monkeypatch.setattr("agent.server._summarize_history", lambda h: "요약")
         seeded = [
@@ -596,7 +596,7 @@ class TestCompaction:
 
     async def test_compaction_capped_at_max(self, client_gate, monkeypatch):
         """임계가 계속 초과돼도 COMPACTION 횟수는 MAX_COMPACT(3) 이하(I3)."""
-        monkeypatch.setattr("agent.server._CONTEXT_MAX_TOKENS", 10)
+        monkeypatch.setattr("agent.server.get_context_window", lambda m: 10)
         monkeypatch.setattr("agent.server.COMPACT_KEEP_RECENT", 2)
         monkeypatch.setattr("agent.server._summarize_history", lambda h: "요약")
         # 큰 스레드 시드 → 매 단계 압축할 중간이 충분
@@ -808,6 +808,120 @@ class TestVisionInjection:
             "message": "화면 봐줘", "thread_id": tid, "task_type": "general"}, [])
         assert ev.CONFIRM not in [e.get("type") for e in events]
         assert ev.DONE in [e.get("type") for e in events]
+
+
+class _OverflowError(Exception):
+    def __init__(self, msg, status_code=400):
+        super().__init__(msg)
+        self.status_code = status_code
+
+
+class _OverflowStream:
+    """복구 후 정상 텍스트 스트림."""
+    def __iter__(self):
+        yield _Chunk(content="복구 후 정상 응답")
+        yield _Chunk(finish_reason="stop")
+
+
+class _OverflowLLM:
+    """create()가 첫 fail_times회는 컨텍스트 초과(또는 generic)로 실패, 이후 정상."""
+    def __init__(self, fail_times=1, generic=False):
+        self.fail_times = fail_times
+        self.generic = generic
+        self.calls = 0
+        outer = self
+
+        class _Comp:
+            def create(self, **kw):
+                _guard_tools(kw)
+                outer.calls += 1
+                if outer.calls <= outer.fail_times:
+                    if outer.generic:
+                        raise RuntimeError("서버 내부 오류 500")
+                    raise _OverflowError(
+                        "This model's maximum context length is 4096 tokens. context_length_exceeded")
+                return _OverflowStream()
+
+        class _Chat:
+            def __init__(self):
+                self.completions = _Comp()
+
+        self.chat = _Chat()
+
+
+@pytest.fixture
+async def overflow_client(vault, monkeypatch):
+    """create()가 컨텍스트 초과로 실패했다가 복구되는 LLM. M4 점진적 복구 검증용."""
+    import agent.server as srv
+    srv._session_allowlists.clear()
+    monkeypatch.setattr("agent.server.get_model", lambda: "gpt-test")
+    monkeypatch.setattr("agent.server._summarize_history", lambda h: "요약")
+
+    def set_llm(fail_times=1, generic=False):
+        llm = _OverflowLLM(fail_times, generic)
+        monkeypatch.setattr("agent.server.get_client", lambda: llm)
+        return llm
+
+    set_llm()  # 기본 1회 실패 후 복구
+
+    from httpx import AsyncClient, ASGITransport
+    from agent.server import app
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        c._set_llm = set_llm
+        yield c
+
+
+class TestOverflowRecovery:
+    """M4: 컨텍스트 초과(400) 점진적 복구 — prune→compact→재시도, 항상 DONE(I4)."""
+
+    async def test_recovers_after_trim_and_finishes(self, overflow_client):
+        """1회 초과 후 줄여서 재시도→정상 응답. CONTEXT_TRIM 고지 + DONE + ERROR 없음."""
+        overflow_client._set_llm(fail_times=1)
+        async with overflow_client.stream("POST", "/chat", json={"message": "긴 작업"}) as resp:
+            text = await resp.aread()
+        events = _parse_sse(text.decode())
+        types = [e.get("type") for e in events]
+        assert ev.CONTEXT_TRIM in types, "CONTEXT_TRIM 고지 없음"
+        assert ev.DONE in types
+        assert ev.ERROR not in types
+        assert any(e.get("type") == ev.TEXT and "복구 후 정상" in (e.get("content") or "")
+                   for e in events)
+
+    async def test_recovers_through_compact_on_second_retry(self, overflow_client):
+        """2회 연속 초과 → prune 후 compact 까지 가서 복구. CONTEXT_TRIM 2회 이상."""
+        overflow_client._set_llm(fail_times=2)
+        async with overflow_client.stream("POST", "/chat", json={"message": "더 긴 작업"}) as resp:
+            text = await resp.aread()
+        events = _parse_sse(text.decode())
+        trims = [e for e in events if e.get("type") == ev.CONTEXT_TRIM]
+        assert len(trims) >= 2, f"CONTEXT_TRIM 2회 미만: {len(trims)}"
+        assert ev.DONE in [e.get("type") for e in events]
+        assert ev.ERROR not in [e.get("type") for e in events]
+
+    async def test_exhausted_ends_gracefully_not_crash(self, overflow_client):
+        """한도를 넘는 연속 초과는 친절한 ERROR 안내 후 DONE으로 마감(전면 크래시 아님)."""
+        overflow_client._set_llm(fail_times=5)  # MAX_OVERFLOW_RETRY(2) 초과
+        async with overflow_client.stream("POST", "/chat", json={"message": "끝없이 큰 작업"}) as resp:
+            assert resp.status_code == 200
+            text = await resp.aread()
+        events = _parse_sse(text.decode())
+        types = [e.get("type") for e in events]
+        assert ev.ERROR in types, "안내 ERROR 없음"
+        err = next(e for e in events if e.get("type") == ev.ERROR)
+        assert "새로 시작" in err.get("message", "") or "나눠" in err.get("message", "")
+        assert ev.DONE in types
+
+    async def test_generic_error_not_retried(self, overflow_client):
+        """컨텍스트 초과가 아닌 일반 예외는 줄여 재시도하지 않고 기존 전역 핸들러로 처리."""
+        overflow_client._set_llm(fail_times=1, generic=True)
+        async with overflow_client.stream("POST", "/chat", json={"message": "작업"}) as resp:
+            text = await resp.aread()
+        events = _parse_sse(text.decode())
+        types = [e.get("type") for e in events]
+        assert ev.CONTEXT_TRIM not in types, "일반 예외인데 복구 재시도가 일어남"
+        assert ev.ERROR in types
+        assert ev.DONE in types
 
 
 class TestLongTermMemory:

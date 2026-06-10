@@ -472,6 +472,16 @@ function handleEvent(event, agentEl, bubble) {
       if (window.workflowPanel) window.workflowPanel.handleUpdate(event.workflow)
       break
 
+    case 'context_trim': {
+      // M4: 컨텍스트 초과 복구로 payload를 줄였음을 사용자에게 투명하게 고지
+      const note = document.createElement('div')
+      note.className = 'context-trim-note'
+      note.textContent = `🧹 ${event.action || '컨텍스트를 정리해 재시도했습니다.'}`
+      agentEl.querySelector('.msg-bubble').before(note)
+      scrollToBottom()
+      break
+    }
+
     case 'vision_capture': {
       // 에이전트가 직접 본 화면을 채팅에 썸네일로 표시
       if (event.image_b64) {

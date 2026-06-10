@@ -69,7 +69,7 @@
 | SSE 파일 감지 엔드포인트 (Phase 4B ✅) | `agent/server.py` | `GET /threads/{type}/{id}/workflow/events` — mtime 폴링 SSE, `WF_POLL_INTERVAL` 환경변수(기본 2s), heartbeat 30s 주기 |
 | 워크플로우 파일 감지 (Phase 4 frontend ✅) | `electron/renderer/workflow.js` | `_startFileWatcher()`·`_stopFileWatcher()` EventSource, 스레드 전환 시 자동 연결·해제, 편집 중 캐시 갱신 |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
-| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/PLAN/VISION_CAPTURE/DONE/ERROR |
+| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/CONTEXT_TRIM/PLAN/VISION_CAPTURE/DONE/ERROR |
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
@@ -84,7 +84,7 @@
 | RAG-first 지침 전파 (Phase 7B ✅) | `agent/obsidian_session.py` | `_AUTO_EXEC` + syncade/knox/obsidian 시스템 프롬프트에 Obsidian 선조회·결과저장 지시 추가 |
 | Office 문서 검토·메모 읽기 ✅ | `agent/tools/document.py` | Word 검토메모·수정추적, Excel 셀메모, PPT 슬라이드+노트 (OpenXML 파싱, 설치 불필요) |
 | 멀티모달 비전 분석 ✅ | `agent/tools/vision.py` | `analyze_screen`·`analyze_region` — 별도 LLM 호출로 화면을 텍스트 요약. VISION_ENABLED(기본 true) + 멀티모달 LLM 필요 |
-| 멀티모달 화면 이해(메인 루프 주입) ✅ | `agent/tools/vision.py` + `agent/server.py` + `chat.js` | `capture_screen` — 화면을 캡처해 **실제 이미지를 메인 에이전트 대화에 user 멀티모달 메시지로 주입**, 메인 LLM이 화면을 직접 보고 이후 턴 맥락으로 활용(작업자와 호흡). `__capture__` 봉투를 루프가 감지→**tool 짝(I1) 보존**(tool은 짧은 텍스트, 이미지는 tool 묶음 종료 후 user 주입), `VISION_CAPTURE` SSE로 채팅에 썸네일 표시. `_estimate_tokens`/`_history_to_text`가 이미지 블록 처리(고정비용·`[화면 이미지]` 평탄화). 에이전트 온디맨드 |
+| 멀티모달 화면 이해(메인 루프 주입) ✅ | `agent/tools/vision.py` + `agent/server.py` + `chat.js` | `capture_screen` — 화면을 캡처해 **실제 이미지를 메인 에이전트 대화에 user 멀티모달 메시지로 주입**, 메인 LLM이 화면을 직접 보고 이후 턴 맥락으로 활용(작업자와 호흡). `__capture__` 봉투를 루프가 감지→**tool 짝(I1) 보존**(tool은 짧은 텍스트, 이미지는 tool 묶음 종료 후 user 주입), `VISION_CAPTURE` SSE로 채팅에 썸네일 표시. `_estimate_tokens`(M3 타일링 추정)/`_history_to_text`가 이미지 블록 처리(`[화면 이미지]` 평탄화). 이미지 비용·누적·초과는 백로그 M(다이어트·eviction·복구)로 관리. 에이전트 온디맨드 |
 | Windows UI Automation ✅ | `agent/tools/ui_automation.py` | `ui_list_windows`·`ui_inspect_window`·`ui_find_and_read` — 접근성 트리 읽기, OCR 없이 Win32 컨트롤 구조 파악 |
 | 스레드 사이드바 접이식 그룹 ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 탭 → 그룹 접기/펼치기, 스레드 인라인 표시, 그룹별 보관 서브섹션, 빨간 배지 |
 | 브라우저 greenlet 스레드 버그 수정 ✅ | `agent/tools/browser.py` | 전용 단일 스레드 executor(`_on_pw_thread`)로 모든 Playwright 핸들러 위임 → "Cannot switch to a different thread" 해결 (웹 조사 실패 수정) |
@@ -107,6 +107,7 @@
 | 요청당 툴 서브셋(128 한계) ✅ | `agent/tools/__init__.py` `select_tools` + `agent/server.py` | LLM API는 `tools` 배열을 **최대 128개**로 제한. 등록이 그보다 많으면 요청마다 **모듈 우선순위(core 우선) + 메시지/task_type 관련도**로 ≤`LLM_MAX_TOOLS`(기본 128)만 전송. 기본은 office_cloud(graph_*, 토큰 필요) 드롭, 관련 키워드 시 부스트 포함. `run_tool`·`/tool/test`·전체 등록은 그대로. (회귀: 테스트의 FakeLLM이 128 초과 시 예외) |
 | 협업모드(코치) (백로그 H) ✅ | `agent/collaborate.py` + `agent/server.py` + `electron`(HUD) | 사용자가 직접 작업하는 동안 에이전트가 관찰자로 화면을 보며 비간섭 힌트. `/collaborate/start·tick·stop`, **toolless 단발 멀티모달**(`make_hint`)로 실행 도구 구조적 차단. 변화율 게이트(`COLLAB_CHANGE_THRESHOLD`)로 비용 통제. 항상-위 플로팅 HUD(`hud.html`, focusable:false, 포커스 비탈취), 헤더 `🤝 협업` + 목표 입력 바, 클라이언트 30s 폴링 |
 | MCP 클라이언트 (백로그 J) ✅ | `agent/mcp_client.py` + `agent/tools/__init__.py` + `agent/server.py` | 외부 MCP 서버(예: Oracle DB) 도구를 런타임 등록(`register_tool` in-place, 전용 asyncio 루프 + `run_coroutine_threadsafe` sync 브릿지, `mcp` SDK 지연 import). `readOnlyHint`→`_risk`를 `classify_risk(risk_hint=)`로 반영(읽기=safe/쓰기=confirm). `mcp_servers.json`(.gitignore, `.example` 제공) + `MCP_ENABLED`. 무설정/미설치 무해. **Obsidian은 기존 유지**(대체 안 함). 실연결은 회사 환경 |
+| 컨텍스트 초과 자동 처리·이미지 토큰 다이어트 (백로그 M) ✅ | `agent/tools/vision.py` + `agent/core/{tokens,overflow,compaction}.py` + `agent/config.py` + `agent/server.py` + `chat.js` | 이미지 주입 중 컨텍스트 초과로 채팅이 전면 실패하던 문제를 **5단 방어**로 해결. **M1** 적응형 이미지 다이어트(다운스케일·JPEG·`detail` 동적, 임계 근접 시 low 강등). **M2** `prune_images`로 최신 N개 이미지만 유지(과거=텍스트 자리표시자). **M3** `agent/core/tokens.py` OpenAI 타일링 공식 토큰 추정(이미지 고정 1000토큰 가정 대체, tiktoken 선택). **M4** `agent/core/overflow.py` 400 점진적 복구(prune→강제 compact→재시도, 항상 `DONE` I4, 모델 무관). **M5** `get_context_window`로 모델별 윈도우(known 맵 + `LLM_*_CONTEXT_TOKENS` 오버라이드). 상세: `docs/backlog/M-context-overflow.md` |
 
 **총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -302,8 +303,8 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 ## 향후 개선 아이디어 (Backlog) — 미착수만
 
 > **완료 항목은 위 "현재 상태" 표가 단일 기록**(중복 방지). 완료된 백로그 — A IDE식 탭·B 반응형 워크플로우 패널·
-> C 실행 중 창 최소화·D 모델 선택 UI·E 장기기억·**H 협업모드·I 포커스 비탈취·J MCP 클라이언트** — 는 표 참조.
-> H·I·J 상세 설계·구현 기록은 `docs/backlog/{H,I,J}-*.md`.
+> C 실행 중 창 최소화·D 모델 선택 UI·E 장기기억·**H 협업모드·I 포커스 비탈취·J MCP 클라이언트·M 컨텍스트 초과 처리** — 는 표 참조.
+> H·I·J·M 상세 설계·구현 기록은 `docs/backlog/{H,I,J,M}-*.md`.
 
 ### F. Electron 패키징 배포 🔲
 
@@ -338,6 +339,44 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 오픈소스 자율 에이전트 OpenHands의 좋은 패턴 조사·선별 이식. 후보: 이벤트 스트림/상태머신, 마이크로에이전트(지식 주입),
 샌드박스 런타임, 구조화된 브라우징 관찰, 컨덴서(메모리 압축—기존 G1과 비교). **출처 governance(클린룸, `docs/CLAW_PORT_PLAN.md`) 준수.**
+
+---
+
+> **에픽 N–U (2026-06-11 추가)** — 하네스·외부제어·UI/UX 전면 개선. 상세 설계·확인사항은 각 `docs/backlog/{N..U}-*.md`.
+> **PO 추천 시퀀스**: ① 즉시 효용 **P·R·S** → ② 핵심 **U·Q** → ③ 확장 **T(P 이후)·O(Q 큐 공유)** → ④ 리서치 트랙 **N(L과 통합)**.
+> **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · S↔U(로그 이관) · N↔L(이벤트 스트림).
+
+### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
+
+단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/N-harness-mode.md`.
+
+### O. 외부 기기 지시·모니터링(원격 제어) 📱 — 🔲 미착수
+
+폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함**(`agent/control/inbox.md`, mtime 폴링 — 포트 개방 없이 동기화로 원격, 권장) / **(B) LAN 바인딩+인증 강화**(옵트인). 명령 주입은 **백로그 Q의 메시지 큐와 공유**. 확인: 회사 네트워크 정책·Vault 동기화 수단·인증·권한분리. 상세: `docs/backlog/O-external-control.md`.
+
+### P. 좌측 프레임 정보구조(IA) 개편 🗂️ — 🔲 미착수 (우선순위 상)
+
+스레드 늘면 관리 버튼이 화면 밖으로 밀리는 문제(사이드바 overflow 없음) 해결. TOBE: **업무자동화 + {추천기능} + 관리(하단 고정) + 스크롤**. 빠른작업·도구테스트 제거(도구테스트는 접이식 개발자메뉴 권장). 추천 신규: **전역 검색**(권장)·고정스레드·진행 중 작업·최근 활동. 상세: `docs/backlog/P-left-frame-ia.md`.
+
+### Q. 작업 상태 명확화 + 작업 중 개입 ⏯️ — 🔲 미착수 (우선순위 상)
+
+running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재→`generate()`가 단계 경계(I1 보존)에서 드레인 주입. **O와 큐 메커니즘 공유**. 상세: `docs/backlog/Q-agent-state-and-intervention.md`.
+
+### R. 대화 입력 에디터 개선 ⌨️ — 🔲 미착수 (우선순위 상)
+
+입력칸 자동 높이 확장 + 확대/팝업 에디터 + 단축키(Ctrl+J/Ctrl+Enter 줄바꿈 추가). **참고: 줄바꿈은 이미 Shift+Enter로 동작** — 실제 과제는 입력 영역 크기/편집 경험. 상세: `docs/backlog/R-chat-input-editor.md`.
+
+### S. 대화 가독성: 의도 내레이션 + 명령 로그 축소 📖 — 🔲 미착수 (우선순위 상)
+
+도구 실행 전 한 줄 의도 노출 + 스크립트/bash 로그 **기본 접힘·작은 폰트**(클릭 시 펼침)로 대화 흐름 회복. 근본 해결은 로그를 우측 워크플로우로 이관(**U와 병행**). 상세: `docs/backlog/S-chat-readability.md`.
+
+### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🔲 미착수
+
+`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. **P 이후**(사이드바 동적화 공유). 상세: `docs/backlog/T-dynamic-task-types.md`.
+
+### U. 워크플로우 시각화 고도화 🗺️ — 🔲 미착수 (핵심·우선순위 상)
+
+이미 있는 분기 그래프(from_output 0/1/2, BFS 2D) 위에 **팬/줌·그룹(서브워크플로우)·진행률 미니맵·노드 인라인 로그 요약**. ~20노드 혼잡 해소. S(대화 가독성)의 근본 해결책 — 정보를 옮겨 담을 그릇. 상세: `docs/backlog/U-workflow-visualization.md`.
 
 ### (대기) Office 편집 백엔드 확정
 

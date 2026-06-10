@@ -28,10 +28,13 @@ from pydantic import BaseModel
 
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
 from agent.llm import get_client, get_model
+from agent.config import get_context_window
 from agent.tools import TOOLS, TOOL_LABELS, run_tool, select_tools, tool_risk_hint
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
-from agent.tools.vision import parse_capture_envelope
-from agent.core.compaction import compact_messages
+from agent.tools.vision import parse_capture_envelope, build_capture_message
+from agent.core.compaction import compact_messages, prune_images
+from agent.core.tokens import estimate_message_tokens
+from agent.core.overflow import is_context_overflow, is_recoverable
 from agent.memory import MemoryStore
 from agent.obsidian_session import get_session_manager, TASK_CONFIGS
 from agent.workflow import storage as wf_storage
@@ -158,25 +161,12 @@ def sse(data: dict) -> str:
 
 
 def _estimate_tokens(messages: list) -> int:
-    """메시지 전체 텍스트 길이로 토큰 수를 추정한다 (4 chars ≈ 1 token)."""
-    total = 0
-    for m in messages:
-        content = m.get("content") or ""
-        if isinstance(content, str):
-            total += len(content)
-        elif isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict):
-                    total += len(block.get("text", ""))
-                    # 이미지 블록은 base64 길이가 아니라 고정 비용(~1000토큰)으로 계산한다.
-                    # base64 char 수로 세면 과대계상되고, text만 세면 과소계상돼 compaction 타이밍이 어긋난다.
-                    if block.get("type") == "image_url":
-                        total += 4000  # // 4 → ~1000 토큰
-        tool_calls = m.get("tool_calls") or []
-        for tc in tool_calls:
-            fn = tc.get("function", {})
-            total += len(fn.get("arguments", ""))
-    return total // 4
+    """메시지 토큰 추정(M3). 텍스트=tiktoken/휴리스틱, 이미지=OpenAI 타일링 공식.
+
+    이미지를 무조건 ~1000토큰 고정으로 세던 것을 치수·detail 기반 추정으로 대체해
+    compaction/eviction 타이밍 정확도를 높인다(상세: agent/core/tokens.py).
+    """
+    return estimate_message_tokens(messages)
 
 
 _AUTONOMOUS_INSTRUCTION = (
@@ -206,6 +196,18 @@ _CONTEXT_MAX_TOKENS = 128_000
 COMPACT_RATIO = 0.8
 COMPACT_KEEP_RECENT = 8
 MAX_COMPACT = 3
+
+# M2 이미지 eviction: 히스토리에 유지할 최신 화면 이미지 개수(과거는 텍스트 자리표시자)
+try:
+    VISION_KEEP_LAST_IMAGES = int(os.environ.get("VISION_KEEP_LAST_IMAGES", 2))
+except (TypeError, ValueError):
+    VISION_KEEP_LAST_IMAGES = 2
+
+# M4 400 점진적 복구: 컨텍스트 초과 시 payload를 줄여 재시도하는 최대 횟수
+try:
+    MAX_OVERFLOW_RETRY = int(os.environ.get("MAX_OVERFLOW_RETRY", 2))
+except (TypeError, ValueError):
+    MAX_OVERFLOW_RETRY = 2
 
 # G2 continuation nudge: 작업 도중 텍스트로 조기 종료 시 '계속' 주입(상한)
 MAX_NUDGES = 2
@@ -316,6 +318,9 @@ def _summarize_history(history: list) -> str:
 async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto"):
     client = get_client()
     model = get_model()
+    # M5 모델별 컨텍스트 예산: 하드코딩(_CONTEXT_MAX_TOKENS) 대신 현재 모델의 윈도우를 사용.
+    # 미지 모델/잘못된 값에도 양수 보장. 추정 오차는 M4 400 복구가 최종 보증.
+    context_max = get_context_window(model) or _CONTEXT_MAX_TOKENS
     session_mgr = get_session_manager()
     loop = asyncio.get_event_loop()
 
@@ -379,10 +384,24 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
 
+            # M2 이미지 eviction: 최신 N개 화면 이미지만 남기고 과거는 텍스트 자리표시자로 치환
+            # (텍스트 compaction과 독립 — 누적 캡처가 컨텍스트를 잠식하는 것을 선제 차단)
+            if VISION_KEEP_LAST_IMAGES >= 0:
+                _img_before = _estimate_tokens(messages)
+                _pruned = prune_images(messages, keep_last_images=VISION_KEEP_LAST_IMAGES)
+                if _pruned is not messages:
+                    messages = _pruned
+                    yield sse({
+                        "type": ev.COMPACTION,
+                        "removed": 0,
+                        "tokens_used": _estimate_tokens(messages),
+                        "note": "오래된 화면 이미지를 정리했습니다.",
+                    })
+
             # G1 compaction: 임계치 초과 시 system+최근 N턴 보존하고 중간을 요약으로 치환
             if (
                 compaction_count < MAX_COMPACT
-                and _estimate_tokens(messages) > _CONTEXT_MAX_TOKENS * COMPACT_RATIO
+                and _estimate_tokens(messages) > context_max * COMPACT_RATIO
             ):
                 _before = len(messages)
                 messages = await loop.run_in_executor(
@@ -406,7 +425,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             yield sse({
                 "type": ev.CONTEXT_USAGE,
                 "tokens_used": tokens_used,
-                "tokens_total": _CONTEXT_MAX_TOKENS,
+                "tokens_total": context_max,
             })
 
             yield sse({"type": ev.AGENT_STATE, "state": "thinking"})
@@ -415,12 +434,51 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             text_chunks: list[str] = []
             finish_reason = None
 
-            stream = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=active_tools,
-                stream=True,
-            )
+            # M4 400 점진적 복구: 컨텍스트 초과/400 으로 거부되면 payload를 단계적으로 줄여 재시도한다.
+            # 모델 무관(원칙 #0): 호출은 스트림 시작 전 헤드 검증이라 부분 출력 오염 없음. 항상 DONE 마감(I4).
+            stream = None
+            _overflow_retries = 0
+            while stream is None:
+                try:
+                    stream = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        tools=active_tools,
+                        stream=True,
+                    )
+                except Exception as _ce:
+                    if not is_recoverable(_ce):
+                        raise  # 컨텍스트/400 외 예외는 기존 전역 핸들러로
+                    if _overflow_retries >= MAX_OVERFLOW_RETRY:
+                        _hint = ("컨텍스트를 줄였지만 여전히 한도를 초과합니다. "
+                                 "대화를 새로 시작하거나 작업을 더 작게 나눠 진행해 주세요."
+                                 if is_context_overflow(_ce) else
+                                 "요청이 거부되었습니다(400). 입력을 줄이거나 대화를 새로 시작해 주세요.")
+                        yield sse({"type": ev.ERROR, "message": f"{_hint}\n(원본: {str(_ce)[:300]})"})
+                        yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                        yield sse({"type": ev.DONE})
+                        return
+                    _overflow_retries += 1
+                    # 1차: 이미지 1장만 남김 → 2차 이후: 강제 compact(MAX_COMPACT 무관)
+                    if _overflow_retries == 1:
+                        messages = prune_images(messages, keep_last_images=1)
+                        _action = "오래된 화면 이미지를 정리했습니다."
+                    else:
+                        messages = await loop.run_in_executor(
+                            None,
+                            lambda: compact_messages(
+                                messages,
+                                keep_recent=COMPACT_KEEP_RECENT,
+                                summarize_fn=lambda h: _summarize_history(h),
+                            ),
+                        )
+                        _action = "이전 대화를 요약해 압축했습니다."
+                    yield sse({
+                        "type": ev.CONTEXT_TRIM,
+                        "attempt": _overflow_retries,
+                        "action": _action,
+                        "tokens_used": _estimate_tokens(messages),
+                    })
 
             for chunk in stream:
                 # 스트림 도중 중단 요청 처리
@@ -703,13 +761,11 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
             # tool 묶음이 끝났으므로(연속성 보장) 캡처 이미지를 user 멀티모달 메시지로 주입한다.
-            for _img in pending_images:
-                _txt = _img.get("prompt") or "방금 캡처한 화면입니다. 상황을 직접 보고 다음 행동을 결정하세요."
-                messages.append({"role": "user", "content": [
-                    {"type": "text", "text": _txt},
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/png;base64,{_img['image_b64']}", "detail": "high"}},
-                ]})
+            # M1 적응형: 컨텍스트가 임계에 근접하면 새 이미지 detail을 low로 강등해 비용을 낮춘다.
+            if pending_images:
+                _near_limit = _estimate_tokens(messages) > context_max * COMPACT_RATIO
+                for _img in pending_images:
+                    messages.append(build_capture_message(_img, near_limit=_near_limit))
         else:
             # for 루프가 break 없이 끝남 = 최대 단계 도달 (자연 종료 아님)
             yield sse({"type": ev.TEXT, "content":
