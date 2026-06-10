@@ -71,6 +71,12 @@ class _FakeStream:
 
 class _FakeCompletions:
     def create(self, **kwargs):
+        # 실제 API처럼 tools 128 한계를 강제 — select_tools 회귀를 통합 경로에서 잡는다.
+        tools = kwargs.get("tools")
+        if tools is not None and len(tools) > 128:
+            raise ValueError(
+                f"Invalid 'tools': array too long. Expected maximum length 128, got {len(tools)}"
+            )
         return _FakeStream()
 
 

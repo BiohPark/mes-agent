@@ -104,8 +104,9 @@
 | plan 모드 (G4 / PLAN1) ✅ | `agent/server.py` + `agent/core/events.py` + `chat.js`/`index.html`/`style.css` | `agent_mode='plan'`이면 **계획 먼저 → 승인 → 실행**. 계획 단계엔 `workflow_*`/`ask_user` 외 실행 도구를 구조적으로 차단(프롬프트 의존 X), 계획 완료 시 `plan_approval` CONFIRM(승인/수정/취소)으로 G3 팝업 재사용. 승인 후 실행 진입. 계획=기존 WorkflowDefinition·패널 재사용, 헤더 ⚡자동/📋계획 토글. `PLAN` 이벤트 추가 |
 | 대화 간 장기기억 ✅ | `agent/memory.py` + `agent/server.py` | 스레드를 넘는 영속 기억. 사실·선호·결정을 LLM로 추출(`_extract_memories`, 주입식)해 `<vault>/agent/memory/long_term.md`에 dedup 저장, 새 대화 진입 시 키워드 검색(`MemoryStore.search`)으로 관련 기억을 system 프롬프트에 주입. `GET /memory`, `MEMORY_ENABLED` 게이트. (스레드 내 멀티턴은 기존 스레드 히스토리로 이미 동작) |
 | 장기기억 후속(도구·UI·비용) ✅ | `agent/tools/memory_tools.py` + `agent/server.py` + `electron/renderer/memory.js` | **① 명시적 도구** `memory_remember`/`memory_forget`/`memory_recall`(3종) — 사용자 "기억해/잊어" 즉시 반영(`_AUTONOMOUS_INSTRUCTION` 안내). **② 관리 UI** 헤더 `🧠 기억` 모달(목록·추가·삭제), `POST /memory`·`DELETE /memory/{id}`. **③ 비용 최적화** `MEMORY_EXTRACT_MODE`(close 기본): 스레드는 `close_thread`에서 1회 일괄 추출(`_extract_and_store`), 단발 요청만 턴 추출 폴백 — 매 턴 LLM 호출 제거 |
+| 요청당 툴 서브셋(128 한계) ✅ | `agent/tools/__init__.py` `select_tools` + `agent/server.py` | LLM API는 `tools` 배열을 **최대 128개**로 제한. 등록이 그보다 많으면 요청마다 **모듈 우선순위(core 우선) + 메시지/task_type 관련도**로 ≤`LLM_MAX_TOOLS`(기본 128)만 전송. 기본은 office_cloud(graph_*, 토큰 필요) 드롭, 관련 키워드 시 부스트 포함. `run_tool`·`/tool/test`·전체 등록은 그대로. (회귀: 테스트의 FakeLLM이 128 초과 시 예외) |
 
-**총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록)
+**총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -272,7 +273,7 @@ mes-agent/
 │   │   ├── model.py        ← WorkflowDefinition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py      ← Vault 저장/로드(YAML frontmatter) + 구포맷 자동 마이그레이션
 │   └── tools/
-│       ├── __init__.py     ← 자동 디스커버리 레지스트리 (수정 불필요)
+│       ├── __init__.py     ← 자동 디스커버리 레지스트리 + select_tools(요청당 ≤128 서브셋) (수정 불필요)
 │       ├── ocr.py          ← 전체화면 OCR (1종) ✅
 │       ├── desktop.py      ← 마우스·키보드·클립보드·창 관리 (19종) ✅
 │       ├── screen.py       ← 화면 인텔리전스: 영역OCR·이미지매칭·텍스트위치·대기·비교·픽셀 (9종) ✅

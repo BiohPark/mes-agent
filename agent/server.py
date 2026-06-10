@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from agent.config import get_active, active_llm, list_profiles, set_active_profile
 from agent.llm import get_client, get_model
-from agent.tools import TOOLS, TOOL_LABELS, run_tool
+from agent.tools import TOOLS, TOOL_LABELS, run_tool, select_tools
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
 from agent.tools.vision import parse_capture_envelope
 from agent.core.compaction import compact_messages
@@ -347,6 +347,8 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
     compaction_count = 0
     nudge_count = 0
     tool_rounds = 0
+    # LLM tools 배열은 128개 한계 → task_type·메시지 관련도로 ≤한도 만큼만 전송
+    active_tools = select_tools(message, task_type)
     try:
         for _step in range(_MAX_STEPS):
             # 중단 플래그 확인
@@ -393,7 +395,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             stream = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                tools=TOOLS,
+                tools=active_tools,
                 stream=True,
             )
 

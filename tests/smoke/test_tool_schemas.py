@@ -5,7 +5,7 @@
 """
 
 import pytest
-from agent.tools import _registry, TOOLS, TOOL_LABELS
+from agent.tools import _registry, TOOLS, TOOL_LABELS, select_tools, LLM_MAX_TOOLS
 
 
 EXPECTED_TOOL_COUNT = 131
@@ -79,6 +79,10 @@ class TestSchemas:
 
     def test_tool_labels_keys_match_registry(self):
         assert set(TOOL_LABELS.keys()) == set(_registry.keys())
+
+    def test_request_tool_subset_within_api_limit(self):
+        """요청당 전송 도구는 LLM API 한계(128) 이하여야 한다(전체 등록은 그 이상 가능)."""
+        assert len(select_tools()) <= LLM_MAX_TOOLS <= 128
 
 
 class TestModuleCoverage:

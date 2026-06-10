@@ -19,6 +19,9 @@
 
 > 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
 > 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
+>
+> **LLM tools 128 한계**: 등록 도구가 128을 넘으면 요청마다 `select_tools(message, task_type)`가
+> 모듈 우선순위 + 관련도로 ≤`LLM_MAX_TOOLS`(기본 128)개만 전송한다. `run_tool` 디스패치는 전체를 안다.
 
 ### 화면 인식 (10종)
 

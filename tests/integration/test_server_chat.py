@@ -62,9 +62,16 @@ class _TwoPhaseStream:
             yield _Chunk(finish_reason="stop")
 
 
+def _guard_tools(kw):
+    tools = kw.get("tools")
+    if tools is not None and len(tools) > 128:
+        raise ValueError(f"Invalid 'tools': array too long ({len(tools)} > 128)")
+
+
 class _TwoPhaseLLM:
     class _Comp:
         def create(self, **kw):
+            _guard_tools(kw)
             return _TwoPhaseStream()
 
     class _Chat:
@@ -121,6 +128,7 @@ class _ScriptedStream:
 class _ScriptedLLM:
     class _Comp:
         def create(self, **kw):
+            _guard_tools(kw)
             return _ScriptedStream()
 
     class _Chat:
