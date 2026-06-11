@@ -93,10 +93,10 @@
 | 실행 중 창 최소화 UX (백로그 C) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `index.html` | agentState=running 시 자동 최소화/반투명/끄기 (헤더 토글, localStorage 저장), idle 시 원복 |
 | 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
 | IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화 |
-| 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<360px) 세로 컴팩트 카드(완료 단계 접기), 넓으면 2D 그래프 |
+| 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<250px) 세로 컴팩트 카드(완료 단계 접기), 이상이면 2D 그래프(기본 패널폭 300 → 그래프, fit-to-view로 맞춤) |
 | MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증 (11종) |
 | Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
-| 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성·주입, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
+| 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성, **포트·토큰을 `webPreferences.additionalArguments`로 preload에 전달(샌드박스 안전 — preload에서 `fs`/`path` require 금지, `sandbox:true` 유지)**, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
 | 중앙 집중 안전 게이트 (G3 / APPROVE1) ✅ | `agent/tools/_safety.py` + `agent/server.py` + `chat.js`/`style.css` | `classify_risk(safe/mutate/destructive)`를 **루프의 run_tool 직전에서 강제**(모델 force 우회 불가). 균형형: 읽기·관찰·입력형=safe, 쓰기·삭제·셸변경·office편집·네트워크만 확인. 기존 CONFIRM 팝업 재사용(예/항상/아니오), 타임아웃=거부(무인 자동승인 금지), "항상"은 세션 허용목록. tool 짝 보존(I1). `docs/contracts/L1_loop_contract.md` 기준 |
 | 컨텍스트 compaction (G1) ✅ | `agent/core/compaction.py` + `agent/server.py` | 컨텍스트가 임계(`_CONTEXT_MAX_TOKENS*0.8`) 초과 시 루프 진입부에서 자동 압축: 선두 system+최근 N턴(8) 보존, 중간을 LLM 요약(`_summarize_history`, 비스트리밍 1회) system 1개로 치환. **tool_calls↔tool 짝 보존(I1)**, `COMPACTION` SSE 고지, `MAX_COMPACT=3` 상한(I3). 요약 LLM은 주입식이라 순수·테스트 가능 |
@@ -111,7 +111,7 @@
 | 입력 에디터 개선 (백로그 R) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 입력칸 **자동 높이 확장**(내용 따라 늘어남, 최대 뷰포트 40%서 스크롤) + **⛶ 확대(팝업) 에디터**(장문 작성·Ctrl+Enter 전송·Esc 닫기) + **Ctrl+Enter·Ctrl+J 줄바꿈** 추가(Enter=전송·Shift+Enter=줄바꿈 유지). 빠른작업 템플릿 삽입 시도 auto-grow. 상세: `docs/backlog/done/R-chat-input-editor.md` |
 | 대화 가독성: 의도 라벨·로그 접힘 (백로그 S) ✅ | `agent/server.py`(`_intent_label`) + `electron/renderer/chat.js`(`buildToolResult`) + `style.css` | **① 규칙 기반 의도 라벨**: `_AUTO_EXEC`가 모델 예고 문구를 금지(L1 루프 보호)하므로 서버가 도구명+핵심 인자(명령 excerpt·URL 호스트·파일명·selector)로 `tool_start.label` 합성. **② 명령 로그 접힘**: 스크립트(`run_command` 등)·긴 출력(>200자)은 기본 접힘(요약 1줄+토글), 에러는 펼침, 스크립트는 모노 작은폰트. 짧은 결과는 평문 유지. 상세: `docs/backlog/done/S-chat-readability.md` |
 | 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
-| 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 경량 `panzoom.js`(무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
+| 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.min.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 anvaka/panzoom UMD(`vendor/panzoom.min.js`, 무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`anvaka`에 `reset`/`setTransform`이 없어 `zoomAbs`+`moveTo`로 복원), **최초 렌더 시 `_fitToViewport`로 그래프 전체가 보이도록 축소·중앙정렬**(⊙=전체 보기) — 미적용 시 큰 그래프 하단이 잘리던 문제 해결. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
 
 **총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -243,7 +243,7 @@ mes-agent/
 │       └── done/           ← 완료 구현 배경 기록 (H·I·J·M·P·R·S)
 ├── electron/
 │   ├── main.js             ← Python 서버 자동 시작, 창 생성 + 협업 HUD 창(백로그 H)
-│   ├── preload.js          ← contextBridge (serverPort·협업 HUD 제어 노출)
+│   ├── preload.js          ← contextBridge (serverPort·authToken·협업 HUD 제어 노출). 샌드박스 안전: process.argv(additionalArguments)에서 값 수신, fs/path 미사용
 │   ├── hud-preload.js      ← 협업 HUD 창 전용 preload (백로그 H)
 │   └── renderer/
 │       ├── index.html      ← UI 레이아웃 (3-패널: 사이드바 + 채팅 + 우측 워크플로우)
@@ -394,7 +394,7 @@ running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 �
 
 ### U. 워크플로우 시각화 고도화 🗺️ — ✅ 완료 (현재 상태 표 참조)
 
-분기 그래프(from_output 0/1/2, BFS 2D) 위에 팬/줌(벤더링 `panzoom.js`)·동적 디테일(LoD)·노드 인라인 로그(S 근본 해결)·진행률 미니맵·그룹(서브워크플로우, `WorkflowNode.group` + `workflow_set_group`)을 증축. 상세: `docs/backlog/done/U-workflow-visualization.md`.
+분기 그래프(from_output 0/1/2, BFS 2D) 위에 팬/줌(벤더링 anvaka/panzoom `panzoom.min.js`)·동적 디테일(LoD)·노드 인라인 로그(S 근본 해결)·진행률 미니맵·그룹(서브워크플로우, `WorkflowNode.group` + `workflow_set_group`)을 증축. 상세: `docs/backlog/done/U-workflow-visualization.md`.
 
 ### (대기) Office 편집 백엔드 확정
 

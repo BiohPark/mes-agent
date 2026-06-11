@@ -66,7 +66,13 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true,  // 보안: 샌드박스 유지. preload는 fs 대신 additionalArguments로 값 수신
+      // 샌드박스 preload는 fs/path를 require할 수 없으므로 포트·토큰을 argv로 전달
+      additionalArguments: [
+        `--agent-port=${SERVER_PORT}`,
+        `--auth-token=${AUTH_TOKEN}`
+      ]
     }
   })
 

@@ -4,7 +4,7 @@
 
 ## 구현 결과 (결정사항)
 
-- **팬/줌 라이브러리**: 의존성 없는 경량 `electron/renderer/vendor/panzoom.js`를 벤더링(anvaka/panzoom 호환 API 부분집합). 폐쇄망에서는 이 파일을 USB로 반입하거나 upstream UMD로 교체 가능 — `workflow.js` 변경 불필요. 그래프 캔버스를 휠 줌·드래그 팬, ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`setTransform`).
+- **팬/줌 라이브러리**: anvaka/panzoom 원본 UMD를 `electron/renderer/vendor/panzoom.min.js`로 벤더링(의존성 없음, 폐쇄망 USB 반입). `index.html`이 `vendor/panzoom.min.js`를 로드해 전역 `window.panzoom` 노출. 그래프 캔버스를 휠 줌·드래그 팬, ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존. anvaka에는 `setTransform`/`reset`이 없어 뷰 복원·리셋은 `zoomAbs(0,0,scale)`+`moveTo(x,y)` 조합으로 처리(`workflow.js`). **최초 렌더 시 `_fitToViewport`로 그래프 전체가 뷰포트에 들어오도록 축소·중앙정렬하고, ⊙ 버튼은 "전체 보기"로 동작** — 이 fit-to-view가 없으면 고정 높이(`min(70vh,640px)`) `overflow:hidden` 뷰포트에서 큰 그래프 하단이 잘리고 좁은 그래프는 좌측에 치우쳐 "구버전보다 못생겨" 보이던 회귀를 해결. _초기 구현은 자작 경량 `panzoom.js`였으나 원본 라이브러리로 교체._
 - **동적 디테일(LoD)**: 줌 배율(<0.7 / 0.7–1.3 / >1.3)에 따라 `lod-low/mid/high` 클래스를 캔버스에 토글 → CSS가 노드 메타·인라인 로그·notes를 점진 노출.
 - **노드 인라인 로그(S 해결)**: 프론트 전용. `chat.js`의 `tool_done`에서 `recordToolLog`가 현재 running 노드에 도구 결과 요약을 적재(노드당 최근 5개, ephemeral). 노드 카드·컴팩트 행·액션 패널에 표시.
 - **미니맵**: 전체 그래프 점 오버뷰 + 현재 뷰포트 사각형, 클릭 시 이동(노드 6개 미만이면 숨김).

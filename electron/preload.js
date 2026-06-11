@@ -1,29 +1,20 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const fs = require('fs')
-const path = require('path')
 
-function readEnvPort() {
-  try {
-    const envPath = path.join(__dirname, '..', '.env')
-    const lines = fs.readFileSync(envPath, 'utf-8').split('\n')
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('AGENT_PORT=')) {
-        return parseInt(trimmed.split('=')[1].trim(), 10)
-      }
-    }
-  } catch {}
-  return 8000
+// 샌드박스 preload에서는 fs/path를 require할 수 없다(Error: module not found: fs).
+// 메인 프로세스가 webPreferences.additionalArguments로 전달한 값을 process.argv에서 읽는다.
+function argv(prefix, fallback) {
+  const hit = (process.argv || []).find(a => a.startsWith(prefix))
+  return hit ? hit.slice(prefix.length) : fallback
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  serverPort: readEnvPort(),
-  authToken: process.env.AGENT_AUTH_TOKEN || '',  // 서버 인증 토큰 (S1)
+  serverPort: parseInt(argv('--agent-port=', '8000'), 10) || 8000,
+  authToken: argv('--auth-token=', ''),  // 서버 인증 토큰 (S1)
   onServerReady: (cb) => ipcRenderer.on('server-ready', cb),
   onServerError: (cb) => ipcRenderer.on('server-error', (_, msg) => cb(msg)),
   // 실행 중 창 가림 회피 (개선 아이디어 C)
   agentBusy: (mode) => ipcRenderer.send('agent-busy', mode),
-  agentIdle: () => ipcRenderer.send('agent-idle', ),
+  agentIdle: () => ipcRenderer.send('agent-idle'),
   // 협업모드 HUD (백로그 H) — 메인 렌더러가 HUD를 제어
   collabShowHud: () => ipcRenderer.send('collab-show-hud'),
   collabHideHud: () => ipcRenderer.send('collab-hide-hud'),

@@ -40,6 +40,17 @@ function _disposePanzoom() {
   if (_panzoom) { _savedView = _panzoom.getTransform(); _panzoom.dispose(); _panzoom = null }
 }
 
+// 그래프 캔버스를 뷰포트 크기에 맞춰 축소(최대 1배)하고 중앙 정렬 → 전체가 한눈에 보이게
+function _fitToViewport(pz, viewport, canvasW, canvasH) {
+  const vw = viewport.clientWidth, vh = viewport.clientHeight
+  if (!vw || !vh || !canvasW || !canvasH) return
+  const scale = Math.min(vw / canvasW, vh / canvasH, 1) * 0.94  // 가장자리 여백
+  const x = (vw - canvasW * scale) / 2
+  const y = Math.max(8, (vh - canvasH * scale) / 2)
+  pz.zoomAbs(0, 0, scale)
+  pz.moveTo(x, y)
+}
+
 // ── 탭 전환 ─────────────────────────────────────────────────
 
 rpTabs.forEach(tab => {
@@ -273,7 +284,10 @@ function _applyGroupCollapse(steps, connections) {
 }
 
 // ── 좁은 패널: 세로 컴팩트 카드 목록 (개선 아이디어 B) ──────────
-const COMPACT_THRESHOLD = 360  // px 미만이면 컴팩트 모드
+// 이 폭 미만이면 세로 컴팩트 목록, 이상이면 2D 그래프.
+// fit-to-view가 그래프를 어떤 폭에도 맞춰 축소하므로 기본 패널폭(300px)에서도 그래프가 보이도록 250으로 낮춤.
+// (이전 360은 기본 패널폭 300보다 커서 항상 컴팩트 목록만 나오던 버그)
+const COMPACT_THRESHOLD = 250
 
 function _isCompact() {
   return (rightPanel.offsetWidth || _panelWidth) < COMPACT_THRESHOLD
@@ -505,7 +519,14 @@ function _renderGraph(wf, steps, connectionsRaw) {
       beforeMouseDown: e => !!e.target.closest('.wf-node-menu-btn, .wf-group-expand, .wf-action-panel, .wf-minimap'),
     })
     _panzoom.on('transform', _onPanzoomTransform)
-    if (_savedView) _panzoom.setTransform(_savedView.x, _savedView.y, _savedView.scale)
+    if (_savedView) {
+      // 재렌더: 사용자가 보던 위치 복원 (anvaka엔 setTransform이 없어 zoomAbs+moveTo)
+      _panzoom.zoomAbs(0, 0, _savedView.scale)
+      _panzoom.moveTo(_savedView.x, _savedView.y)
+    } else {
+      // 최초 렌더: 그래프 전체가 보이도록 뷰포트에 맞춰 축소·중앙정렬
+      _fitToViewport(_panzoom, viewport, canvasW, canvasH)
+    }
     _onPanzoomTransform(_panzoom)
   }
 }
@@ -1091,7 +1112,11 @@ function _zoomFromButton(factor) {
 document.getElementById('wf-zoom-in')?.addEventListener('click', () => _zoomFromButton(1.25))
 document.getElementById('wf-zoom-out')?.addEventListener('click', () => _zoomFromButton(0.8))
 document.getElementById('wf-zoom-reset')?.addEventListener('click', () => {
-  if (_panzoom) _panzoom.reset()
+  // 전체 보기: 그래프 전체가 보이도록 뷰포트에 맞춰 재정렬 (anvaka엔 reset()이 없음)
+  if (!_panzoom) return
+  const vp = workflowStepsEl.querySelector('.wf-graph-viewport')
+  const canvas = vp && vp.querySelector('.wf-graph-canvas')
+  if (vp && canvas) _fitToViewport(_panzoom, vp, canvas.offsetWidth, canvas.offsetHeight)
 })
 
 workflowClearBtn.addEventListener('click', async () => {
