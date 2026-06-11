@@ -10,6 +10,10 @@ jobs:
   test:
     name: Tests (External / GitHub-hosted)
     runs-on: windows-latest
+    permissions:
+      contents: read
+      checks: write        # dorny/test-reporter가 체크 결과를 쓰기 위해 필요
+      pull-requests: write # PR에 테스트 결과 코멘트 달기 위해 필요
 
     env:
       # LLM 모의 환경 — 실제 API 호출 없음 (conftest가 FakeLLMClient로 교체)
