@@ -4,8 +4,8 @@ import pytest
 from agent.workflow.model import Workflow, WorkflowStep
 
 
-def _make_step(id="aabb1122", title="단계1", type="auto", status="pending", notes="", max_retry=0) -> WorkflowStep:
-    return WorkflowStep(id=id, title=title, type=type, status=status, notes=notes, max_retry=max_retry)
+def _make_step(id="aabb1122", title="단계1", type="auto", status="pending", notes="", max_retry=0, group="") -> WorkflowStep:
+    return WorkflowStep(id=id, title=title, type=type, status=status, notes=notes, max_retry=max_retry, group=group)
 
 
 def _make_workflow(steps=None) -> Workflow:
@@ -51,7 +51,22 @@ class TestWorkflowToDict:
     def test_step_keys_present(self):
         wf = _make_workflow()
         step_d = wf.to_dict()["steps"][0]
-        assert set(step_d.keys()) == {"id", "title", "type", "status", "notes", "max_retry"}
+        assert set(step_d.keys()) == {"id", "title", "type", "status", "notes", "max_retry", "group"}
+
+    def test_group_serialized_and_roundtrip(self):
+        step = _make_step(group="배포 준비")
+        wf = _make_workflow(steps=[step])
+        assert wf.to_dict()["steps"][0]["group"] == "배포 준비"
+        restored = Workflow.from_dict(wf.to_dict())
+        assert restored.steps[0].group == "배포 준비"
+
+    def test_group_backcompat_missing_key(self):
+        wf = _make_workflow()
+        d = wf.to_dict()
+        for s in d["steps"]:
+            del s["group"]
+        restored = Workflow.from_dict(d)
+        assert all(s.group == "" for s in restored.steps)
 
     def test_max_retry_serialized(self):
         step = _make_step(max_retry=2)

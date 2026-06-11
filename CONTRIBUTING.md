@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (131종)
+## 구현된 툴 목록 (132종)
 
 > 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
 > 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
@@ -279,6 +279,7 @@ OBSIDIAN_API_KEY=발급받은-API-키                 # Obsidian 플러그인에
 | `workflow_reorder` | 단계 **순서 재배치** (`ordered_step_ids`에 원하는 순서대로 id 나열) |
 | `workflow_add_connection` | 노드 간 연결 추가 (`from_output`: 0=기본, 1=true 분기, 2=false 분기) |
 | `workflow_remove_connection` | 노드 간 연결 삭제 |
+| `workflow_set_group` | 여러 단계를 시각적 **그룹(서브워크플로우)**으로 묶음 (`group` 빈 문자열이면 해제) |
 
 **단계 타입:**
 - `auto` 🤖 — 에이전트가 자동 실행
@@ -421,7 +422,7 @@ agent/
     ├── office_cloud.py  — MANIFEST(3종) MS Graph 클라우드 Excel
     ├── obsidian_rag.py  — MANIFEST(18종) 탐색·편집·이동·고급검색
     ├── interaction.py   — MANIFEST(1종) ask_user
-    ├── workflow.py      — MANIFEST(8종) init·set_step·add/update/remove_step·reorder·add/remove_connection
+    ├── workflow.py      — MANIFEST(9종) init·set_step·add/update/remove_step·reorder·add/remove_connection·set_group
     ├── vision.py        — MANIFEST(3종) capture_screen(메인루프 이미지 주입)·analyze_screen/region
     ├── ui_automation.py — MANIFEST(3종) Windows 접근성 트리
     ├── memory_tools.py  — MANIFEST(3종) memory_remember·forget·recall (명시적 장기기억)

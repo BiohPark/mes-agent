@@ -27,6 +27,19 @@ let _dragIdx = null
 let _watcherES = null   // 파일 변경 감지 EventSource
 let _currentTaskType = null  // 현재 선택된 업무 유형
 
+// ── U: 시각화 고도화 상태 ─────────────────────────────────────
+let _panzoom = null                  // 현재 그래프의 팬/줌 인스턴스
+let _nodeLogs = {}                   // { [nodeId]: [{tool, summary, ok}] } — 노드별 최근 도구 로그 (ephemeral)
+let _collapsedGroups = new Set()     // 접힌 그룹 라벨 (스레드 단위 유지)
+let _lodRafPending = false
+let _savedView = null                // 재렌더 간 팬/줌 위치 보존 (스레드 전환 시 초기화)
+
+const wfZoomControls = document.getElementById('wf-zoom-controls')
+
+function _disposePanzoom() {
+  if (_panzoom) { _savedView = _panzoom.getTransform(); _panzoom.dispose(); _panzoom = null }
+}
+
 // ── 탭 전환 ─────────────────────────────────────────────────
 
 rpTabs.forEach(tab => {
@@ -120,7 +133,7 @@ const TYPE_META = {
 // ── 그래프 레이아웃 상수 ────────────────────────────────────────
 const GRAPH = { NODE_W: 200, NODE_H: 68, H_GAP: 36, V_GAP: 64, PAD: 16 }
 
-function _computeLayout(steps, connections) {
+function _computeLayout(steps, connections, groupOf = {}) {
   const { NODE_W, NODE_H, H_GAP, V_GAP, PAD } = GRAPH
   const out = {}, inc = {}
   for (const s of steps) { out[s.id] = []; inc[s.id] = [] }
@@ -148,6 +161,13 @@ function _computeLayout(steps, connections) {
   const byRank = {}
   for (let r = 0; r <= maxRank; r++) byRank[r] = []
   for (const s of steps) byRank[rank[s.id]].push(s.id)
+  // 같은 그룹 노드를 rank 내에서 인접 배치 (레인 정렬, 안정 정렬)
+  for (const r of Object.keys(byRank)) {
+    byRank[r] = byRank[r]
+      .map((id, i) => [id, i])
+      .sort((a, b) => (groupOf[a[0]] || '￿').localeCompare(groupOf[b[0]] || '￿') || a[1] - b[1])
+      .map(p => p[0])
+  }
 
   const maxRow = Math.max(1, ...Object.values(byRank).map(ids => ids.length))
   const canvasW = Math.max(NODE_W + PAD * 2, maxRow * NODE_W + (maxRow - 1) * H_GAP + PAD * 2)
@@ -190,12 +210,66 @@ function renderWorkflow(wf) {
   }
   progressWrap.querySelector('.wf-progress-fill').style.width = pct + '%'
 
+  _disposePanzoom()
   workflowStepsEl.innerHTML = ''
-  if (!steps.length) return
+  if (!steps.length) { if (wfZoomControls) wfZoomControls.classList.add('hidden'); return }
 
   // 반응형: 좁은 패널은 세로 컴팩트 카드, 넓으면 2D 그래프 (개선 아이디어 B)
-  if (_isCompact()) { _renderCompactList(wf, steps); return }
+  if (_isCompact()) {
+    if (wfZoomControls) wfZoomControls.classList.add('hidden')
+    _renderCompactList(wf, steps)
+    return
+  }
+  if (wfZoomControls) wfZoomControls.classList.remove('hidden')
   _renderGraph(wf, steps, connections)
+}
+
+// ── U: 그룹 접기 변환 ─────────────────────────────────────────
+// 접힌 그룹의 멤버 노드를 단일 pill 노드로 치환하고 연결을 재라우팅한다.
+function _applyGroupCollapse(steps, connections) {
+  const groupOf = {}
+  for (const s of steps) groupOf[s.id] = s.group || ''
+  const collapsed = [...steps.some(s => s.group) ? _collapsedGroups : []]
+    .filter(g => steps.some(s => s.group === g))
+  if (!collapsed.length) return { displaySteps: steps, displayConns: connections, pills: {}, groupOf }
+
+  const memberToPill = {}   // memberId -> pillId
+  const pills = {}          // pillId -> { id, group, members, doneCount, status }
+  for (const g of collapsed) {
+    const members = steps.filter(s => s.group === g)
+    const pillId = `__grp__${g}`
+    const doneCount = members.filter(m => m.status === 'done' || m.status === 'skipped').length
+    const anyRunning = members.some(m => m.status === 'running')
+    const anyError = members.some(m => m.status === 'error')
+    pills[pillId] = {
+      id: pillId, group: g, members,
+      doneCount, total: members.length,
+      status: anyError ? 'error' : anyRunning ? 'running' : doneCount === members.length ? 'done' : 'pending',
+    }
+    members.forEach(m => { memberToPill[m.id] = pillId })
+  }
+
+  const displaySteps = steps.filter(s => !memberToPill[s.id])
+  for (const pillId of Object.keys(pills)) {
+    const p = pills[pillId]
+    displaySteps.push({
+      id: pillId, title: p.group, type: 'auto', status: p.status,
+      notes: '', group: '', __pill: p,
+    })
+  }
+
+  const seen = new Set()
+  const displayConns = []
+  for (const c of connections) {
+    const from = memberToPill[c.from_node] || c.from_node
+    const to = memberToPill[c.to_node] || c.to_node
+    if (from === to) continue  // 그룹 내부 연결은 숨김
+    const key = `${from}|${to}|${c.from_output}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    displayConns.push({ from_node: from, to_node: to, from_output: c.from_output })
+  }
+  return { displaySteps, displayConns, pills, groupOf }
 }
 
 // ── 좁은 패널: 세로 컴팩트 카드 목록 (개선 아이디어 B) ──────────
@@ -228,6 +302,7 @@ function _renderCompactList(wf, steps) {
           <span class="wf-c-status">${sm.label}</span>
           ${step.notes ? `<span class="wf-node-notes-dot" title="${escapeAttr(step.notes)}">📝</span>` : ''}
         </div>`}
+        ${collapsed ? '' : _nodeLogHtml(step.id)}
       </div>
       <button class="wf-node-menu-btn" title="작업">⋮</button>
     `
@@ -241,14 +316,61 @@ function _renderCompactList(wf, steps) {
   workflowStepsEl.appendChild(list)
 }
 
-function _renderGraph(wf, steps, connections) {
-  const { positions, canvasW, canvasH } = _computeLayout(steps, connections)
-  const { NODE_W, NODE_H } = GRAPH
+function _nodeLogHtml(stepId) {
+  const logs = _nodeLogs[stepId]
+  if (!logs || !logs.length) return ''
+  const recent = logs.slice(-2)
+  return `<div class="wf-node-log">` + recent.map(l =>
+    `<div class="wf-node-log-line${l.ok ? '' : ' err'}" title="${escapeAttr(l.tool + ': ' + l.summary)}">` +
+    `${l.ok ? '✓' : '✗'} ${escapeWf(l.tool)}: ${escapeWf(l.summary)}</div>`
+  ).join('') + `</div>`
+}
+
+function _actionLogHtml(stepId) {
+  const logs = _nodeLogs[stepId]
+  if (!logs || !logs.length) return ''
+  return `<div class="wf-action-log"><div class="wf-action-log-title">실행 로그</div>` +
+    logs.map(l =>
+      `<div class="wf-action-log-line${l.ok ? '' : ' err'}">${l.ok ? '✓' : '✗'} ` +
+      `<b>${escapeWf(l.tool)}</b> ${escapeWf(l.summary)}</div>`
+    ).join('') + `</div>`
+}
+
+// chat.js의 tool_done에서 호출 — 현재 running 노드에 도구 로그 요약을 적재한다.
+function recordToolLog(tool, result) {
+  if (!_currentWorkflow || !tool || tool.startsWith('workflow_')) return
+  const running = (_currentWorkflow.steps || []).find(s => s.status === 'running')
+  if (!running) return
+  const text = String(result || '')
+  const ok = !text.startsWith('툴 실행 오류')
+  const firstLine = (text.split('\n').find(l => l.trim()) || text).trim()
+  const summary = firstLine.length > 80 ? firstLine.slice(0, 79) + '…' : firstLine
+  const arr = _nodeLogs[running.id] || (_nodeLogs[running.id] = [])
+  arr.push({ tool, summary, ok })
+  if (arr.length > 5) arr.shift()
+  if (!_editMode) renderWorkflow(_currentWorkflow)
+}
+
+function _renderGraph(wf, steps, connectionsRaw) {
+  const { NODE_W, NODE_H, PAD } = GRAPH
+
+  // 그룹 접기 변환 → 표시용 노드/연결
+  const { displaySteps, displayConns, pills, groupOf } = _applyGroupCollapse(steps, connectionsRaw)
+  const steps0 = displaySteps
+  const connections = displayConns
+  const { positions, canvasW, canvasH } = _computeLayout(steps0, connections, groupOf)
+
+  // 팬/줌 뷰포트(고정 크기, overflow 숨김) + 캔버스(변환 대상)
+  const viewport = document.createElement('div')
+  viewport.className = 'wf-graph-viewport'
 
   // 캔버스 컨테이너
   const canvas = document.createElement('div')
-  canvas.className = 'wf-graph-canvas'
+  canvas.className = 'wf-graph-canvas ' + _lodClassFor(1)
   canvas.style.cssText = `width:${canvasW}px;height:${canvasH}px;position:relative;`
+
+  // ── 그룹 박스 (펼쳐진 그룹의 멤버 bounding box) ───────────────
+  _renderGroupBoxes(canvas, steps0, positions)
 
   // ── SVG 연결선 ──────────────────────────────────────────────
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -264,7 +386,7 @@ function _renderGraph(wf, steps, connections) {
     ${MK('mk-f',    '#ef4444', 0.4)}${MK('mk-fa', '#ef4444')}
   </defs>`
 
-  const statusOf = id => (steps.find(s => s.id === id) || {}).status || 'pending'
+  const statusOf = id => (steps0.find(s => s.id === id) || {}).status || 'pending'
 
   for (const conn of connections) {
     const fp = positions[conn.from_node], tp = positions[conn.to_node]
@@ -311,16 +433,40 @@ function _renderGraph(wf, steps, connections) {
   }
   canvas.appendChild(svg)
 
-  // ── 노드 카드 ────────────────────────────────────────────────
-  for (const step of steps) {
+  // ── 노드 카드 (그룹 pill 포함) ───────────────────────────────
+  for (const step of steps0) {
     const pos = positions[step.id]; if (!pos) continue
     const sm = STATUS_META[step.status] || STATUS_META.pending
-    const tm = TYPE_META[step.type] || TYPE_META.auto
 
+    // 접힌 그룹 pill
+    if (step.__pill) {
+      const p = step.__pill
+      const pill = document.createElement('div')
+      pill.className = `wf-graph-node wf-group-pill ${sm.cls}`
+      pill.style.cssText = `left:${pos.x}px;top:${pos.y}px;width:${NODE_W}px;height:${NODE_H}px;position:absolute;`
+      pill.innerHTML = `
+        <div class="wf-node-inner">
+          <div class="wf-node-status-icon">📦</div>
+          <div class="wf-node-body">
+            <div class="wf-node-title">${escapeWf(p.group)}</div>
+            <div class="wf-node-meta"><span class="wf-node-status-label">그룹 ${p.doneCount}/${p.total}</span></div>
+          </div>
+          <button class="wf-group-expand" title="펼치기">▸</button>
+        </div>`
+      pill.querySelector('.wf-group-expand').addEventListener('click', e => {
+        e.stopPropagation()
+        _collapsedGroups.delete(p.group)
+        renderWorkflow(_currentWorkflow)
+      })
+      canvas.appendChild(pill)
+      continue
+    }
+
+    const tm = TYPE_META[step.type] || TYPE_META.auto
     const node = document.createElement('div')
     node.className = `wf-graph-node ${sm.cls}`
     node.dataset.stepId = step.id
-    node.style.cssText = `left:${pos.x}px;top:${pos.y}px;width:${NODE_W}px;height:${NODE_H}px;position:absolute;`
+    node.style.cssText = `left:${pos.x}px;top:${pos.y}px;width:${NODE_W}px;min-height:${NODE_H}px;position:absolute;`
 
     node.innerHTML = `
       <div class="wf-node-inner">
@@ -332,6 +478,7 @@ function _renderGraph(wf, steps, connections) {
             <span class="wf-node-status-label">${sm.label}</span>
             ${step.notes ? `<span class="wf-node-notes-dot" title="${escapeAttr(step.notes)}">📝</span>` : ''}
           </div>
+          ${_nodeLogHtml(step.id)}
         </div>
         <button class="wf-node-menu-btn" title="작업">⋮</button>
       </div>
@@ -343,7 +490,135 @@ function _renderGraph(wf, steps, connections) {
     canvas.appendChild(node)
   }
 
-  workflowStepsEl.appendChild(canvas)
+  viewport.appendChild(canvas)
+  workflowStepsEl.appendChild(viewport)
+
+  // ── 미니맵 ────────────────────────────────────────────────────
+  const minimap = _buildMinimap(steps0, positions, canvasW, canvasH)
+  if (minimap) viewport.appendChild(minimap)
+
+  // ── 팬/줌 초기화 ──────────────────────────────────────────────
+  _disposePanzoom()
+  if (typeof panzoom === 'function') {
+    _panzoom = panzoom(canvas, {
+      minZoom: 0.3, maxZoom: 2.5, bounds: true,
+      beforeMouseDown: e => !!e.target.closest('.wf-node-menu-btn, .wf-group-expand, .wf-action-panel, .wf-minimap'),
+    })
+    _panzoom.on('transform', _onPanzoomTransform)
+    if (_savedView) _panzoom.setTransform(_savedView.x, _savedView.y, _savedView.scale)
+    _onPanzoomTransform(_panzoom)
+  }
+}
+
+// ── U: 그룹 박스 (펼쳐진 그룹 멤버를 감싸는 반투명 사각형) ────────
+function _renderGroupBoxes(canvas, steps, positions) {
+  const { NODE_W, NODE_H } = GRAPH
+  const groups = {}
+  for (const s of steps) {
+    if (!s.group || s.__pill) continue
+    const pos = positions[s.id]; if (!pos) continue
+    ;(groups[s.group] = groups[s.group] || []).push(pos)
+  }
+  for (const [label, ps] of Object.entries(groups)) {
+    const minX = Math.min(...ps.map(p => p.x)) - 8
+    const minY = Math.min(...ps.map(p => p.y)) - 22
+    const maxX = Math.max(...ps.map(p => p.x + NODE_W)) + 8
+    const maxY = Math.max(...ps.map(p => p.y + NODE_H)) + 8
+    const box = document.createElement('div')
+    box.className = 'wf-group-box'
+    box.style.cssText = `left:${minX}px;top:${minY}px;width:${maxX - minX}px;height:${maxY - minY}px;position:absolute;`
+    box.innerHTML = `<span class="wf-group-label">📦 ${escapeWf(label)}</span>` +
+      `<button class="wf-group-collapse" title="그룹 접기">▾</button>`
+    box.querySelector('.wf-group-collapse').addEventListener('click', e => {
+      e.stopPropagation()
+      _collapsedGroups.add(label)
+      renderWorkflow(_currentWorkflow)
+    })
+    canvas.appendChild(box)
+  }
+}
+
+// ── U: 동적 디테일(LoD) ───────────────────────────────────────
+function _lodClassFor(scale) {
+  if (scale < 0.7) return 'lod-low'
+  if (scale > 1.3) return 'lod-high'
+  return 'lod-mid'
+}
+let _lodClass = 'lod-mid'
+
+function _onPanzoomTransform(pz) {
+  if (_lodRafPending) return
+  _lodRafPending = true
+  requestAnimationFrame(() => {
+    _lodRafPending = false
+    const t = pz.getTransform()
+    const canvas = workflowStepsEl.querySelector('.wf-graph-canvas')
+    if (canvas) {
+      const cls = _lodClassFor(t.scale)
+      if (cls !== _lodClass) {
+        canvas.classList.remove('lod-low', 'lod-mid', 'lod-high')
+        canvas.classList.add(cls)
+        _lodClass = cls
+      }
+    }
+    _updateMinimapViewport(t)
+  })
+}
+
+// ── U: 미니맵 ─────────────────────────────────────────────────
+const MINIMAP = { W: 132, H: 96 }
+
+function _buildMinimap(steps, positions, canvasW, canvasH) {
+  if (steps.length < 6) return null
+  const mm = document.createElement('div')
+  mm.className = 'wf-minimap'
+  mm.style.cssText = `width:${MINIMAP.W}px;height:${MINIMAP.H}px;`
+  const scale = Math.min(MINIMAP.W / canvasW, MINIMAP.H / canvasH)
+  mm.dataset.scale = scale
+  mm.dataset.canvasW = canvasW
+  mm.dataset.canvasH = canvasH
+  const { NODE_W, NODE_H } = GRAPH
+  for (const s of steps) {
+    const pos = positions[s.id]; if (!pos) continue
+    const dot = document.createElement('div')
+    const sm = STATUS_META[s.status] || STATUS_META.pending
+    dot.className = `wf-minimap-dot ${sm.cls}`
+    dot.style.cssText =
+      `left:${pos.x * scale}px;top:${pos.y * scale}px;` +
+      `width:${Math.max(2, NODE_W * scale)}px;height:${Math.max(2, NODE_H * scale)}px;position:absolute;`
+    mm.appendChild(dot)
+  }
+  const vp = document.createElement('div')
+  vp.className = 'wf-minimap-viewport'
+  mm.appendChild(vp)
+  // 미니맵 클릭 → 해당 지점을 뷰포트 중심으로 이동
+  mm.addEventListener('mousedown', e => {
+    if (!_panzoom) return
+    const rect = mm.getBoundingClientRect()
+    const cx = (e.clientX - rect.left) / scale
+    const cy = (e.clientY - rect.top) / scale
+    const vw = workflowStepsEl.querySelector('.wf-graph-viewport')
+    const t = _panzoom.getTransform()
+    _panzoom.moveTo(vw.clientWidth / 2 - cx * t.scale, vw.clientHeight / 2 - cy * t.scale)
+    e.stopPropagation()
+  })
+  return mm
+}
+
+function _updateMinimapViewport(t) {
+  const mm = workflowStepsEl.querySelector('.wf-minimap')
+  if (!mm) return
+  const vp = mm.querySelector('.wf-minimap-viewport')
+  const viewport = workflowStepsEl.querySelector('.wf-graph-viewport')
+  if (!vp || !viewport) return
+  const scale = parseFloat(mm.dataset.scale)
+  // 뷰포트가 보는 콘텐츠 영역 (콘텐츠 좌표) → 미니맵 좌표
+  const vx = -t.x / t.scale
+  const vy = -t.y / t.scale
+  const vw = viewport.clientWidth / t.scale
+  const vh = viewport.clientHeight / t.scale
+  vp.style.cssText =
+    `left:${vx * scale}px;top:${vy * scale}px;width:${vw * scale}px;height:${vh * scale}px;`
 }
 
 // ── 노드 인터랙션 패널 (Phase 6C) ─────────────────────────────
@@ -380,6 +655,7 @@ function _showNodeActions(nodeEl, step, wf) {
       <button class="wf-action-close">✕</button>
     </div>
     ${step.notes ? `<div class="wf-action-current-notes">${escapeWf(step.notes)}</div>` : ''}
+    ${_actionLogHtml(step.id)}
     <div class="wf-action-notes-wrap">
       <textarea class="wf-action-notes-input" placeholder="메모 추가...">${escapeWf(step.notes || '')}</textarea>
     </div>
@@ -445,7 +721,12 @@ async function _patchNode(wf, nodeId, status, notes = '', branchOutput = null) {
 
 function clearWorkflow() {
   _stopFileWatcher()
+  _disposePanzoom()
+  _savedView = null
+  _nodeLogs = {}
+  _collapsedGroups = new Set()
   _currentWorkflow = null
+  if (wfZoomControls) wfZoomControls.classList.add('hidden')
   workflowContent.classList.add('hidden')
   workflowEmpty.classList.remove('hidden')
   workflowStepsEl.innerHTML = ''
@@ -524,12 +805,15 @@ function renderEditMode() {
         <option value="semi_auto" ${step.type === 'semi_auto' ? 'selected' : ''}>👁️ 반자동</option>
         <option value="manual" ${step.type === 'manual' ? 'selected' : ''}>✋ 수동</option>
       </select>
+      <input class="wf-edit-group" value="${escapeAttr(step.group || '')}" placeholder="그룹" title="시각적 그룹 라벨 (선택)" />
       <button class="wf-edit-del" title="단계 삭제">✕</button>
     `
     row.querySelector('.wf-edit-title')
       .addEventListener('input', e => { _editDraft.steps[idx].title = e.target.value })
     row.querySelector('.wf-edit-type')
       .addEventListener('change', e => { _editDraft.steps[idx].type = e.target.value })
+    row.querySelector('.wf-edit-group')
+      .addEventListener('input', e => { _editDraft.steps[idx].group = e.target.value })
     row.querySelector('.wf-edit-del')
       .addEventListener('click', () => { _editDraft.steps.splice(idx, 1); renderEditMode() })
 
@@ -551,7 +835,7 @@ function renderEditMode() {
   addBtn.className = 'wf-add-step-btn'
   addBtn.textContent = '+ 단계 추가'
   addBtn.addEventListener('click', () => {
-    _editDraft.steps.push({ id: '', title: '새 단계', type: 'auto', status: 'pending', notes: '' })
+    _editDraft.steps.push({ id: '', title: '새 단계', type: 'auto', status: 'pending', notes: '', group: '' })
     renderEditMode()
   })
   workflowStepsEl.appendChild(addBtn)
@@ -734,6 +1018,9 @@ async function loadWorkflowForThread(taskType, threadId) {
   if (_editMode) _leaveEdit()
   _stopFileWatcher()
   _currentTaskType = taskType || null
+  _nodeLogs = {}
+  _collapsedGroups = new Set()
+  _savedView = null
   if (!taskType || !threadId) { clearWorkflow(); return }
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
@@ -793,6 +1080,20 @@ workflowSaveBtn.addEventListener('click', _saveEdit)
 workflowCancelBtn.addEventListener('click', _cancelEdit)
 workflowTemplateBtn.addEventListener('click', _enterTemplateEdit)
 
+// ── 줌 컨트롤 (U) ─────────────────────────────────────────────
+function _zoomFromButton(factor) {
+  if (!_panzoom) return
+  const vp = workflowStepsEl.querySelector('.wf-graph-viewport')
+  if (!vp) return
+  const r = vp.getBoundingClientRect()
+  _panzoom.smoothZoom(r.left + r.width / 2, r.top + r.height / 2, factor)
+}
+document.getElementById('wf-zoom-in')?.addEventListener('click', () => _zoomFromButton(1.25))
+document.getElementById('wf-zoom-out')?.addEventListener('click', () => _zoomFromButton(0.8))
+document.getElementById('wf-zoom-reset')?.addEventListener('click', () => {
+  if (_panzoom) _panzoom.reset()
+})
+
 workflowClearBtn.addEventListener('click', async () => {
   if (!_currentWorkflow) return
   if (!confirm('이 스레드의 워크플로우를 삭제할까요?\n(다시 열면 기본 템플릿으로 초기화됩니다)')) return
@@ -811,5 +1112,6 @@ window.workflowPanel = {
   load: loadWorkflowForThread,
   handleUpdate: handleWorkflowUpdate,
   appendLog,
+  recordToolLog,
   clearLog,
 }

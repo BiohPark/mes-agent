@@ -1175,6 +1175,7 @@ async def save_workflow_endpoint(task_type: str, thread_id: str, body: WorkflowS
             id=s.get("id") or _uuid.uuid4().hex[:8],
             title=s["title"],
             type=s.get("type", "auto"),
+            group=s.get("group", ""),
         )
         for s in body.steps
     ]

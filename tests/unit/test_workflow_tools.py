@@ -40,6 +40,11 @@ def _call_reorder(task_type, thread_id, ordered_ids):
     return json.loads(_workflow_reorder(task_type, thread_id, ordered_ids))
 
 
+def _call_set_group(task_type, thread_id, step_ids, group=""):
+    from agent.tools.workflow import _workflow_set_group
+    return json.loads(_workflow_set_group(task_type, thread_id, step_ids, group))
+
+
 _TT = "general"
 _TID = "tool-test-thread"
 
@@ -443,3 +448,43 @@ class TestConnectionsInWorkflowDict:
         assert conns[0]["to_node"] == ids[1]
         assert conns[1]["from_node"] == ids[1]
         assert conns[1]["to_node"] == ids[2]
+
+
+# ── workflow_set_group ────────────────────────────────────────────────
+
+class TestWorkflowSetGroup:
+    def _init3(self):
+        r = _call_init(_TT, _TID, "제목", [{"title": "A"}, {"title": "B"}, {"title": "C"}])
+        return [s["id"] for s in r["workflow"]["steps"]]
+
+    def test_returns_ok(self, vault):
+        ids = self._init3()
+        r = _call_set_group(_TT, _TID, ids[:2], "배포 준비")
+        assert r["ok"] is True
+
+    def test_group_applied_to_steps(self, vault):
+        ids = self._init3()
+        r = _call_set_group(_TT, _TID, [ids[0], ids[1]], "배포 준비")
+        by_id = {s["id"]: s for s in r["workflow"]["steps"]}
+        assert by_id[ids[0]]["group"] == "배포 준비"
+        assert by_id[ids[1]]["group"] == "배포 준비"
+        assert by_id[ids[2]]["group"] == ""
+
+    def test_group_persisted_in_definition(self, vault):
+        ids = self._init3()
+        _call_set_group(_TT, _TID, [ids[0]], "G1")
+        defn = wf_storage.load_definition(_TT, _TID)
+        node = next(n for n in defn.nodes if n.id == ids[0])
+        assert node.group == "G1"
+
+    def test_empty_group_clears(self, vault):
+        ids = self._init3()
+        _call_set_group(_TT, _TID, [ids[0]], "G1")
+        r = _call_set_group(_TT, _TID, [ids[0]], "")
+        by_id = {s["id"]: s for s in r["workflow"]["steps"]}
+        assert by_id[ids[0]]["group"] == ""
+
+    def test_unknown_step_rejected(self, vault):
+        self._init3()
+        r = _call_set_group(_TT, _TID, ["nonexistent"], "G1")
+        assert r["ok"] is False

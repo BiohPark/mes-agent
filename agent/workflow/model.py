@@ -18,6 +18,7 @@ class WorkflowStep:
     status: StepStatus = "pending"
     notes: str = ""
     max_retry: int = 0
+    group: str = ""
 
 
 @dataclass
@@ -41,6 +42,7 @@ class Workflow:
                     "status": s.status,
                     "notes": s.notes,
                     "max_retry": s.max_retry,
+                    "group": s.group,
                 }
                 for s in self.steps
             ],
@@ -58,6 +60,7 @@ class Workflow:
                 status=s.get("status", "pending"),
                 notes=s.get("notes", ""),
                 max_retry=s.get("max_retry", 0),
+                group=s.get("group", ""),
             ))
         return cls(
             thread_id=data["thread_id"],
@@ -77,6 +80,7 @@ class WorkflowNode:
     type: NodeType = "auto"
     retry: int = 0
     on_error: str = "stop"  # "stop" | "continue" | node_id
+    group: str = ""  # 시각적 그룹/서브워크플로우 라벨 (빈 값 = 그룹 없음)
 
     def to_dict(self) -> dict:
         return {
@@ -85,6 +89,7 @@ class WorkflowNode:
             "type": self.type,
             "retry": self.retry,
             "on_error": self.on_error,
+            "group": self.group,
         }
 
     @classmethod
@@ -95,6 +100,7 @@ class WorkflowNode:
             type=data.get("type", "auto"),
             retry=data.get("retry", 0),
             on_error=data.get("on_error", "stop"),
+            group=data.get("group", ""),
         )
 
 
@@ -252,6 +258,7 @@ def migrate_linear_to_graph(
             title=s.title,
             type=s.type,
             retry=s.max_retry,
+            group=s.group,
         )
         for s in wf.steps
     ]
