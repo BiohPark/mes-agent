@@ -5,6 +5,8 @@
 #   .\test.ps1 integration  — 통합 테스트만
 #   .\test.ps1 smoke        — 스모크 테스트만
 #   .\test.ps1 fast         — 커버리지 없이 빠르게
+#   .\test.ps1 ci           — 사외망 CI 재현 (requires_office 제외)
+#   .\test.ps1 no-llm       — 실제 LLM 없이 실행 가능한 테스트만
 
 param(
     [string]$Target = "all"
@@ -35,6 +37,18 @@ switch ($Target) {
     "fast" {
         Write-Host "[ 전체 테스트 (커버리지 제외) ]" -ForegroundColor Yellow
         python -m pytest tests/ -v --tb=short
+    }
+    "ci" {
+        # 사외망 CI 재현: 전체 실행 (각 테스트가 skipif로 자체 처리)
+        Write-Host "[ CI 모드 — 전체 실행 (skipif 자동 처리) ]" -ForegroundColor Yellow
+        $env:CI = "true"
+        $env:INTERNAL_CI = ""
+        python -m pytest -v --tb=short
+    }
+    "no-llm" {
+        # LLM 없이 실행: requires_llm 마커가 붙은 테스트 제외
+        Write-Host "[ LLM 없이 실행 ]" -ForegroundColor Yellow
+        python -m pytest -m "not requires_llm" -v --tb=short
     }
     default {
         Write-Host "[ 전체 테스트 + 커버리지 ]" -ForegroundColor Yellow

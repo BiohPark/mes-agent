@@ -1,6 +1,7 @@
 # 백로그 P — 좌측 프레임 정보구조(IA) 개편 🗂️
 
-> 상태: 🔲 미착수 · 우선순위 **상**(데일리 마찰 해소·낮은 리스크)
+> 상태: ✅ 완료(3영역 IA·전역검색·Active runs·개발자도구 접기) · 즐겨찾기·최근활동은 후속
+> 구현: `index.html`/`style.css`(3영역 flex) + `chat.js`(검색·Active runs) + `server.py /search` + `obsidian_session.search_threads`
 
 ## 문제·가치
 

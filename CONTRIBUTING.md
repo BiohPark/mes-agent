@@ -8,7 +8,7 @@
 □ agent/tools/<name>.py        — 툴 함수 작성 + MANIFEST 정의 (이것만으로 자동 등록)
 □ CLAUDE.md                    — 현재 상태 표의 해당 항목 ✅ 변경, 툴 수 업데이트
 □ README.md                    — 기능 현황 표 상태 업데이트
-□ docs/agent-guide.md          — 아래 "구현된 툴 목록" 업데이트
+□ CONTRIBUTING.md              — 아래 "구현된 툴 목록" 업데이트
 ```
 
 > **`__init__.py`는 수정하지 않아도 된다.** MANIFEST가 있는 파일을 `tools/` 폴더에 넣으면 서버 시작 시 자동 등록된다.

@@ -9,6 +9,35 @@ import os
 import tempfile
 import pytest
 
+
+def pytest_runtest_setup(item):
+    """마커 기반 환경 자동 스킵.
+
+    - requires_llm: 실제 LLM API 키가 없으면 스킵 (CI 기본 환경)
+    - requires_display: 사외망 CI(GitHub-hosted runner)에서 스킵
+    - requires_office: 사외망 CI에서 스킵
+    """
+    is_ci = bool(os.environ.get("CI"))
+    is_internal_ci = bool(os.environ.get("INTERNAL_CI"))
+
+    if "requires_llm" in item.keywords:
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        base_url = os.environ.get("LLM_OPENAI_BASE_URL", "")
+        is_fake = api_key == "test-key-placeholder" or "test.invalid" in base_url
+        if is_fake:
+            pytest.skip("실제 LLM API가 필요합니다 (requires_llm). "
+                        "OPENAI_API_KEY 또는 LLM_INTERNAL_* 환경변수를 설정하세요.")
+
+    if "requires_display" in item.keywords:
+        if is_ci and not is_internal_ci:
+            pytest.skip("디스플레이/화면 접근이 필요합니다 (requires_display). "
+                        "사내망 self-hosted runner에서 실행하세요.")
+
+    if "requires_office" in item.keywords:
+        if is_ci and not is_internal_ci:
+            pytest.skip("MS Office / Tesseract 등 데스크탑 소프트웨어가 필요합니다 "
+                        "(requires_office). 사내망 self-hosted runner에서 실행하세요.")
+
 # ── 최소 환경변수 — agent 모듈 import 전에 반드시 설정 ──────────────
 os.environ.setdefault("OPENAI_API_KEY", "test-key-placeholder")
 os.environ.setdefault("LLM_ACTIVE", "openai")

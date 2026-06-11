@@ -6,7 +6,7 @@
 
 | 변경 유형 | 업데이트할 파일 |
 |-----------|----------------|
-| 새 툴 추가 (`agent/tools/*.py`) | `CLAUDE.md` 현재 상태, `README.md` 기능 표, `docs/agent-guide.md` 툴 목록 |
+| 새 툴 추가 (`agent/tools/*.py`) | `CLAUDE.md` 현재 상태, `README.md` 기능 표, `CONTRIBUTING.md` 툴 목록 |
 | 새 워크플로우 추가 (`agent/workflows/*.py`) | `CLAUDE.md` 현재 상태, `README.md` 기능 표, `electron/renderer/index.html` 사이드바 버튼 |
 | UI 변경 | `CLAUDE.md` 현재 상태, `README.md` 스크린샷·설명 |
 | 설정 항목 추가 (`.env`) | `.env.example`, `SETUP.md` 환경 설정 섹션 |
@@ -108,6 +108,9 @@
 | 협업모드(코치) (백로그 H) ✅ | `agent/collaborate.py` + `agent/server.py` + `electron`(HUD) | 사용자가 직접 작업하는 동안 에이전트가 관찰자로 화면을 보며 비간섭 힌트. `/collaborate/start·tick·stop`, **toolless 단발 멀티모달**(`make_hint`)로 실행 도구 구조적 차단. 변화율 게이트(`COLLAB_CHANGE_THRESHOLD`)로 비용 통제. 항상-위 플로팅 HUD(`hud.html`, focusable:false, 포커스 비탈취), 헤더 `🤝 협업` + 목표 입력 바, 클라이언트 30s 폴링 |
 | MCP 클라이언트 (백로그 J) ✅ | `agent/mcp_client.py` + `agent/tools/__init__.py` + `agent/server.py` | 외부 MCP 서버(예: Oracle DB) 도구를 런타임 등록(`register_tool` in-place, 전용 asyncio 루프 + `run_coroutine_threadsafe` sync 브릿지, `mcp` SDK 지연 import). `readOnlyHint`→`_risk`를 `classify_risk(risk_hint=)`로 반영(읽기=safe/쓰기=confirm). `mcp_servers.json`(.gitignore, `.example` 제공) + `MCP_ENABLED`. 무설정/미설치 무해. **Obsidian은 기존 유지**(대체 안 함). 실연결은 회사 환경 |
 | 컨텍스트 초과 자동 처리·이미지 토큰 다이어트 (백로그 M) ✅ | `agent/tools/vision.py` + `agent/core/{tokens,overflow,compaction}.py` + `agent/config.py` + `agent/server.py` + `chat.js` | 이미지 주입 중 컨텍스트 초과로 채팅이 전면 실패하던 문제를 **5단 방어**로 해결. **M1** 적응형 이미지 다이어트(다운스케일·JPEG·`detail` 동적, 임계 근접 시 low 강등). **M2** `prune_images`로 최신 N개 이미지만 유지(과거=텍스트 자리표시자). **M3** `agent/core/tokens.py` OpenAI 타일링 공식 토큰 추정(이미지 고정 1000토큰 가정 대체, tiktoken 선택). **M4** `agent/core/overflow.py` 400 점진적 복구(prune→강제 compact→재시도, 항상 `DONE` I4, 모델 무관). **M5** `get_context_window`로 모델별 윈도우(known 맵 + `LLM_*_CONTEXT_TOKENS` 오버라이드). 상세: `docs/backlog/M-context-overflow.md` |
+| 입력 에디터 개선 (백로그 R) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 입력칸 **자동 높이 확장**(내용 따라 늘어남, 최대 뷰포트 40%서 스크롤) + **⛶ 확대(팝업) 에디터**(장문 작성·Ctrl+Enter 전송·Esc 닫기) + **Ctrl+Enter·Ctrl+J 줄바꿈** 추가(Enter=전송·Shift+Enter=줄바꿈 유지). 빠른작업 템플릿 삽입 시도 auto-grow. 상세: `docs/backlog/done/R-chat-input-editor.md` |
+| 대화 가독성: 의도 라벨·로그 접힘 (백로그 S) ✅ | `agent/server.py`(`_intent_label`) + `electron/renderer/chat.js`(`buildToolResult`) + `style.css` | **① 규칙 기반 의도 라벨**: `_AUTO_EXEC`가 모델 예고 문구를 금지(L1 루프 보호)하므로 서버가 도구명+핵심 인자(명령 excerpt·URL 호스트·파일명·selector)로 `tool_start.label` 합성. **② 명령 로그 접힘**: 스크립트(`run_command` 등)·긴 출력(>200자)은 기본 접힘(요약 1줄+토글), 에러는 펼침, 스크립트는 모노 작은폰트. 짧은 결과는 평문 유지. 상세: `docs/backlog/done/S-chat-readability.md` |
+| 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
 
 **총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -141,8 +144,8 @@
 ## 외부 하니스 패턴 도입 시 규칙 (클린룸)
 
 L1 루프 강화는 클린룸 거버넌스 하에 완료됨(G3·G1·G2·G4). 향후 외부 에이전트 하니스 패턴을
-도입할 때는 **유출 소스(openclaude·claw-code 등) 금지**, 계약서(`docs/contracts/`) 먼저 → TDD 구현 원칙을 따른다.
-상세: `docs/CLAW_PORT_PLAN.md`(거버넌스), `docs/contracts/L1_loop_contract.md`(완료된 L1 명세).
+도입할 때는 **유출 소스(openclaude·claw-code 등) 금지**, ADR(`docs/adr/`) 먼저 → TDD 구현 원칙을 따른다.
+상세: `docs/CLAW_PORT_PLAN.md`(거버넌스), `docs/adr/0002-L1-loop-contract.md`(완료된 L1 명세).
 
 ---
 
@@ -218,11 +221,25 @@ L1 루프 강화는 클린룸 거버넌스 하에 완료됨(G3·G1·G2·G4). 향
 
 ```
 mes-agent/
-├── CLAUDE.md               ← 이 파일 (개발 가이드 + 상태 추적)
+├── CLAUDE.md               ← 이 파일 (Claude Code AI 지침 + 구현 상태 SSOT)
+├── AGENTS.md               ← 범용 AI agent 코드베이스 오리엔테이션 (짧은 안내)
+├── CONTRIBUTING.md         ← 툴 추가 방법 + 전체 툴 목록 (사람 개발자용)
+├── USAGE.md                ← 사용자 가이드 (앱 실행·기능·단축키)
+├── LICENSE                 ← MIT License
+├── SECURITY.md             ← 보안 정책·취약점 보고 절차
 ├── README.md               ← GitHub용 소개
 ├── SETUP.md                ← 설치 가이드
+├── .github/
+│   ├── ISSUE_TEMPLATE/     ← 이슈 양식 (bug_report, feature_request)
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/
+│       ├── ci.yml          ← 사외망 CI (GitHub-hosted runner, 전체 테스트)
+│       └── ci-internal.yml ← 사내망 CI (self-hosted runner, 전체 + 내부 LLM)
 ├── docs/
-│   └── agent-guide.md      ← 툴 추가 방법 가이드
+│   ├── adr/                ← 아키텍처 의사결정 기록 (ADR-0001·0002)
+│   └── backlog/
+│       ├── pending/        ← 미착수 기능 사양 (N·O·Q·T·U)
+│       └── done/           ← 완료 구현 배경 기록 (H·I·J·M·P·R·S)
 ├── electron/
 │   ├── main.js             ← Python 서버 자동 시작, 창 생성 + 협업 HUD 창(백로그 H)
 │   ├── preload.js          ← contextBridge (serverPort·협업 HUD 제어 노출)
@@ -236,7 +253,7 @@ mes-agent/
 │       ├── hud.html/hud.js ← 협업 코치 플로팅 HUD (백로그 H)
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억. (/health /chat /stop /memory /collaborate/* /profile /models /confirm /tool/test /task-config /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S). (/health /chat /stop /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
 │   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
@@ -291,7 +308,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 접근 우선순위: `OBSIDIAN_HOST` (Local REST API) → `OBSIDIAN_VAULT_PATH` (직접 파일, fallback)
 
-> **상세 문서**: `docs/agent-guide.md` — "Obsidian RAG" 섹션 참조
+> **상세 문서**: `CONTRIBUTING.md` — "Obsidian RAG" 섹션 참조
 
 ### 에이전트 작업 시 Obsidian 활용 방식
 - **분석 시작 전** — `obsidian_search`로 관련 도메인 노트 먼저 검색
@@ -328,7 +345,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 **P3 OnlyOffice Document Server** 🔲 대기 — 폐쇄망 자체호스팅 시 헤드리스 Document Builder로 대량 생성·편집·변환. 서버 호스팅 + JWT 서명/콜백 설계 필요(라이브 환경 확정 시).
 
-**⏭ 가이드**: `docs/office-editing-next-steps.md` — **`sbiologics.com`이 사내 전용이라 회사 PC에서 실제 문서 URL/경로 확인 선행.** `GRAPH_BASE_URL`로 사내 M365 엔드포인트 재정의 지원.
+**⏭ 가이드**: `docs/backlog/pending/office-editing-next-steps.md` — **`sbiologics.com`이 사내 전용이라 회사 PC에서 실제 문서 URL/경로 확인 선행.** `GRAPH_BASE_URL`로 사내 M365 엔드포인트 재정의 지원.
 
 ### K. Office 문서 base64 멀티모달 📄 — 🔲 대기 (회사 테스트 선행)
 
@@ -343,40 +360,40 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 ---
 
 > **에픽 N–U (2026-06-11 추가)** — 하네스·외부제어·UI/UX 전면 개선. 상세 설계·확인사항은 각 `docs/backlog/{N..U}-*.md`.
-> **PO 추천 시퀀스**: ① 즉시 효용 **P·R·S** → ② 핵심 **U·Q** → ③ 확장 **T(P 이후)·O(Q 큐 공유)** → ④ 리서치 트랙 **N(L과 통합)**.
+> **PO 추천 시퀀스**: ✅ Tier 1 **P·R·S 완료**(현재 상태 표 참조) → ② 핵심 **U·Q** → ③ 확장 **T(P 이후)·O(Q 큐 공유)** → ④ 리서치 트랙 **N(L과 통합)**.
 > **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · S↔U(로그 이관) · N↔L(이벤트 스트림).
 
 ### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
 
-단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/N-harness-mode.md`.
+단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/pending/N-harness-mode.md`.
 
 ### O. 외부 기기 지시·모니터링(원격 제어) 📱 — 🔲 미착수
 
-폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함**(`agent/control/inbox.md`, mtime 폴링 — 포트 개방 없이 동기화로 원격, 권장) / **(B) LAN 바인딩+인증 강화**(옵트인). 명령 주입은 **백로그 Q의 메시지 큐와 공유**. 확인: 회사 네트워크 정책·Vault 동기화 수단·인증·권한분리. 상세: `docs/backlog/O-external-control.md`.
+폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함**(`agent/control/inbox.md`, mtime 폴링 — 포트 개방 없이 동기화로 원격, 권장) / **(B) LAN 바인딩+인증 강화**(옵트인). 명령 주입은 **백로그 Q의 메시지 큐와 공유**. 확인: 회사 네트워크 정책·Vault 동기화 수단·인증·권한분리. 상세: `docs/backlog/pending/O-external-control.md`.
 
-### P. 좌측 프레임 정보구조(IA) 개편 🗂️ — 🔲 미착수 (우선순위 상)
+### P. 좌측 프레임 정보구조(IA) 개편 🗂️ — ✅ 완료 (현재 상태 표 참조)
 
-스레드 늘면 관리 버튼이 화면 밖으로 밀리는 문제(사이드바 overflow 없음) 해결. TOBE: **업무자동화 + {추천기능} + 관리(하단 고정) + 스크롤**. 빠른작업·도구테스트 제거(도구테스트는 접이식 개발자메뉴 권장). 추천 신규: **전역 검색**(권장)·고정스레드·진행 중 작업·최근 활동. 상세: `docs/backlog/P-left-frame-ia.md`.
+3영역 사이드바(상단 고정 검색·진행중 / 중단 스크롤 / 하단 고정 관리·개발자도구) + 전역 검색(`/search`) + Active runs. 빠른작업·도구테스트는 접이식 개발자 도구로 이동. (즐겨찾기·최근활동은 미구현 — 필요 시 후속.) 상세: `docs/backlog/done/P-left-frame-ia.md`.
 
 ### Q. 작업 상태 명확화 + 작업 중 개입 ⏯️ — 🔲 미착수 (우선순위 상)
 
-running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재→`generate()`가 단계 경계(I1 보존)에서 드레인 주입. **O와 큐 메커니즘 공유**. 상세: `docs/backlog/Q-agent-state-and-intervention.md`.
+running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재→`generate()`가 단계 경계(I1 보존)에서 드레인 주입. **O와 큐 메커니즘 공유**. 상세: `docs/backlog/pending/Q-agent-state-and-intervention.md`.
 
-### R. 대화 입력 에디터 개선 ⌨️ — 🔲 미착수 (우선순위 상)
+### R. 대화 입력 에디터 개선 ⌨️ — ✅ 완료 (현재 상태 표 참조)
 
-입력칸 자동 높이 확장 + 확대/팝업 에디터 + 단축키(Ctrl+J/Ctrl+Enter 줄바꿈 추가). **참고: 줄바꿈은 이미 Shift+Enter로 동작** — 실제 과제는 입력 영역 크기/편집 경험. 상세: `docs/backlog/R-chat-input-editor.md`.
+자동 높이 확장 + ⛶ 확대(팝업) 에디터 + Ctrl+Enter·Ctrl+J 줄바꿈. 상세: `docs/backlog/done/R-chat-input-editor.md`.
 
-### S. 대화 가독성: 의도 내레이션 + 명령 로그 축소 📖 — 🔲 미착수 (우선순위 상)
+### S. 대화 가독성: 의도 내레이션 + 명령 로그 축소 📖 — ✅ 완료 (현재 상태 표 참조)
 
-도구 실행 전 한 줄 의도 노출 + 스크립트/bash 로그 **기본 접힘·작은 폰트**(클릭 시 펼침)로 대화 흐름 회복. 근본 해결은 로그를 우측 워크플로우로 이관(**U와 병행**). 상세: `docs/backlog/S-chat-readability.md`.
+규칙 기반 의도 라벨(서버 `_intent_label`) + 스크립트/긴 로그 기본 접힘·모노 작은폰트. 근본 해결(로그 우측 패널 이관)은 **U와 병행** 예정. 상세: `docs/backlog/done/S-chat-readability.md`.
 
 ### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🔲 미착수
 
-`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. **P 이후**(사이드바 동적화 공유). 상세: `docs/backlog/T-dynamic-task-types.md`.
+`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. **P 이후**(사이드바 동적화 공유). 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
 
 ### U. 워크플로우 시각화 고도화 🗺️ — 🔲 미착수 (핵심·우선순위 상)
 
-이미 있는 분기 그래프(from_output 0/1/2, BFS 2D) 위에 **팬/줌·그룹(서브워크플로우)·진행률 미니맵·노드 인라인 로그 요약**. ~20노드 혼잡 해소. S(대화 가독성)의 근본 해결책 — 정보를 옮겨 담을 그릇. 상세: `docs/backlog/U-workflow-visualization.md`.
+이미 있는 분기 그래프(from_output 0/1/2, BFS 2D) 위에 **팬/줌·그룹(서브워크플로우)·진행률 미니맵·노드 인라인 로그 요약**. ~20노드 혼잡 해소. S(대화 가독성)의 근본 해결책 — 정보를 옮겨 담을 그릇. 상세: `docs/backlog/pending/U-workflow-visualization.md`.
 
 ### (대기) Office 편집 백엔드 확정
 

@@ -1,6 +1,6 @@
 # 백로그 R — 대화 입력 에디터 개선 ⌨️
 
-> 상태: 🔲 미착수 · 우선순위 **상**(빠른 효용·작은 규모)
+> 상태: ✅ 완료 · `chat.js`(autoGrowInput·확대 에디터·Ctrl+Enter/Ctrl+J) + `index.html` + `style.css`
 
 ## 문제·가치
 

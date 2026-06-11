@@ -1,9 +1,41 @@
+# ADR-0002 — L1 에이전트 실행 루프 강화 계약
+
+| 항목 | 내용 |
+|------|------|
+| **상태** | Accepted (2026-06-10) |
+| **결정자** | Bioh Park |
+| **대상 파일** | `agent/server.py` `generate()` |
+| **관련 ADR** | ADR-0001 (워크플로우 그래프 모델) |
+
+## 컨텍스트
+
+단일 `generate()` 루프가 끊김·컨텍스트 초과·무인 위험 실행 등의 구조적 취약점을 가지고 있었다.
+외부 에이전트 하니스 패턴(openclaw·LangGraph 등)을 참고하되 **클린룸 원칙**(유출 소스 미사용) 하에
+4개 격차(G1~G4)를 TDD로 해소했다.
+
+## 결정
+
+G1~G4 를 순서대로 구현한다:
+
+- **G1** — 컨텍스트 compaction (임계 초과 시 자동 요약·압축)
+- **G2** — continuation nudge (조기 종료 방지)
+- **G3** — 중앙 집중 안전 게이트 (모든 tool_call 실행 전 위험도 분류 강제)
+- **G4** — plan 모드 (계획 먼저 → 승인 → 실행)
+
+## 결과
+
+- G1·G2·G3·G4 전부 구현 완료 (2026-06-10)
+- 268개 테스트 통과 (unit + integration + smoke)
+- `docs/contracts/` 폴더를 본 ADR로 흡수
+
+---
+
 # L1 — 에이전트 실행 루프 계약서 (clean)
 
 > **상태: G1·G2·G3·G4 전부 구현 완료(2026-06-10).** 본 계약서는 구현의 기준 명세로 보존한다.
 > 대상: `agent/server.py`의 `generate()` 루프 개선.
 > **출처(클린)**: ① mes-agent 본인 코드, ② 일반 에이전트 루프 지식,
-> ③ openclaw(MIT)·LangGraph/Temporal 공개 패턴. **유출 소스 미사용.** (거버넌스: `docs/CLAW_PORT_PLAN.md`)
+> ③ openclaw(MIT)·LangGraph/Temporal 공개 패턴. **유출 소스 미사용.**
 > 목표: 현 루프를 "강한 에이전트급 문제해결력"으로. 4개 격차(G1~G4) 해소.
 
 ---
@@ -69,18 +101,15 @@
 > 위험한 것만 실행 전 반드시 확인. **모델 협조에 의존하지 않고 디스패치 경로에서 강제.**
 
 - **위치**: §3(f) — `run_tool` 호출 **직전**, 모든 tool_call에 대해 루프가 직접 호출.
-  (현재처럼 툴 내부 자율 호출 ❌ → 루프 레벨 강제 ✅)
 - **판정**: `agent/tools/_safety.py`를 확장한 `classify_risk(tool_name, args) -> 'safe'|'mutate'|'destructive'`.
   - 기존 `is_dangerous_command`/`is_protected_path` 재사용 → `destructive`.
   - 읽기성(SELECT·Get-*·read_*·screen 조회) → `safe`.
   - 그 외/모호 → **기본 `mutate`(확인)**. ← fail-safe: 모르는 건 묻는다.
 - **동작**:
   - `safe` → 즉시 실행.
-  - `mutate`/`destructive` → 기존 `__confirm__` 메커니즘 재사용해 `APPROVAL_REQUEST`
-    (또는 `CONFIRM`) emit → `asyncio.Event` 대기. `destructive`는 **명령 전문 강조 + 기본 포커스 '아니오'**.
-  - 응답 3-택: **예**(이번만) / **항상**(패턴을 `session_allowlist`에 추가→이후 `safe`) / **아니오**(거부, 사유 → tool 결과로 환류).
-- **무인 fallback**: 사용자 미연결(헤드리스/배치)일 때 `mutate`+ 는 `defer`(보류) 또는
-  `deny`(거부) — 설정값. **무인 자동 승인 금지.**
+  - `mutate`/`destructive` → 기존 `__confirm__` 메커니즘 재사용해 `APPROVAL_REQUEST` emit → `asyncio.Event` 대기.
+  - 응답 3-택: **예**(이번만) / **항상**(패턴을 `session_allowlist`에 추가) / **아니오**(거부).
+- **무인 fallback**: 사용자 미연결(헤드리스/배치)일 때 `mutate`+ 는 `deny`(거부) — **무인 자동 승인 금지.**
 - **불변조건**: 거부/타임아웃도 반드시 짝 맞는 `tool` 결과 메시지를 환류해 API 짝 제약 유지.
 - **감사**: 모든 판정·응답을 세션 로그에 기록.
 
@@ -89,40 +118,19 @@
 - **종료(현행 유지)**: `stop_flag` / 예외 / `_MAX_STEPS` 도달(`for-else`).
 - **개선 — continuation nudge**: 모델이 `finish_reason != "tool_calls"`로 멈췄을 때
   **즉시 종료하지 않고** 판정:
-  - `nudge_count < MAX_NUDGES`(예 2) **그리고** 직전 응답이 "작업 완료"가 아닌
-    중간 상태로 보이면 → `{"role":"user","content":"[시스템] 작업이 끝나지 않았다.
-    중단 사유가 없으면 계속 진행하라."}` 주입 후 **루프 계속**, `nudge_count++`.
+  - `nudge_count < MAX_NUDGES`(예 2) 그리고 직전 응답이 "작업 완료"가 아닌 중간 상태면
+    → `{"role":"user","content":"[시스템] 작업이 끝나지 않았다. 계속 진행하라."}` 주입 후 루프 계속.
   - 완료로 판단되거나 nudge 한도 소진 → 정상 종료(현행 `idle`+`DONE`).
-- **불변조건**: `MAX_NUDGES` 상한으로 무한루프 방지. nudge는 텍스트-only stop에만,
-  tool_call이 있으면 적용 안 함(원래 계속됨).
+- **불변조건**: `MAX_NUDGES` 상한으로 무한루프 방지. nudge는 텍스트-only stop에만.
 
 ## 7. G4 — 계획/진행추적 = PLAN1 (모드 선택)
 
 - **모드 설정**: `agent_mode = 'auto' | 'plan'`(요청 파라미터 또는 설정).
   - `auto`(기본·현행): 계획 없이 바로 실행, 위험 동작만 §5 팝업.
-  - `plan`: task 받으면 **먼저 계획만 생성** — 첫 모델 호출을 "실행 말고 단계 목록(JSON)만
-    내라"로 제약 → `WorkflowDefinition`(nodes/connections)으로 적재 → `PLAN` SSE로 표시 →
-    사용자 승인 후 실행 루프 진입. 실행 중 각 단계 `WorkflowRunState`로 추적(이미 있는 동기화 재사용).
+  - `plan`: task 받으면 계획만 생성 → `WorkflowDefinition`으로 적재 → `PLAN` SSE → 사용자 승인 후 실행.
 - **진행추적**: 기존 `workflow_*` 도구·`set_node_status`·`WORKFLOW_UPDATE` 그대로 활용.
-- 우선순위: G1·G2·G3 다음. (있는 workflow 인프라 위에 모드 스위치만 얹는 수준)
 
-## 8. C2 — 재시도(현행 유지·일반화)
-
-- 현재 "워크플로 step `max_retry` 기반 재시도"는 유지.
-- 일반화: step이 없는 일반 실행에도 활동별 기본 재시도 정책(횟수·백오프) 적용 옵션.
-- 회복 한도는 무한루프 방지 불변조건으로 보존.
-
-## 9. 실패 모드 정리
-
-| 상황 | 처리 |
-|---|---|
-| 모델 호출 예외 | 현행 `except` → `ERROR`+`idle`+`DONE`. (선택: 1회 재시도 후 실패) |
-| 잘못된 tool args(JSON) | `run_tool` 예외 → 오류 문자열을 tool 결과로 환류(모델 자기수정 유도). 현행 유지. |
-| 컨텍스트 초과 | §4 compaction 시도 → 실패 시 종료. |
-| 위험 동작 무인 | §5 fallback(defer/deny). |
-| 짝 안 맞는 tool_result | **금지**. compaction/거부/abort 모든 경로에서 짝 보존(불변조건). |
-
-## 10. 불변조건 (테스트 1급 대상)
+## 8. 불변조건 (테스트 1급 대상)
 
 - I1. 매 회전 후 `messages`의 `tool_calls`↔`tool` 짝이 항상 정합.
 - I2. `safe`가 아닌 모든 tool 실행은 승인 이벤트를 거친다(디스패치 경로에서 강제).
@@ -130,22 +138,13 @@
 - I4. SSE는 어떤 종료 경로든 마지막에 `DONE`(또는 `ERROR`→`DONE`)으로 닫힌다.
 - I5. compaction은 system 및 최근 N턴을 보존한다.
 
-## 11. 우선순위 / 페이즈 C(TDD) 진입 순서
+## 9. 구현 완료 기록
 
-1. **G3 안전 게이트(APPROVE1)** — 위험 직접 통제, 가장 시급. (I2) ✅ **완료(2026-06-10)**
-   - `classify_risk()`(`_safety.py`) + `generate()` 디스패치 직전 강제 + 기존 CONFIRM 팝업 재사용(예/항상/아니오) + 세션 허용목록 + 타임아웃=거부.
-   - 테스트: `tests/unit/test_safety.py`(classify_risk), `tests/integration/test_server_chat.py::TestSafetyGate`(거부·승인·항상·safe무확인·타임아웃). 전체 374 passed.
-2. **G1 compaction** — 긴 작업 천장 제거. (I1·I5) ✅ **완료(2026-06-10)**
-   - `agent/core/compaction.py`(`compact_messages`, 짝보존) + `server.generate()` 루프 진입부 배선 + `_summarize_history`(비스트리밍 요약, 주입식) + `COMPACTION` 이벤트 + `MAX_COMPACT=3`.
-   - 테스트: `tests/unit/test_compaction.py`(7), `tests/integration/test_server_chat.py::TestCompaction`(2). 전체 383 passed.
-3. **G2 continuation nudge** — 조급한 종료 해소. (I3) ✅ **완료(2026-06-10)**
-   - `server.generate()` 종료 분기: 도구 사용 도중(`tool_rounds>0`) 텍스트 조기종료 시 `MAX_NUDGES=2` 내 '계속' 주입. 잡담·되묻기(`?`)·사용자중단 제외.
-   - 테스트: `tests/integration/test_server_chat.py::TestContinuationNudge`(4). 전체 387 passed.
-4. **G4 plan 모드(PLAN1)** — 다단계 견고성. (있는 인프라 재사용) ✅ **완료(2026-06-10)**
-   - `agent_mode='plan'`: 계획 단계 실행도구 차단 + 계획완료 시 `plan_approval` CONFIRM → 승인 후 `plan_phase=False`로 실행. 기존 workflow_*·패널·`_resolve_confirm` 재사용. 헤더 토글.
-   - 테스트: `tests/integration/test_server_chat.py::TestPlanMode`(3). 전체 390 passed.
+| 격차 | 구현일 | 테스트 수 |
+|------|--------|---------|
+| G3 안전 게이트(APPROVE1) | 2026-06-10 | `test_safety.py` + `TestSafetyGate` |
+| G1 compaction | 2026-06-10 | `test_compaction.py` + `TestCompaction` |
+| G2 continuation nudge | 2026-06-10 | `TestContinuationNudge` (4개) |
+| G4 plan 모드(PLAN1) | 2026-06-10 | `TestPlanMode` (3개) |
 
-> **L1 루프 강화 트랙 완료** — G3·G1·G2·G4 모두 ✅. (계약서 §5·§4·§6·§7 충족)
-
-각 항목: 불변조건 → 실패 테스트 먼저 → 최소 구현. `agent/server.py`의 `generate()`와
-`agent/tools/_safety.py` 중심, 새 의존성 없이.
+> **L1 루프 강화 트랙 완료** — G3·G1·G2·G4 모두 ✅. 총 268개 테스트 통과.

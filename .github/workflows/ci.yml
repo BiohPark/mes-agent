@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Tests (External / GitHub-hosted)
+    runs-on: windows-latest
+
+    env:
+      # LLM 모의 환경 — 실제 API 호출 없음 (conftest가 FakeLLMClient로 교체)
+      OPENAI_API_KEY: test-key-placeholder
+      LLM_ACTIVE: openai
+      LLM_OPENAI_BASE_URL: http://test.invalid/v1
+      LLM_OPENAI_MODEL: gpt-test
+      # Obsidian — conftest가 tempdir 제공
+      OBSIDIAN_HOST: ""
+      # CI 환경 표시 (conftest의 pytest_runtest_setup이 requires_* 마커 자동 스킵에 사용)
+      CI: "true"
+      INTERNAL_CI: ""  # 사외망이므로 빈값
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Tesseract OCR
+        # Windows 러너에서 Chocolatey로 설치 — pytesseract 런타임 의존성
+        run: choco install tesseract --no-progress -y
+        shell: pwsh
+
+      - name: Install Playwright browsers
+        run: python -m playwright install chromium
+        shell: pwsh
+
+      - name: Detect LLM availability
+        id: llm-check
+        shell: pwsh
+        run: |
+          $key = $env:OPENAI_API_KEY
+          if ($key -ne 'test-key-placeholder' -and $key -ne '') {
+            "LLM_AVAILABLE=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "LLM_AVAILABLE=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Run tests
+        # 전체 테스트 실행
+        # - LLM: conftest FakeLLMClient로 모의 (실제 호출 없음)
+        # - Office COM: 각 테스트의 skipif(not _HAS_PYWIN32)가 자동 처리
+        # - LibreOffice: skipif(ol.is_available())가 자동 처리
+        # - Playwright: 위에서 설치했으므로 사용 가능
+        shell: pwsh
+        run: |
+          python -m pytest --tb=short -v --junitxml=test-results.xml
+
+      - name: Run LLM tests (if real OpenAI key available)
+        # API 키가 있으면 requires_llm 마커 테스트도 추가 실행
+        if: steps.llm-check.outputs.LLM_AVAILABLE == 'true'
+        shell: pwsh
+        run: |
+          python -m pytest -m "requires_llm" --tb=short -v
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-external
+          path: test-results.xml
+
+      - name: Annotate PR with test failures
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: pytest results
+          path: test-results.xml
+          reporter: java-junit
+          fail-on-error: false
