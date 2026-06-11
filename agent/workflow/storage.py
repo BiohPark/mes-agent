@@ -203,6 +203,7 @@ def _graph_data_to_workflow(data: dict, task_type: str, thread_id: str) -> Workf
             status=ns.status if ns else "pending",
             notes=ns.notes if ns else "",
             max_retry=n.retry,
+            group=n.group,
         ))
     wf = Workflow(thread_id=defn.id, task_type=defn.task_type, title=defn.title, steps=steps)
     wf.connections = [c.to_dict() for c in defn.connections]

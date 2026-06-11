@@ -111,8 +111,9 @@
 | 입력 에디터 개선 (백로그 R) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 입력칸 **자동 높이 확장**(내용 따라 늘어남, 최대 뷰포트 40%서 스크롤) + **⛶ 확대(팝업) 에디터**(장문 작성·Ctrl+Enter 전송·Esc 닫기) + **Ctrl+Enter·Ctrl+J 줄바꿈** 추가(Enter=전송·Shift+Enter=줄바꿈 유지). 빠른작업 템플릿 삽입 시도 auto-grow. 상세: `docs/backlog/done/R-chat-input-editor.md` |
 | 대화 가독성: 의도 라벨·로그 접힘 (백로그 S) ✅ | `agent/server.py`(`_intent_label`) + `electron/renderer/chat.js`(`buildToolResult`) + `style.css` | **① 규칙 기반 의도 라벨**: `_AUTO_EXEC`가 모델 예고 문구를 금지(L1 루프 보호)하므로 서버가 도구명+핵심 인자(명령 excerpt·URL 호스트·파일명·selector)로 `tool_start.label` 합성. **② 명령 로그 접힘**: 스크립트(`run_command` 등)·긴 출력(>200자)은 기본 접힘(요약 1줄+토글), 에러는 펼침, 스크립트는 모노 작은폰트. 짧은 결과는 평문 유지. 상세: `docs/backlog/done/S-chat-readability.md` |
 | 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
+| 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 경량 `panzoom.js`(무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
 
-**총 툴 수: 131종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
+**총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -124,7 +125,7 @@
 | `document.py` | 15 |
 | `obsidian_rag.py` | 18 |
 | `interaction.py` | 1 |
-| `workflow.py` | 8 |
+| `workflow.py` | 9 |
 | `obsidian_session.py` | 4 |
 | `vision.py` | 3 |
 | `ui_automation.py` | 3 |
@@ -283,7 +284,7 @@ mes-agent/
 │       ├── memory_tools.py  ← 명시적 장기기억 도구 remember/forget/recall (3종) ✅
 │       ├── _safety.py       ← 파괴적 작업 가드 + G3 위험도 분류(classify_risk) — 툴 아님
 │       ├── interaction.py  ← 사용자 확인 요청 ask_user (1종) ✅
-│       └── workflow.py     ← 워크플로우 init·set/add/update/remove_step·reorder·add/remove_connection (8종) ✅
+│       └── workflow.py     ← 워크플로우 init·set/add/update/remove_step·reorder·add/remove_connection·set_group (9종) ✅
 ├── start.ps1               ← 개발 환경 시작 (conda + nvm PATH 자동 설정)
 ├── .env                    ← 로컬 설정 (git 제외)
 ├── .env.example            ← 설정 템플릿
@@ -391,9 +392,9 @@ running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 �
 
 `TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. **P 이후**(사이드바 동적화 공유). 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
 
-### U. 워크플로우 시각화 고도화 🗺️ — 🔲 미착수 (핵심·우선순위 상)
+### U. 워크플로우 시각화 고도화 🗺️ — ✅ 완료 (현재 상태 표 참조)
 
-이미 있는 분기 그래프(from_output 0/1/2, BFS 2D) 위에 **팬/줌·그룹(서브워크플로우)·진행률 미니맵·노드 인라인 로그 요약**. ~20노드 혼잡 해소. S(대화 가독성)의 근본 해결책 — 정보를 옮겨 담을 그릇. 상세: `docs/backlog/pending/U-workflow-visualization.md`.
+분기 그래프(from_output 0/1/2, BFS 2D) 위에 팬/줌(벤더링 `panzoom.js`)·동적 디테일(LoD)·노드 인라인 로그(S 근본 해결)·진행률 미니맵·그룹(서브워크플로우, `WorkflowNode.group` + `workflow_set_group`)을 증축. 상세: `docs/backlog/done/U-workflow-visualization.md`.
 
 ### (대기) Office 편집 백엔드 확정
 

@@ -504,9 +504,10 @@ function handleEvent(event, agentEl, bubble) {
       }
       scrollToBottom()
 
-      // 실행 로그에 추가
+      // 실행 로그에 추가 + 현재 진행 노드에 인라인 로그 적재 (백로그 U/S)
       if (window.workflowPanel) {
         window.workflowPanel.appendLog(event.tool, event.result || '', duration)
+        window.workflowPanel.recordToolLog(event.tool, event.result || '')
       }
       break
     }

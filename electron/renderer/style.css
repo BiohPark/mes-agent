@@ -1778,6 +1778,119 @@ body {
   min-height: 80px;
 }
 
+/* ── 팬/줌 뷰포트 + 줌 컨트롤 (백로그 U) ─────────────────────── */
+.wf-graph-viewport {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: min(70vh, 640px);
+  background:
+    radial-gradient(circle, #16202e 1px, transparent 1px) 0 0 / 22px 22px;
+  border: 1px solid #14202e;
+  border-radius: 8px;
+  cursor: grab;
+}
+.wf-graph-viewport .wf-graph-canvas { margin: 0; cursor: grab; }
+.wf-graph-viewport .wf-graph-canvas.pz-grabbing { cursor: grabbing; }
+
+#workflow-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#wf-zoom-controls { display: flex; gap: 3px; margin-left: auto; }
+#wf-zoom-controls.hidden { display: none; }
+.wf-zoom-btn {
+  width: 24px; height: 24px;
+  background: #0d1b2a; border: 1px solid #1f3a52; color: #9bb3d4;
+  border-radius: 5px; cursor: pointer; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.wf-zoom-btn:hover { background: #14304a; color: #fff; }
+
+/* ── 동적 디테일(LoD) — 확대 수준에 따라 노드 정보 노출 ────────── */
+.wf-graph-canvas.lod-low .wf-node-meta,
+.wf-graph-canvas.lod-low .wf-node-log { display: none; }
+.wf-graph-canvas.lod-low .wf-node-title { font-size: 11px; }
+.wf-graph-canvas.lod-mid .wf-node-log { display: none; }
+.wf-graph-canvas.lod-high .wf-node-log { display: block; }
+
+/* ── 노드 인라인 로그 (백로그 S 해결) ────────────────────────── */
+.wf-node-log { margin-top: 4px; display: flex; flex-direction: column; gap: 1px; }
+.wf-node-log-line {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9.5px; color: #6b85a8;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-node-log-line.err { color: #f08a8a; }
+/* 컴팩트 행에서도 표시 */
+.wf-c-body .wf-node-log { margin-top: 2px; }
+
+/* ── 그룹 박스 / 접힌 그룹 pill (백로그 U) ────────────────────── */
+.wf-group-box {
+  border: 1.5px dashed #355579;
+  border-radius: 12px;
+  background: rgba(45, 80, 125, 0.07);
+  pointer-events: none;
+  z-index: 0;
+}
+.wf-group-label {
+  position: absolute; top: -9px; left: 10px;
+  font-size: 10px; color: #8fb0d8; background: #0d1b2a;
+  padding: 0 6px; border-radius: 6px; pointer-events: auto;
+}
+.wf-group-collapse {
+  position: absolute; top: -10px; right: 8px;
+  width: 18px; height: 18px; border-radius: 5px;
+  background: #0d1b2a; border: 1px solid #355579; color: #8fb0d8;
+  cursor: pointer; font-size: 10px; line-height: 1; pointer-events: auto;
+}
+.wf-group-collapse:hover { background: #14304a; color: #fff; }
+.wf-graph-node.wf-group-pill {
+  border-style: dashed;
+  border-color: #4a7bb0;
+  background: #0f2034;
+}
+.wf-group-expand {
+  background: none; border: none; color: #8fb0d8;
+  cursor: pointer; font-size: 13px; flex-shrink: 0;
+}
+.wf-group-expand:hover { color: #fff; }
+
+/* ── 미니맵 (백로그 U) ────────────────────────────────────────── */
+.wf-minimap {
+  position: absolute; right: 8px; bottom: 8px;
+  background: rgba(8, 14, 22, 0.86);
+  border: 1px solid #1f3a52; border-radius: 6px;
+  overflow: hidden; z-index: 50; cursor: pointer;
+}
+.wf-minimap-dot { position: absolute; border-radius: 1px; background: #4b5563; }
+.wf-minimap-dot.running { background: #3b82f6; }
+.wf-minimap-dot.done    { background: #22c55e; }
+.wf-minimap-dot.error   { background: #ef4444; }
+.wf-minimap-dot.waiting { background: #f59e0b; }
+.wf-minimap-viewport {
+  position: absolute;
+  border: 1px solid #7dd3fc; background: rgba(125, 211, 252, 0.12);
+  pointer-events: none;
+}
+
+/* ── 액션 패널 실행 로그 ──────────────────────────────────────── */
+.wf-action-log {
+  padding: 6px 12px; border-top: 1px solid #1a2942;
+  max-height: 120px; overflow-y: auto;
+}
+.wf-action-log-title { font-size: 10px; color: #6b85a8; margin-bottom: 3px; }
+.wf-action-log-line {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px; color: #9bb3d4; line-height: 1.5;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-action-log-line.err { color: #f08a8a; }
+
+/* 편집 모드 그룹 입력 */
+.wf-edit-group {
+  width: 64px; flex-shrink: 0;
+  background: #0d1b2a; border: 1px solid #1f3a52; color: #c0d8ff;
+  border-radius: 4px; padding: 3px 5px; font-size: 11px;
+}
+
 /* 그래프 노드 */
 /* 컴팩트 카드 목록 (개선 아이디어 B) */
 .wf-compact-list { display: flex; flex-direction: column; gap: 5px; padding: 4px 8px 12px; }

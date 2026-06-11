@@ -8,7 +8,7 @@ import pytest
 from agent.tools import _registry, TOOLS, TOOL_LABELS, select_tools, LLM_MAX_TOOLS
 
 
-EXPECTED_TOOL_COUNT = 131
+EXPECTED_TOOL_COUNT = 132
 REQUIRED_MANIFEST_KEYS = {"name", "label", "schema", "handler"}
 
 

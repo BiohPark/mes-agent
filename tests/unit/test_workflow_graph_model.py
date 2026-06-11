@@ -64,7 +64,20 @@ class TestWorkflowNode:
 
     def test_to_dict_keys(self):
         d = _node().to_dict()
-        assert set(d.keys()) == {"id", "title", "type", "retry", "on_error"}
+        assert set(d.keys()) == {"id", "title", "type", "retry", "on_error", "group"}
+
+    def test_group_default_empty(self):
+        assert WorkflowNode(id="x", title="t").group == ""
+
+    def test_group_roundtrip(self):
+        n = WorkflowNode(id="n1", title="t", group="배포 준비")
+        restored = WorkflowNode.from_dict(n.to_dict())
+        assert restored.group == "배포 준비"
+
+    def test_group_backcompat_missing_key(self):
+        # group 키 없는 기존 정의도 로드 가능해야 한다
+        n = WorkflowNode.from_dict({"id": "x", "title": "t", "type": "auto", "retry": 0, "on_error": "stop"})
+        assert n.group == ""
 
     def test_to_dict_values(self):
         n = WorkflowNode(id="abc", title="확인", type="semi_auto", retry=2, on_error="continue")

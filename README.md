@@ -121,6 +121,7 @@
 | Obsidian 저장 | ✅ | 스레드 전체 메시지 `agent/threads/{type}/{id}.md` 저장 |
 | 스레드 관리 | ✅ | 완료·보관·복원·영구 삭제 |
 | 그래프 캔버스 시각화 | ✅ | BFS 레이아웃 2D 그래프, running 애니메이션·done(녹색)·error(적색 shake), 분기 연결선 |
+| 워크플로우 시각화 고도화 | ✅ | 팬/줌(`panzoom.js`)·동적 디테일(LoD)·노드 인라인 로그·미니맵·그룹(서브워크플로우 접기) |
 | 런타임 라우팅 | ✅ | `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택, 병합 지원 |
 | 인터랙티브 노드 컨트롤 | ✅ | 노드 ⋮ 클릭 → 완료·건너뛰기·실행·재시도·분기 선택 패널 |
 | 워크플로우 편집모드 | ✅ | 제목·단계 CUD, 드래그앤드롭 순서변경, SVG 분기 연결 CUD, AI 코웍 편집 |
@@ -129,9 +130,9 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (131종)
+### 툴 (132종)
 
-> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 131).
+> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 132).
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -146,7 +147,7 @@
 | Obsidian PKM (탐색·편집·이동·고급검색·Templater) | 18 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
-| 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection) | 8 | ✅ |
+| 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection·set_group) | 9 | ✅ |
 | 멀티모달 화면 (capture_screen 메인루프 이미지 주입·전체화면·영역 분석, VISION_ENABLED 기본 켬) | 3 | ✅ |
 | Windows UI Automation (접근성 트리, OCR 없이 Win32 컨트롤 파악) | 3 | ✅ |
 | 장기기억 도구 (memory_remember·forget·recall — 명시적 기억/삭제/회수) | 3 | ✅ |
@@ -241,7 +242,7 @@ mes-agent/
 │   ├── workflow/
 │   │   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
-│   └── tools/               — 131종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 132종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)

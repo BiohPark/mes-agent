@@ -67,10 +67,11 @@ def _workflow_set_step(
 
 
 def _workflow_add_step(
-    task_type: str, thread_id: str, title: str, type: str = "auto", after_step_id: str = ""
+    task_type: str, thread_id: str, title: str, type: str = "auto",
+    after_step_id: str = "", group: str = "",
 ) -> str:
     defn = wf_storage.load_definition(task_type, thread_id)
-    new_node = WorkflowNode(id=uuid.uuid4().hex[:8], title=title, type=type)
+    new_node = WorkflowNode(id=uuid.uuid4().hex[:8], title=title, type=type, group=group)
     if after_step_id:
         idx = next((i for i, n in enumerate(defn.nodes) if n.id == after_step_id), None)
         if idx is None:
@@ -88,9 +89,10 @@ def _workflow_add_step(
 
 
 def _workflow_update_step(
-    task_type: str, thread_id: str, step_id: str, title: str = "", type: str = ""
+    task_type: str, thread_id: str, step_id: str, title: str = "", type: str = "",
+    group: str | None = None,
 ) -> str:
-    """단계의 구조(제목·유형)를 수정한다. 진행 상태(status)는 workflow_set_step이 담당한다."""
+    """단계의 구조(제목·유형·그룹)를 수정한다. 진행 상태(status)는 workflow_set_step이 담당한다."""
     defn = wf_storage.load_definition(task_type, thread_id)
     for node in defn.nodes:
         if node.id == step_id:
@@ -98,6 +100,8 @@ def _workflow_update_step(
                 node.title = title
             if type:
                 node.type = type
+            if group is not None:
+                node.group = group
             break
     else:
         return json.dumps({"ok": False, "error": f"step_id '{step_id}' 없음"}, ensure_ascii=False)
@@ -156,6 +160,21 @@ def _workflow_reorder(task_type: str, thread_id: str, ordered_step_ids: list) ->
             reordered.append(n)
     defn.nodes = reordered
     defn.connections = _rebuild_connections(defn.nodes)
+    wf_storage.save_definition(defn)
+    return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
+
+
+def _workflow_set_group(
+    task_type: str, thread_id: str, step_ids: list, group: str = ""
+) -> str:
+    """여러 단계를 하나의 시각적 그룹으로 묶는다. group이 빈 문자열이면 그룹을 해제한다."""
+    defn = wf_storage.load_definition(task_type, thread_id)
+    by_id = {n.id: n for n in defn.nodes}
+    missing = [i for i in step_ids if i not in by_id]
+    if missing:
+        return json.dumps({"ok": False, "error": f"step_id 없음: {missing}"}, ensure_ascii=False)
+    for sid in step_ids:
+        by_id[sid].group = group
     wf_storage.save_definition(defn)
     return json.dumps({"ok": True, "workflow": _merged_dict(task_type, thread_id)}, ensure_ascii=False)
 
@@ -267,13 +286,15 @@ MANIFEST = [
                             "description": "auto=자동, semi_auto=확인 후, manual=수동 (기본 auto)",
                         },
                         "after_step_id": {"type": "string", "description": "이 단계 뒤에 삽입 (생략 시 맨 끝)"},
+                        "group": {"type": "string", "description": "시각적 그룹 라벨 (선택)"},
                     },
                     "required": ["task_type", "thread_id", "title"],
                 },
             },
         },
         "handler": lambda a: _workflow_add_step(
-            a["task_type"], a["thread_id"], a["title"], a.get("type", "auto"), a.get("after_step_id", "")
+            a["task_type"], a["thread_id"], a["title"], a.get("type", "auto"),
+            a.get("after_step_id", ""), a.get("group", ""),
         ),
     },
     {
@@ -298,13 +319,15 @@ MANIFEST = [
                             "enum": ["auto", "semi_auto", "manual"],
                             "description": "새 유형 (선택)",
                         },
+                        "group": {"type": "string", "description": "새 그룹 라벨 (선택, 빈 문자열이면 그룹 해제)"},
                     },
                     "required": ["task_type", "thread_id", "step_id"],
                 },
             },
         },
         "handler": lambda a: _workflow_update_step(
-            a["task_type"], a["thread_id"], a["step_id"], a.get("title", ""), a.get("type", "")
+            a["task_type"], a["thread_id"], a["step_id"], a.get("title", ""), a.get("type", ""),
+            a.get("group"),
         ),
     },
     {
@@ -408,6 +431,38 @@ MANIFEST = [
         },
         "handler": lambda a: _workflow_remove_connection(
             a["task_type"], a["thread_id"], a["from_node"], a["to_node"]
+        ),
+    },
+    {
+        "name": "workflow_set_group",
+        "label": "워크플로우 그룹 지정",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "workflow_set_group",
+                "description": (
+                    "여러 단계를 하나의 시각적 그룹(서브워크플로우)으로 묶는다. "
+                    "큰 워크플로우를 논리 단위로 묶어 접고 펼칠 수 있다. "
+                    "group을 빈 문자열로 주면 해당 단계들의 그룹을 해제한다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_type": {"type": "string"},
+                        "thread_id": {"type": "string"},
+                        "step_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "그룹으로 묶을 단계 id 목록",
+                        },
+                        "group": {"type": "string", "description": "그룹 라벨 (빈 문자열이면 해제)"},
+                    },
+                    "required": ["task_type", "thread_id", "step_ids"],
+                },
+            },
+        },
+        "handler": lambda a: _workflow_set_group(
+            a["task_type"], a["thread_id"], a["step_ids"], a.get("group", "")
         ),
     },
 ]
