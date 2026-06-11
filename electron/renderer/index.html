@@ -47,6 +47,20 @@
 
     <div id="main">
       <aside id="sidebar">
+        <!-- 상단 고정: 전역 검색 + 진행 중 작업 (백로그 P) -->
+        <div class="sidebar-fixed-top">
+          <div id="sidebar-search">
+            <input id="sidebar-search-input" type="text" placeholder="🔍 스레드·대화 검색" />
+            <div id="sidebar-search-results" class="hidden"></div>
+          </div>
+          <div id="active-runs" class="hidden">
+            <div class="sidebar-label">진행 중</div>
+            <div id="active-runs-list"></div>
+          </div>
+        </div>
+
+        <!-- 중단 스크롤 영역: 업무 자동화 -->
+        <div class="sidebar-scroll">
         <div class="sidebar-label">업무 자동화</div>
 
         <div class="task-group" data-task="general">
@@ -99,41 +113,46 @@
           <div class="task-group-body hidden"></div>
         </div>
 
-        <div class="sidebar-divider"></div>
-        <div class="sidebar-label">빠른 작업</div>
-        <button class="quick-btn secondary quick-action-btn" data-prompt="화면 전체를 OCR해서 텍스트를 추출해줘" data-autosend="true">
-          📷 화면 OCR
-        </button>
-        <button class="quick-btn secondary quick-action-btn" data-prompt="파일 탐색기를 열어줘" data-autosend="true">
-          📂 파일 열기
-        </button>
-        <button class="quick-btn secondary quick-action-btn" data-prompt="브라우저를 열고 ">
-          🌐 브라우저
-        </button>
-        <button class="quick-btn secondary quick-action-btn" data-prompt="다음 텍스트를 키보드로 입력해줘: ">
-          ⌨️ 타이핑
-        </button>
+        </div><!-- /.sidebar-scroll -->
 
-        <div class="sidebar-divider"></div>
-        <div class="sidebar-label">도구 테스트</div>
-        <button class="quick-btn secondary tool-test-btn" data-tool="capture_screen_ocr" data-args="{}">
-          📷 화면 OCR
-        </button>
-        <button class="quick-btn secondary tool-test-btn" data-tool="get_mouse_position" data-args="{}">
-          🖱️ 마우스 위치
-        </button>
-        <button class="quick-btn secondary tool-test-btn" data-tool="mouse_click" data-args='{"x":100,"y":100}'>
-          🖱️ 클릭 (100,100)
-        </button>
-        <button class="quick-btn secondary tool-test-btn" data-tool="key_press" data-args='{"keys":"ctrl+c"}'>
-          ⌨️ Ctrl+C
-        </button>
+        <!-- 하단 고정 푸터: 관리 + 접이식 개발자 도구 (백로그 P) -->
+        <div class="sidebar-footer">
+          <details class="dev-tools">
+            <summary>🛠️ 개발자 도구</summary>
+            <div class="dev-tools-body">
+              <div class="sidebar-label">빠른 작업</div>
+              <button class="quick-btn secondary quick-action-btn" data-prompt="화면 전체를 OCR해서 텍스트를 추출해줘" data-autosend="true">
+                📷 화면 OCR
+              </button>
+              <button class="quick-btn secondary quick-action-btn" data-prompt="파일 탐색기를 열어줘" data-autosend="true">
+                📂 파일 열기
+              </button>
+              <button class="quick-btn secondary quick-action-btn" data-prompt="브라우저를 열고 ">
+                🌐 브라우저
+              </button>
+              <button class="quick-btn secondary quick-action-btn" data-prompt="다음 텍스트를 키보드로 입력해줘: ">
+                ⌨️ 타이핑
+              </button>
 
-        <div class="sidebar-divider"></div>
-        <div class="sidebar-label">관리</div>
-        <button class="quick-btn secondary" id="open-delete-manager-btn">
-          ⚙️ 스레드 관리
-        </button>
+              <div class="sidebar-label" style="margin-top:8px">도구 테스트</div>
+              <button class="quick-btn secondary tool-test-btn" data-tool="capture_screen_ocr" data-args="{}">
+                📷 화면 OCR
+              </button>
+              <button class="quick-btn secondary tool-test-btn" data-tool="get_mouse_position" data-args="{}">
+                🖱️ 마우스 위치
+              </button>
+              <button class="quick-btn secondary tool-test-btn" data-tool="mouse_click" data-args='{"x":100,"y":100}'>
+                🖱️ 클릭 (100,100)
+              </button>
+              <button class="quick-btn secondary tool-test-btn" data-tool="key_press" data-args='{"keys":"ctrl+c"}'>
+                ⌨️ Ctrl+C
+              </button>
+            </div>
+          </details>
+          <button class="quick-btn secondary" id="open-delete-manager-btn">
+            ⚙️ 스레드 관리
+          </button>
+        </div>
       </aside>
 
       <div id="toast-container"></div>
@@ -170,10 +189,11 @@
         <div id="input-area">
           <textarea
             id="input"
-            placeholder="지시사항을 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)"
+            placeholder="지시사항을 입력하세요 (Enter: 전송, Shift+Enter / Ctrl+Enter: 줄바꿈)"
             rows="2"
             disabled
           ></textarea>
+          <button id="input-expand-btn" title="확대 에디터 (장문 작성)" disabled>⛶</button>
           <button id="send-btn" disabled>전송</button>
         </div>
       </section>
@@ -245,6 +265,21 @@
         <button id="memory-add-btn">추가</button>
       </div>
       <div id="memory-list"></div>
+    </div>
+  </div>
+
+  <!-- 입력 확대 에디터 모달 (백로그 R) -->
+  <div id="input-editor-overlay" class="hidden">
+    <div id="input-editor-modal">
+      <div id="input-editor-header">
+        <span>⛶ 확대 에디터</span>
+        <button id="input-editor-close" title="닫기 (입력칸으로 반영)">✕</button>
+      </div>
+      <textarea id="input-editor-textarea" placeholder="긴 지시사항을 편하게 작성하세요&#10;(Ctrl+Enter: 전송)"></textarea>
+      <div id="input-editor-actions">
+        <button id="input-editor-cancel">취소</button>
+        <button id="input-editor-send" class="primary">전송</button>
+      </div>
     </div>
   </div>
 

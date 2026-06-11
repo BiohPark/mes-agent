@@ -85,6 +85,29 @@ class TestArchiveAndRestore:
         assert resp.json()["status"] == "completed"
 
 
+class TestSearch:
+    async def test_empty_query_returns_empty(self, client):
+        resp = await client.get("/search?q=")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_search_matches_title(self, client):
+        title = "분기매출보고서특이검색어"
+        await client.post(f"/threads/{TASK}", json={"title": title})
+
+        resp = await client.get(f"/search?q={title}")
+        assert resp.status_code == 200
+        hits = resp.json()
+        assert any(h["title"] == title for h in hits)
+        assert all({"task_type", "thread_id", "status"} <= set(h) for h in hits)
+
+    async def test_search_no_match(self, client):
+        await client.post(f"/threads/{TASK}", json={"title": "평범한 제목"})
+        resp = await client.get("/search?q=존재하지않는검색어zzz")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 class TestPermanentDelete:
     async def test_permanent_delete(self, client):
         create = await client.post(f"/threads/{TASK}", json={})

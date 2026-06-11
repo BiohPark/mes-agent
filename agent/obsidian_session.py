@@ -505,6 +505,53 @@ tags: []
                 result[task_type] = all_threads
         return result
 
+    def search_threads(self, query: str, limit: int = 30) -> list:
+        """모든 업무 타입의 스레드를 제목·대화 본문에서 부분일치 검색한다(백로그 P).
+
+        대소문자 무시 substring. 반환: [{task_type, thread_id, title, status,
+        archived, snippet}]. 단순 구현(과설계 회피).
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        hits = []
+        for task_type in TASK_CONFIGS:
+            sources = [
+                (self.list_threads(task_type), False),
+                (self.list_archived_threads(task_type), True),
+            ]
+            for threads, archived in sources:
+                for t in threads:
+                    tid = t.get("thread_id", "")
+                    title = t.get("title", "") or ""
+                    snippet = ""
+                    matched = q in title.lower()
+                    try:
+                        msgs = (self.get_thread_display_messages_archived(task_type, tid)
+                                if archived else self.get_thread_display_messages(task_type, tid))
+                    except Exception:
+                        msgs = []
+                    for m in msgs:
+                        c = m.get("content", "") or ""
+                        idx = c.lower().find(q)
+                        if idx != -1:
+                            matched = True
+                            start = max(0, idx - 30)
+                            snippet = ("…" if start > 0 else "") + c[start:idx + 60].strip()
+                            break
+                    if matched:
+                        hits.append({
+                            "task_type": task_type,
+                            "thread_id": tid,
+                            "title": title,
+                            "status": t.get("status", ""),
+                            "archived": archived,
+                            "snippet": snippet,
+                        })
+                        if len(hits) >= limit:
+                            return hits
+        return hits
+
     def delete_thread_permanent(self, task_type: str, thread_id: str, archived: bool = False) -> None:
         """스레드 .md 파일을 영구 삭제한다."""
         if archived:

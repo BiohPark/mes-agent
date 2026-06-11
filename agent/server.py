@@ -54,6 +54,51 @@ _CONFIRM_TIMEOUT = 300
 _session_allowlists: dict[str, set] = {}
 
 
+# ── S: 도구 의도 라벨 (규칙 기반) ─────────────────────────────
+# 모델 자유텍스트 예고는 _AUTO_EXEC가 금지(L1 루프 보호)하므로, 서버가
+# 도구명+핵심 인자로 "무엇을 하려는지" 한 줄 라벨을 합성해 tool_start로 보낸다.
+_CMD_TOOLS = {"run_command", "run_powershell", "start_process"}
+_BROWSER_NAV_TOOLS = {"browser_open", "browser_navigate", "office_web_open"}
+
+
+def _intent_label(name: str, arguments) -> str:
+    """tool_start에 표시할 의도 라벨을 만든다(파싱 실패·미매칭 시 정적 라벨 폴백)."""
+    base = TOOL_LABELS.get(name, name)
+    try:
+        args = json.loads(arguments) if isinstance(arguments, str) and arguments.strip() else (arguments or {})
+        if not isinstance(args, dict):
+            return base
+    except Exception:
+        return base
+
+    def _trim(s, n=60):
+        s = str(s).strip().replace("\n", " ")
+        return s if len(s) <= n else s[: n - 1] + "…"
+
+    try:
+        if name in _CMD_TOOLS:
+            cmd = command_excerpt(args)
+            return f"▶ {_trim(cmd)} 실행" if cmd else base
+        if name in _BROWSER_NAV_TOOLS:
+            url = args.get("url") or args.get("path") or ""
+            if url:
+                host = url.split("//", 1)[-1].split("/", 1)[0]
+                return f"🌐 {_trim(host, 40)} 여는 중"
+            return base
+        # 파일 계열: 경로 basename 노출
+        path = args.get("path") or args.get("file_path") or args.get("file") or args.get("doc_path") or ""
+        if path:
+            import os as _os
+            return f"{base} · {_trim(_os.path.basename(str(path)), 40)}"
+        # 셀렉터/텍스트 입력 계열
+        sel = args.get("selector") or args.get("text") or args.get("query") or ""
+        if sel:
+            return f"{base} · {_trim(sel, 40)}"
+    except Exception:
+        return base
+    return base
+
+
 async def _resolve_confirm(cid: str) -> dict:
     """confirm_id에 대한 사용자 응답을 대기해 회수한다(SSE는 호출부에서 emit).
 
@@ -577,7 +622,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 if _stop_flags.get(request_id):
                     break
 
-                label = TOOL_LABELS.get(tc["name"], tc["name"])
+                label = _intent_label(tc["name"], tc["arguments"])
                 yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
 
                 await asyncio.sleep(0)
@@ -943,6 +988,13 @@ async def task_config():
 async def list_all_threads():
     mgr = get_session_manager()
     return await asyncio.get_event_loop().run_in_executor(None, mgr.list_all_threads)
+
+
+@app.get("/search")
+async def search_threads(q: str = ""):
+    """스레드/대화 전역 검색 (백로그 P). 제목·본문 부분일치."""
+    mgr = get_session_manager()
+    return await asyncio.get_event_loop().run_in_executor(None, mgr.search_threads, q)
 
 
 @app.get("/threads/{task_type}")

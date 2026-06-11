@@ -21,6 +21,7 @@ window.authTokenQuery = AUTH_TOKEN ? (sep => `${sep}token=${encodeURIComponent(A
 const messagesEl = document.getElementById('messages')
 const inputEl = document.getElementById('input')
 const sendBtn = document.getElementById('send-btn')
+const inputExpandBtn = document.getElementById('input-expand-btn')
 const statusEl = document.getElementById('status')
 const profileSwitcher = document.getElementById('profile-switcher')
 const profileBtn = document.getElementById('profile-btn')
@@ -339,6 +340,17 @@ initWhenReady()
 function setInputEnabled(enabled) {
   inputEl.disabled = !enabled
   sendBtn.disabled = !enabled
+  if (inputExpandBtn) inputExpandBtn.disabled = !enabled
+}
+
+// ── 입력칸 자동 높이 확장 (백로그 R) ──────────────────────────
+// 내용에 따라 textarea 높이를 늘리고, 최대치(뷰포트 40%)서 스크롤로 전환.
+function autoGrowInput() {
+  inputEl.style.height = 'auto'
+  const max = Math.round(window.innerHeight * 0.4)
+  const next = Math.min(inputEl.scrollHeight, max)
+  inputEl.style.height = next + 'px'
+  inputEl.style.overflowY = inputEl.scrollHeight > max ? 'auto' : 'hidden'
 }
 
 // 메시지 전송
@@ -373,6 +385,7 @@ async function sendMessage(text) {
   } finally {
     setInputEnabled(true)
     inputEl.focus()
+    refreshActiveRuns()
   }
 }
 
@@ -404,6 +417,50 @@ async function readStream(response, agentEl) {
 
 // tool_start별 시작 시각 (로그 duration 계산용)
 const _toolStartTimes = {}
+
+// ── S: 명령 로그 접힘 ─────────────────────────────────────────
+// 스크립트/명령 도구나 긴 출력은 기본 접힘(요약+토글), 에러는 펼침.
+const _SCRIPT_TOOLS = new Set([
+  'run_command', 'run_powershell', 'start_process',
+])
+const _LONG_RESULT_CHARS = 200
+
+function buildToolResult(tool, text, isError) {
+  const isScript = _SCRIPT_TOOLS.has(tool)
+  const isLong = text.length > _LONG_RESULT_CHARS
+  // 짧은 비스크립트 결과 + 비에러 → 기존처럼 평문 노출
+  if (!isError && !isScript && !isLong) {
+    const el = document.createElement('div')
+    el.className = 'tool-result'
+    el.textContent = text
+    return el
+  }
+  // 그 외 → 접이식 (에러는 기본 펼침)
+  const wrap = document.createElement('div')
+  wrap.className = 'tool-result collapsible' +
+    (isError ? ' error' : ' collapsed') + (isScript ? ' script' : '')
+  const firstLine = (text.split('\n').find(l => l.trim()) || text).trim()
+  const summary = firstLine.length > 80 ? firstLine.slice(0, 79) + '…' : firstLine
+  const lineCount = text.split('\n').length
+
+  const toggle = document.createElement('div')
+  toggle.className = 'tr-toggle'
+  toggle.innerHTML =
+    `<span class="tr-chevron">${isError ? '▾' : '▸'}</span>` +
+    `<span class="tr-summary">${escapeHtml(summary)}</span>` +
+    (lineCount > 1 ? `<span class="tr-meta">${lineCount}줄</span>` : '')
+  const body = document.createElement('div')
+  body.className = 'tr-body'
+  body.textContent = text
+
+  toggle.addEventListener('click', () => {
+    const collapsed = wrap.classList.toggle('collapsed')
+    wrap.querySelector('.tr-chevron').textContent = collapsed ? '▸' : '▾'
+  })
+  wrap.appendChild(toggle)
+  wrap.appendChild(body)
+  return wrap
+}
 
 function handleEvent(event, agentEl, bubble) {
   // type 없이 request_id만 있는 경우 (최초 SSE)
@@ -442,9 +499,7 @@ function handleEvent(event, agentEl, bubble) {
         step.querySelector('.icon').textContent = isError ? '✗' : '✓'
       }
       if (event.result) {
-        const result = document.createElement('div')
-        result.className = 'tool-result' + (isError ? ' error' : '')
-        result.textContent = event.result
+        const result = buildToolResult(event.tool, event.result, isError)
         agentEl.querySelector('.msg-bubble').before(result)
       }
       scrollToBottom()
@@ -782,6 +837,7 @@ async function renderSidebarThreads(taskType) {
 
   const activeCount = threads.filter(t => t.status === 'in_progress').length
   updateGroupBadge(taskType, activeCount)
+  refreshActiveRuns()
 
   const body = getGroupBody(taskType)
   if (!body || !expandedGroups.has(taskType)) return threads
@@ -1092,19 +1148,75 @@ async function closeCurrentThread() {
 
 // ── 이벤트 바인딩 ──────────────────────────────────────────
 
-sendBtn.addEventListener('click', () => {
+function submitFromInput() {
   const text = inputEl.value.trim()
   inputEl.value = ''
+  autoGrowInput()
   sendMessage(text)
+}
+
+// 커서 위치에 줄바꿈 삽입 (Ctrl+Enter / Ctrl+J 용)
+function insertNewlineAtCursor() {
+  const s = inputEl.selectionStart, e = inputEl.selectionEnd
+  inputEl.value = inputEl.value.slice(0, s) + '\n' + inputEl.value.slice(e)
+  inputEl.selectionStart = inputEl.selectionEnd = s + 1
+  autoGrowInput()
+}
+
+sendBtn.addEventListener('click', submitFromInput)
+
+inputEl.addEventListener('input', autoGrowInput)
+inputEl.addEventListener('keydown', (e) => {
+  // Ctrl+Enter / Ctrl+J → 줄바꿈 (Shift+Enter는 브라우저 기본 동작 유지)
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === 'j')) {
+    e.preventDefault()
+    insertNewlineAtCursor()
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault()
+    submitFromInput()
+  }
 })
 
-inputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    const text = inputEl.value.trim()
-    inputEl.value = ''
-    sendMessage(text)
+// ── 확대 에디터 모달 (백로그 R) ───────────────────────────────
+const inputEditorOverlay = document.getElementById('input-editor-overlay')
+const inputEditorTextarea = document.getElementById('input-editor-textarea')
+const inputEditorClose = document.getElementById('input-editor-close')
+const inputEditorCancel = document.getElementById('input-editor-cancel')
+const inputEditorSend = document.getElementById('input-editor-send')
+
+function openInputEditor() {
+  if (inputEl.disabled) return
+  inputEditorTextarea.value = inputEl.value
+  inputEditorOverlay.classList.remove('hidden')
+  inputEditorTextarea.focus()
+  inputEditorTextarea.setSelectionRange(inputEditorTextarea.value.length, inputEditorTextarea.value.length)
+}
+function closeInputEditor(syncBack = true) {
+  if (syncBack) {
+    inputEl.value = inputEditorTextarea.value
+    autoGrowInput()
   }
+  inputEditorOverlay.classList.add('hidden')
+  if (syncBack) inputEl.focus()
+}
+inputExpandBtn?.addEventListener('click', openInputEditor)
+inputEditorClose?.addEventListener('click', () => closeInputEditor(true))
+inputEditorCancel?.addEventListener('click', () => closeInputEditor(false))
+inputEditorSend?.addEventListener('click', () => {
+  const text = inputEditorTextarea.value.trim()
+  inputEditorOverlay.classList.add('hidden')
+  inputEl.value = ''
+  autoGrowInput()
+  if (text) sendMessage(text)
+})
+inputEditorTextarea?.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); inputEditorSend.click() }
+  else if (e.key === 'Escape') { e.preventDefault(); closeInputEditor(true) }
+})
+inputEditorOverlay?.addEventListener('click', (e) => {
+  if (e.target === inputEditorOverlay) closeInputEditor(true)
 })
 
 document.querySelectorAll('.task-group-header').forEach(header => {
@@ -1135,6 +1247,7 @@ document.querySelectorAll('.quick-action-btn').forEach(btn => {
       sendMessage(prompt)
     } else {
       inputEl.value = prompt
+      autoGrowInput()
       inputEl.focus()
       inputEl.setSelectionRange(prompt.length, prompt.length)
     }
@@ -1158,6 +1271,108 @@ document.addEventListener('wf:retry-step', ({ detail: { stepTitle } }) => {
   if (!currentTaskType || !currentThreadId || inputEl.disabled) return
   sendMessage(`"${stepTitle}" 단계에서 오류가 발생했습니다. 이 단계를 다시 시도해주세요.`)
 })
+
+// ── 전역 검색 + 진행 중 작업 (백로그 P) ──────────────────────────
+const sidebarSearchInput = document.getElementById('sidebar-search-input')
+const sidebarSearchResults = document.getElementById('sidebar-search-results')
+const activeRunsEl = document.getElementById('active-runs')
+const activeRunsList = document.getElementById('active-runs-list')
+let _searchTimer = null
+
+function hideSearchResults() {
+  sidebarSearchResults?.classList.add('hidden')
+}
+
+async function runSearch(q) {
+  if (!q.trim()) { hideSearchResults(); return }
+  try {
+    const res = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}`)
+    const hits = await res.json()
+    renderSearchResults(hits)
+  } catch { hideSearchResults() }
+}
+
+function renderSearchResults(hits) {
+  if (!sidebarSearchResults) return
+  sidebarSearchResults.innerHTML = ''
+  sidebarSearchResults.classList.remove('hidden')
+  if (!hits || hits.length === 0) {
+    sidebarSearchResults.innerHTML = '<div class="search-empty">검색 결과 없음</div>'
+    return
+  }
+  hits.forEach(h => {
+    const cfg = taskConfigs[h.task_type] || {}
+    const el = document.createElement('div')
+    el.className = 'search-hit'
+    const titleText = h.title && h.title !== h.thread_id ? h.title : formatThreadLabel(h.thread_id)
+    el.innerHTML =
+      `<div class="search-hit-top">` +
+        `<span>${h.archived ? '🗑' : (cfg.icon || '💬')}</span>` +
+        `<span class="search-hit-title">${escapeHtml(titleText)}</span>` +
+        `<span class="search-hit-task">${escapeHtml(cfg.label || h.task_type)}</span>` +
+      `</div>` +
+      (h.snippet ? `<div class="search-hit-snippet">${escapeHtml(h.snippet)}</div>` : '')
+    el.addEventListener('click', async () => {
+      hideSearchResults()
+      sidebarSearchInput.value = ''
+      if (h.archived) await selectArchivedThread(h.task_type, h.thread_id)
+      else {
+        expandGroup(h.task_type)
+        await renderSidebarThreads(h.task_type)
+        await selectThread(h.task_type, h.thread_id, h.status)
+      }
+    })
+    sidebarSearchResults.appendChild(el)
+  })
+}
+
+sidebarSearchInput?.addEventListener('input', () => {
+  const q = sidebarSearchInput.value
+  if (_searchTimer) clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(() => runSearch(q), 250)
+})
+sidebarSearchInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { sidebarSearchInput.value = ''; hideSearchResults() }
+})
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#sidebar-search')) hideSearchResults()
+})
+
+async function refreshActiveRuns() {
+  if (!activeRunsEl) return
+  let all = {}
+  try {
+    const res = await fetch(`${BASE_URL}/threads`)
+    all = await res.json()
+  } catch { return }
+  const runs = []
+  for (const [taskType, threads] of Object.entries(all)) {
+    threads.forEach(t => {
+      if (t.status === 'in_progress' && t.message_count > 0) {
+        runs.push({ taskType, ...t })
+      }
+    })
+  }
+  activeRunsList.innerHTML = ''
+  if (runs.length === 0) { activeRunsEl.classList.add('hidden'); return }
+  activeRunsEl.classList.remove('hidden')
+  runs.slice(0, 8).forEach(r => {
+    const cfg = taskConfigs[r.taskType] || {}
+    const el = document.createElement('div')
+    el.className = 'active-run-item'
+    const label = r.title && r.title !== r.thread_id ? r.title : formatThreadLabel(r.thread_id)
+    el.innerHTML =
+      `<span class="ar-pulse"></span>` +
+      `<span class="ar-label">${escapeHtml(cfg.icon || '💬')} ${escapeHtml(label)}</span>`
+    el.title = `${cfg.label || r.taskType} · ${formatThreadLabel(r.thread_id)}`
+    el.addEventListener('click', async () => {
+      expandGroup(r.taskType)
+      await renderSidebarThreads(r.taskType)
+      await selectThread(r.taskType, r.thread_id, r.status)
+    })
+    activeRunsList.appendChild(el)
+  })
+}
 
 // ── 협업모드(코치 모드) 컨트롤러 (백로그 H) ───────────────────────
 // 메인 렌더러가 두뇌: 목표 설정 → 주기 틱(/collaborate/tick) → 힌트를 HUD로 중계.
