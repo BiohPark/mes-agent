@@ -69,7 +69,7 @@
 | SSE 파일 감지 엔드포인트 (Phase 4B ✅) | `agent/server.py` | `GET /threads/{type}/{id}/workflow/events` — mtime 폴링 SSE, `WF_POLL_INTERVAL` 환경변수(기본 2s), heartbeat 30s 주기 |
 | 워크플로우 파일 감지 (Phase 4 frontend ✅) | `electron/renderer/workflow.js` | `_startFileWatcher()`·`_stopFileWatcher()` EventSource, 스레드 전환 시 자동 연결·해제, 편집 중 캐시 갱신 |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
-| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/CONTEXT_TRIM/PLAN/VISION_CAPTURE/DONE/ERROR |
+| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/CONTEXT_TRIM/PLAN/VISION_CAPTURE/**TOOL_WAIT**/DONE/ERROR |
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
@@ -112,6 +112,7 @@
 | 대화 가독성: 의도 라벨·로그 접힘 (백로그 S) ✅ | `agent/server.py`(`_intent_label`) + `electron/renderer/chat.js`(`buildToolResult`) + `style.css` | **① 규칙 기반 의도 라벨**: `_AUTO_EXEC`가 모델 예고 문구를 금지(L1 루프 보호)하므로 서버가 도구명+핵심 인자(명령 excerpt·URL 호스트·파일명·selector)로 `tool_start.label` 합성. **② 명령 로그 접힘**: 스크립트(`run_command` 등)·긴 출력(>200자)은 기본 접힘(요약 1줄+토글), 에러는 펼침, 스크립트는 모노 작은폰트. 짧은 결과는 평문 유지. 상세: `docs/backlog/done/S-chat-readability.md` |
 | 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
 | 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.min.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 anvaka/panzoom UMD(`vendor/panzoom.min.js`, 무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`anvaka`에 `reset`/`setTransform`이 없어 `zoomAbs`+`moveTo`로 복원), **최초 렌더 시 `_fitToViewport`로 그래프 전체가 보이도록 축소·중앙정렬**(⊙=전체 보기) — 미적용 시 큰 그래프 하단이 잘리던 문제 해결. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
+| 도구 타임아웃 안전망·작업 가시성 (백로그 V 1단계) ✅ | `agent/core/timeouts.py` + `agent/server.py` + `agent/tools/office_com.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`style.css` | **무한 행 방지**: 도구별 작은 baseline에서 시작해 단계적으로 타임아웃을 늘려 같은 작업을 더 기다리고, 디스패치 하드 캡(`TOOL_TIMEOUT_CAP`) 도달 시 구조화 오류로 마감(`_run_tool_watched`). office COM은 `OFFICE_COM_TIMEOUT` 워치독+**PID 스코프 킬**(사용자가 연 Office 보호)+executor 재생성+Open 대화상자 억제(`Notify=False`)로 무한 행 제거. **가시성**: 길어지면 `TOOL_WAIT` SSE 내레이션('더 기다리는 중')+경과시간+상태바 현재 도구+중단 강조. 전체 적응형(진행도 탐지·인루프 판단·자동 백그라운드)은 백로그 V 2단계. 출처 클린룸(claw-code MIT, 패턴만). 상세: `docs/adr/0003-adaptive-tool-timeout.md` |
 
 **총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -145,8 +146,9 @@
 ## 외부 하니스 패턴 도입 시 규칙 (클린룸)
 
 L1 루프 강화는 클린룸 거버넌스 하에 완료됨(G3·G1·G2·G4). 향후 외부 에이전트 하니스 패턴을
-도입할 때는 **유출 소스(openclaude·claw-code 등) 금지**, ADR(`docs/adr/`) 먼저 → TDD 구현 원칙을 따른다.
-상세: `docs/CLAW_PORT_PLAN.md`(거버넌스), `docs/adr/0002-L1-loop-contract.md`(완료된 L1 명세).
+도입할 때는 **유출 소스 금지**, ADR(`docs/adr/`) 먼저 → TDD 구현 원칙을 따른다.
+**claw-code는 MIT 라이선스로 사용자 확인 완료 — 패턴 참고는 허용하되 코드 복붙은 금지**(2026-06-12, ADR-0003).
+다른 출처는 적합성 확인 전까지 금지. 상세: `docs/adr/0002-L1-loop-contract.md`(L1 명세), `docs/adr/0003-adaptive-tool-timeout.md`(타임아웃).
 
 ---
 
@@ -263,7 +265,8 @@ mes-agent/
 │   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
 │   ├── core/
 │   │   ├── events.py       ← SSE 이벤트 타입 상수
-│   │   └── compaction.py   ← G1 컨텍스트 compaction 순수 로직(짝 보존) ✅
+│   │   ├── compaction.py   ← G1 컨텍스트 compaction 순수 로직(짝 보존) ✅
+│   │   └── timeouts.py     ← 도구 타임아웃 baseline·escalation·분류 순수 로직(백로그 V 1단계) ✅
 │   ├── workflow/
 │   │   ├── model.py        ← WorkflowDefinition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py      ← Vault 저장/로드(YAML frontmatter) + 구포맷 자동 마이그레이션

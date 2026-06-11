@@ -418,6 +418,41 @@ async function readStream(response, agentEl) {
 // tool_start별 시작 시각 (로그 duration 계산용)
 const _toolStartTimes = {}
 
+// 실행 중 도구의 경과시간 타이머 + 현재 도구(상태바 표시용) — 가시성(A3)
+const _toolTimers = {}
+let _currentTool = null
+
+function _updateRunningStatebar(secs) {
+  if (!agentStateText || !_currentTool) return
+  const lbl = _currentTool.label || '도구 실행'
+  agentStateText.textContent = secs >= 1 ? `${lbl} — ${secs}초` : `${lbl}…`
+}
+
+function _startToolTimer(tool) {
+  _stopToolTimer(tool)
+  _toolTimers[tool] = setInterval(() => {
+    const start = _toolStartTimes[tool]
+    if (!start) return
+    const secs = Math.floor((Date.now() - start) / 1000)
+    const step = agentEl && agentEl.querySelector(`.tool-step[data-tool="${tool}"]`)
+    if (step) {
+      const el = step.querySelector('.tool-elapsed')
+      if (el) el.textContent = secs >= 1 ? ` · ${secs}초` : ''
+    }
+    if (_currentTool && _currentTool.tool === tool) _updateRunningStatebar(secs)
+  }, 1000)
+}
+
+function _stopToolTimer(tool) {
+  if (_toolTimers[tool]) { clearInterval(_toolTimers[tool]); delete _toolTimers[tool] }
+}
+
+function _stopAllToolTimers() {
+  Object.keys(_toolTimers).forEach(_stopToolTimer)
+  _currentTool = null
+  stopBtn && stopBtn.classList.remove('pulse')
+}
+
 // ── S: 명령 로그 접힘 ─────────────────────────────────────────
 // 스크립트/명령 도구나 긴 출력은 기본 접힘(요약+토글), 에러는 펼침.
 const _SCRIPT_TOOLS = new Set([
@@ -480,8 +515,30 @@ function handleEvent(event, agentEl, bubble) {
       const step = document.createElement('div')
       step.className = 'tool-step running'
       step.dataset.tool = event.tool
-      step.innerHTML = `<span class="icon">⏳</span> ${event.label}`
+      step.innerHTML = `<span class="icon">⏳</span> <span class="tool-label">${event.label}</span><span class="tool-elapsed"></span>`
       agentEl.querySelector('.msg-bubble').before(step)
+      // 경과 타이머 시작 + 상태바에 현재 도구 표시 (가시성 A3)
+      _currentTool = { tool: event.tool, label: event.label }
+      _updateRunningStatebar(0)
+      _startToolTimer(event.tool)
+      scrollToBottom()
+      break
+    }
+
+    case 'tool_wait': {
+      // 도구가 예상보다 오래 걸려 타임아웃을 연장하는 중 — 의도 내레이션 + 중단 강조
+      const step = agentEl && agentEl.querySelector(`.tool-step[data-tool="${event.tool}"]`)
+      if (step) {
+        step.classList.add('slow')
+        let hint = step.querySelector('.tool-wait-hint')
+        if (!hint) {
+          hint = document.createElement('span')
+          hint.className = 'tool-wait-hint'
+          step.appendChild(hint)
+        }
+        hint.textContent = ` ⏳ 예상보다 길어 더 기다리는 중… (~${event.next}s, 필요하면 중단)`
+      }
+      if (stopBtn) stopBtn.classList.add('pulse')
       scrollToBottom()
       break
     }
@@ -493,6 +550,9 @@ function handleEvent(event, agentEl, bubble) {
       delete _toolStartTimes[event.tool]
 
       const isError = event.result && event.result.startsWith('툴 실행 오류')
+      _stopToolTimer(event.tool)
+      if (_currentTool && _currentTool.tool === event.tool) _currentTool = null
+      if (stopBtn) stopBtn.classList.remove('pulse')
       const step = agentEl.querySelector(`.tool-step[data-tool="${event.tool}"]`)
       if (step) {
         step.className = isError ? 'tool-step error' : 'tool-step done'
@@ -517,6 +577,7 @@ function handleEvent(event, agentEl, bubble) {
       break
 
     case 'agent_state':
+      if (event.state === 'idle') _stopAllToolTimers()
       setAgentState(event.state)
       break
 

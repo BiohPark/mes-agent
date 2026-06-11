@@ -99,6 +99,41 @@ def _intent_label(name: str, arguments) -> str:
     return base
 
 
+_TOOL_WAIT_NARRATE_AFTER = 1.5  # 이 누적 초과부터만 TOOL_WAIT 내레이션(빠른 작업 UI 소음 방지)
+
+
+async def _run_tool_watched(loop, name, arguments, label):
+    """run_tool을 단계적(escalating) wait_for로 감싸 **무한 행을 방지**한다(긴급수정 A1).
+
+    - 도구별 작은 baseline에서 시작 → 안 끝나면 누적 한계를 늘려가며 **같은 in-flight 작업을 계속 대기**.
+    - 가시 임계(>1.5s)를 넘겨 연장할 때마다 ('wait', payload)를 yield → 호출부가 TOOL_WAIT SSE로 내레이션.
+    - 끝나면 ('result', 결과)를 yield. 캡 도달 시 구조화 타임아웃 오류('툴 실행 오류' 접두)를 결과로.
+    - run_tool 자체 예외는 전파(호출부 except가 처리).
+    """
+    from agent.core import timeouts as _to
+    schedule = _to.escalation_schedule(_to.tool_baseline(name), _to.timeout_cap())
+    fut = loop.run_in_executor(None, run_tool, name, arguments)
+    prev = 0.0
+    for i, limit in enumerate(schedule):
+        delta = max(0.05, limit - prev)
+        prev = limit
+        try:
+            result = await asyncio.wait_for(asyncio.shield(fut), timeout=delta)
+            yield ("result", result)
+            return
+        except asyncio.TimeoutError:
+            # 아직 진행 중 — 다음 단계가 있고 가시 임계를 넘었으면 연장 내레이션
+            if i < len(schedule) - 1 and limit >= _TOOL_WAIT_NARRATE_AFTER:
+                yield ("wait", {
+                    "tool": name, "label": label,
+                    "elapsed": round(limit, 1), "next": round(schedule[i + 1], 1),
+                })
+            continue
+    # 캡 도달 → SSE 해방(스레드는 남되, office 등은 자체 워치독으로 실제 정리됨)
+    fut.cancel()
+    yield ("result", _to.timeout_error_text(name, _to.timeout_cap(), progressed=False))
+
+
 async def _resolve_confirm(cid: str) -> dict:
     """confirm_id에 대한 사용자 응답을 대기해 회수한다(SSE는 호출부에서 emit).
 
@@ -680,34 +715,50 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
                     continue
 
+                # 무한 행 방지: escalating 타임아웃 + 길어지면 TOOL_WAIT 내레이션(A1)
                 try:
-                    result = await loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
+                    result = None
+                    async for _wk, _wd in _run_tool_watched(loop, tc["name"], tc["arguments"], label):
+                        if _wk == "wait":
+                            yield sse({"type": ev.TOOL_WAIT, **_wd})
+                        else:
+                            result = _wd
+                    # 캡/Office 내부 타임아웃은 '툴 실행 오류' 문자열로 돌아온다 → 실패로 처리
+                    if isinstance(result, str) and result.startswith("툴 실행 오류"):
+                        _tool_failed = True
                 except Exception as first_err:
                     _tool_failed = True
                     result = f"툴 실행 오류: {first_err}"
 
-                    # running 단계의 max_retry 확인 후 재시도
-                    if thread_id and task_type and not tc["name"].startswith("workflow_"):
-                        try:
-                            _check_wf = await loop.run_in_executor(
-                                None, wf_storage.load_workflow, task_type, thread_id
-                            )
-                            _running_step = next(
-                                (s for s in _check_wf.steps if s.status == "running"), None
-                            )
-                            _max_retry = getattr(_running_step, "max_retry", 0) if _running_step else 0
-                            for _attempt in range(_max_retry):
-                                await asyncio.sleep(1.0)
-                                try:
-                                    result = await loop.run_in_executor(
-                                        None, run_tool, tc["name"], tc["arguments"]
-                                    )
-                                    _tool_failed = False
-                                    break
-                                except Exception as retry_err:
-                                    result = f"툴 실행 오류: {retry_err}"
-                        except Exception:
-                            pass
+                # running 단계의 max_retry 확인 후 재시도 (예외·타임아웃 공통)
+                if _tool_failed and thread_id and task_type and not tc["name"].startswith("workflow_"):
+                    try:
+                        _check_wf = await loop.run_in_executor(
+                            None, wf_storage.load_workflow, task_type, thread_id
+                        )
+                        _running_step = next(
+                            (s for s in _check_wf.steps if s.status == "running"), None
+                        )
+                        _max_retry = getattr(_running_step, "max_retry", 0) if _running_step else 0
+                        for _attempt in range(_max_retry):
+                            await asyncio.sleep(1.0)
+                            try:
+                                result = None
+                                async for _wk, _wd in _run_tool_watched(
+                                    loop, tc["name"], tc["arguments"], label
+                                ):
+                                    if _wk == "wait":
+                                        yield sse({"type": ev.TOOL_WAIT, **_wd})
+                                    else:
+                                        result = _wd
+                                if isinstance(result, str) and result.startswith("툴 실행 오류"):
+                                    continue  # 여전히 실패 → 다음 재시도
+                                _tool_failed = False
+                                break
+                            except Exception as retry_err:
+                                result = f"툴 실행 오류: {retry_err}"
+                    except Exception:
+                        pass
 
                 # 툴 실패 시 running 단계를 자동으로 error 상태로 전환 + RunState 동기화
                 if _tool_failed and thread_id and task_type and not tc["name"].startswith("workflow_"):

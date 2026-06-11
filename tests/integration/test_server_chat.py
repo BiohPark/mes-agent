@@ -984,3 +984,58 @@ class TestLongTermMemory:
         sys_msg = saved[0]["content"] if saved and saved[0]["role"] == "system" else ""
         assert "[장기 기억]" not in sys_msg
         assert called["n"] == 0
+
+
+# ── 도구 타임아웃(무한 행 방지) — 긴급수정 A1 ─────────────────────
+
+@pytest.fixture
+async def client_block(vault, monkeypatch):
+    """LLM이 tool_call을 반환하고, run_tool이 캡보다 오래 블록되는 클라이언트."""
+    import time as _t
+    _TwoPhaseStream.reset()
+    monkeypatch.setattr("agent.server.get_client", lambda: _TwoPhaseLLM())
+    monkeypatch.setattr("agent.server.get_model", lambda: "gpt-test")
+
+    def _block(name, args):
+        _t.sleep(1.0)  # 캡(0.3~0.5s)보다 길게 — 디스패치 타임아웃이 먼저 발동
+        return '{"ok": true}'
+
+    monkeypatch.setattr("agent.server.run_tool", _block)
+
+    from httpx import AsyncClient, ASGITransport
+    from agent.server import app
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+class TestToolTimeout:
+    async def _run(self, client, tid):
+        async with client.stream("POST", "/chat", json={
+            "message": "엑셀 편집해줘", "thread_id": tid, "task_type": "general",
+        }) as resp:
+            text = await resp.aread()
+        return _parse_sse(text.decode())
+
+    async def test_blocking_tool_does_not_hang_and_finishes(self, client_block, monkeypatch):
+        # 캡을 짧게 → 2초 블록 도구도 무한 펜딩하지 않고 타임아웃으로 마감되어야 한다
+        monkeypatch.setenv("TOOL_TIMEOUT_CAP", "0.3")
+        create = await client_block.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+        events = await self._run(client_block, tid)
+        types = [e.get("type") for e in events]
+        assert ev.DONE in types  # 무한 펜딩 아님
+        td = [e for e in events if e.get("type") == ev.TOOL_DONE]
+        assert td and any("툴 실행 오류" in (e.get("result") or "") for e in td)
+
+    async def test_tool_wait_narration_emitted(self, client_block, monkeypatch):
+        monkeypatch.setenv("TOOL_TIMEOUT_CAP", "0.5")
+        monkeypatch.setenv("TOOL_BASELINE_OVERRIDES", '{"run_command": 0.1}')
+        monkeypatch.setattr("agent.server._TOOL_WAIT_NARRATE_AFTER", 0.05)
+        create = await client_block.post("/threads/general", json={})
+        tid = create.json()["thread_id"]
+        events = await self._run(client_block, tid)
+        types = [e.get("type") for e in events]
+        assert ev.TOOL_WAIT in types  # 길어질 때 사용자에게 연장 내레이션
+        assert ev.DONE in types
+

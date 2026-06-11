@@ -1,0 +1,48 @@
+# 백로그 V — 적응형 도구 타임아웃 (무한 행 방지 + 작업 가시성) ⏱️
+
+> 상태: 🟡 1단계(긴급수정) 구현 완료 · 2단계(전체 적응형) 미착수
+> 동기: Excel 작업이 **3분+ 무한 펜딩**, 사용자는 무슨 일인지 알 수 없었다(`docs/errors/화면 캡처 2026-06-12 054918.png`).
+> 거버넌스: 클린룸. 출처 = 본인 코드 + 일반 에이전트 지식 + openclaw(MIT)/LangGraph + **claw-code(MIT, 사용자 클리어 — 패턴만, 코드 복붙 금지)**.
+
+## 문제 (재분석)
+
+타임아웃 처리가 도구 계층 전반에서 **제각각·불일치**다:
+- `process.py` `run_command`/`start_process` → subprocess `timeout=30` 자체 캡.
+- `office_com.py` `_on_com_thread` → **타임아웃 없음 = 무한 행**(Excel `Workbooks.Open`이 보이지 않는 모달에서 무한 대기).
+- `server.py generate()` 디스패치(`run_in_executor(run_tool)`) → **캡 없음** → 자체 캡 없는 도구 하나가 SSE 전체를 영구 정지.
+
+핵심 결함: (1) 일부 도구 무한 행, (2) 디스패치 경계 통일 안전망 부재, (3) 진행/멈춤 가시성 0.
+
+## 1단계 — 긴급수정 ✅ (구현 완료)
+
+- **순수 모듈 `agent/core/timeouts.py`**: `tool_baseline`(도구별 작은 예상시간), `escalation_schedule`(누적 한계), `classify_timeout`(slow/stuck 구조화), `timeout_error_text`.
+- **디스패치 통일 타임아웃 `server.py _run_tool_watched`**: 같은 in-flight 작업을 단계적 `asyncio.wait_for`로 더 기다리고, 가시 임계 초과 시 `TOOL_WAIT` SSE 내레이션, 캡 도달 시 구조화 오류(기존 error-step 경로 재사용).
+- **office_com 자가복구**: `OFFICE_COM_TIMEOUT` 워치독 + **PID 스코프 킬**(사용자가 직접 연 Office 보호) + executor 재생성 + Open 대화상자 억제(`Notify=False` 등).
+- **가시성(chat.js/css)**: 경과 타이머, "더 기다리는 중" 내레이션, 상태바 현재 도구, 중단 버튼 강조.
+
+## 2단계 — 전체 적응형 (미착수, 본 에픽 핵심)
+
+1. **진행도(liveness) 탐지 — 슬로우 vs 스턱 구분**
+   - 신호: 자식 프로세스 CPU>0 / stdout 바이트 증가 / 창 응답성(Win UIA `IsHungAppWindow`) / 네트워크 활동.
+   - 진행 신호 있으면 연장(`slow`), 2회 연속 정지면 조기 중단(`stuck`) — 캡까지 무의미하게 안 기다림.
+2. **에이전트 인루프 판단**
+   - 캡/스턱 시 구조화 결과(`failureClass`·`provenance`·추정원인·대안)를 **LLM에 tool 결과로 환류** →
+     모델이 재시도(더 큰 timeout)/대안 경로(Excel COM→openpyxl)/사용자 질의를 **스스로 선택**.
+   - "이번엔 시간 늘려 해본다 / 이렇게 해본다"를 모델이 텍스트로 사용자에게 설명(L1 루프 내레이션과 조화).
+3. **자동 백그라운드 디태치**(claw-code 패턴 참고)
+   - 정당하게 긴 작업(대용량 빌드·변환)은 SSE를 막지 않고 **백그라운드 작업으로 전환** → 진행 폴링/완료 알림.
+   - `start_process`/`run_command`의 GUI·장기 프로세스를 "성공적으로 시작됨(미종료)"으로 분류해 행으로 오인하지 않음.
+4. **baseline 적응 학습**: 관측 p50/p90을 누적해 도구별 baseline을 점진 보정(콜드스타트=정적값).
+5. **취소/정리**: 중단 버튼이 in-flight 작업을 실제로 끊도록(프로세스 트리 kill·COM PID kill 연계).
+
+## 핵심 파일
+- 구현됨: `agent/core/timeouts.py`, `agent/server.py`(`_run_tool_watched`), `agent/tools/office_com.py`, `agent/core/events.py`(`TOOL_WAIT`), `electron/renderer/chat.js`·`style.css`.
+- 2단계 예정: `agent/core/timeouts.py`(liveness·분류 확장), `agent/server.py`(디태치·인루프 환류), 백그라운드 작업 레지스트리.
+
+## 확인 필요 (2단계)
+1. 진행도 신호의 OS별 신뢰성(특히 COM STA 스레드가 막혔을 때 외부 관측만 가능).
+2. 자동 백그라운드의 결과 회수 UX(폴링 vs 알림) + 비용.
+3. 인루프 환류가 토큰/스텝 예산(백로그 M)에 주는 영향.
+
+## 규모
+2단계 = L(에픽). 1단계(긴급)는 본 라운드 완료.

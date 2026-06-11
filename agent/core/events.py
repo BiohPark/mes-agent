@@ -10,5 +10,6 @@ COMPACTION = "compaction"
 CONTEXT_TRIM = "context_trim"
 PLAN = "plan"
 VISION_CAPTURE = "vision_capture"
+TOOL_WAIT = "tool_wait"  # 도구가 예상보다 오래 걸려 타임아웃을 연장하는 중(가시성/내레이션)
 DONE = "done"
 ERROR = "error"

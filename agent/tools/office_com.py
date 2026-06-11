@@ -21,8 +21,12 @@ import shutil
 import atexit
 import functools
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
+
+import psutil
+
+from agent.core.timeouts import office_com_timeout, timeout_error_text
 
 # ── pywin32 가용성 탐지 ───────────────────────────────────────
 try:
@@ -47,12 +51,60 @@ _com_executor = ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="office-com", initializer=_com_thread_init
 )
 
+# 우리가 띄운 Office 인스턴스 PID만 추적 — 타임아웃 시 사용자가 직접 연 Office는 건드리지 않는다.
+_tracked_pids: set[int] = set()
 
-def _on_com_thread(fn):
-    """핸들러를 전용 COM 스레드에서 실행하고 결과를 동기 반환한다."""
+
+def _pids_by_name(image: str) -> set:
+    try:
+        return {p.pid for p in psutil.process_iter(["name"])
+                if (p.info.get("name") or "").lower() == image.lower()}
+    except Exception:
+        return set()
+
+
+def _track_new_pid(image: str, before: set) -> None:
+    """Dispatch 전/후 PID 차집합으로 새로 뜬 우리 인스턴스를 기록(베스트에포트)."""
+    try:
+        new = _pids_by_name(image) - before
+        for pid in new:
+            _tracked_pids.add(pid)
+    except Exception:
+        pass
+
+
+def _recover_stuck_com() -> None:
+    """COM 호출이 타임아웃되면: 우리 인스턴스 PID만 강제 종료 + 싱글턴/executor 재생성.
+    멈춘 워커를 버리고 새 executor를 만들어 다음 호출이 정상 동작하게 한다."""
+    global _com_executor, _word_app, _excel_app, _ppt_app
+    for pid in list(_tracked_pids):
+        try:
+            psutil.Process(pid).kill()
+        except Exception:
+            pass
+    _tracked_pids.clear()
+    _word_app = _excel_app = _ppt_app = None
+    try:
+        _com_executor.shutdown(wait=False)
+    except Exception:
+        pass
+    _com_executor = ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="office-com", initializer=_com_thread_init
+    )
+
+
+def _on_com_thread(fn, tool_name: str = "office"):
+    """핸들러를 전용 COM 스레드에서 실행하되, OFFICE_COM_TIMEOUT 내에 안 끝나면
+    멈춘 인스턴스를 정리하고 구조화된 타임아웃 오류를 돌려준다(무한 행 방지)."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        return _com_executor.submit(fn, *args, **kwargs).result()
+        future = _com_executor.submit(fn, *args, **kwargs)
+        timeout = office_com_timeout()
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            _recover_stuck_com()
+            return timeout_error_text(tool_name, timeout, progressed=False)
     return wrapper
 
 
@@ -66,12 +118,14 @@ def _get_word():
     global _word_app
     import win32com.client as win32
     if _word_app is None:
+        _before = _pids_by_name("WINWORD.EXE")
         _word_app = win32.dynamic.Dispatch("Word.Application")
         _word_app.Visible = False
         try:
             _word_app.DisplayAlerts = False
         except Exception:
             pass
+        _track_new_pid("WINWORD.EXE", _before)
     return _word_app
 
 
@@ -79,9 +133,17 @@ def _get_excel():
     global _excel_app
     import win32com.client as win32
     if _excel_app is None:
+        _before = _pids_by_name("EXCEL.EXE")
         _excel_app = win32.dynamic.Dispatch("Excel.Application")
         _excel_app.Visible = False
         _excel_app.DisplayAlerts = False
+        # 열기 시 행 유발 대화상자 억제: 링크 업데이트 질문·매크로 보안 프롬프트 차단
+        for _attr, _val in (("AskToUpdateLinks", False), ("AutomationSecurity", 3)):
+            try:
+                setattr(_excel_app, _attr, _val)
+            except Exception:
+                pass
+        _track_new_pid("EXCEL.EXE", _before)
     return _excel_app
 
 
@@ -89,7 +151,9 @@ def _get_ppt():
     global _ppt_app
     import win32com.client as win32
     if _ppt_app is None:
+        _before = _pids_by_name("POWERPNT.EXE")
         _ppt_app = win32.dynamic.Dispatch("PowerPoint.Application")
+        _track_new_pid("POWERPNT.EXE", _before)
         # PowerPoint는 일부 작업에서 비가시 상태를 거부하므로 최소화로 띄운다
         try:
             _ppt_app.WindowState = 2  # ppWindowMinimized
@@ -407,7 +471,10 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
     if _HAS_PYWIN32:
         try:
             excel = _get_excel()
-            wb = excel.Workbooks.Open(path)
+            # Notify=False: 파일이 잠겨 있으면 "사용 중" 대화상자로 무한 대기하지 않고 즉시 예외
+            wb = excel.Workbooks.Open(
+                path, UpdateLinks=0, IgnoreReadOnlyRecommended=True, Notify=False, AddToMru=False
+            )
             try:
                 ws = wb.Worksheets(sheet) if sheet else wb.ActiveSheet
                 for addr, val in cells.items():
@@ -450,7 +517,10 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
     if _HAS_PYWIN32:
         try:
             excel = _get_excel()
-            wb = excel.Workbooks.Open(path, ReadOnly=True)
+            wb = excel.Workbooks.Open(
+                path, UpdateLinks=0, ReadOnly=True, IgnoreReadOnlyRecommended=True,
+                Notify=False, AddToMru=False
+            )
             try:
                 ws = wb.Worksheets(sheet) if sheet else wb.ActiveSheet
                 val = ws.Range(cell_range).Value
@@ -844,5 +914,6 @@ MANIFEST = [
 ]
 
 # 모든 Office 핸들러를 전용 COM(STA) 스레드로 위임 — 단일 스레드 직렬화로 COM 안정성 확보
+# + OFFICE_COM_TIMEOUT 워치독으로 무한 행 방지(타임아웃 시 인스턴스 정리 후 구조화 오류 반환)
 for _tool in MANIFEST:
-    _tool["handler"] = _on_com_thread(_tool["handler"])
+    _tool["handler"] = _on_com_thread(_tool["handler"], _tool["name"])
