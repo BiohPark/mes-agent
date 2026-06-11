@@ -471,6 +471,16 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
         wb = openpyxl.load_workbook(path, data_only=True)
         ws = wb[sheet] if sheet else wb.active
         rows = [[c.value for c in row] for row in ws[cell_range]]
+        # data_only=True는 Excel이 계산해 캐시한 값만 반환 → openpyxl이 쓴 수식 셀은
+        # 캐시가 없어 None이 된다. 그 경우 수식 문자열로 폴백해 의미 있는 값을 돌려준다.
+        if any(v is None for r in rows for v in r):
+            wbf = openpyxl.load_workbook(path, data_only=False)
+            wsf = wbf[sheet] if sheet else wbf.active
+            frows = [[c.value for c in row] for row in wsf[cell_range]]
+            rows = [
+                [v if v is not None else fv for v, fv in zip(r, fr)]
+                for r, fr in zip(rows, frows)
+            ]
         return json.dumps({"range": cell_range, "engine": "openpyxl", "values": rows},
                           ensure_ascii=False, default=str)
     except Exception as e:
