@@ -24,7 +24,8 @@
 - 참고: ECC(everything-claude-code)는 전체 설치 대신 **선별 차용**
 
 ### 2단계: Ralph loop 시험 운전
-- [ ] `scripts/ralph/` 구성 — ralph.sh + prompt.md + prd.json (snarktank/ralph 패턴 참고)
+- [ ] **먼저 설치된 `ralph-loop` 플러그인으로 시험**(세션 내 Stop 훅 반복 — 직접 만들 것 없음): `/ralph-loop "작업…완료 시 DONE" --completion-promise "DONE" --max-iterations N`, 종료 게이트=`.\test.ps1`. 감독형/대화형에 적합.
+- [ ] (무인 자동이 필요할 때만) `scripts/ralph/` 구성 — ralph.sh + prompt.md + prd.json (snarktank/ralph 패턴 참고). 헤드리스 외부 `while` 루프, 호스트 머신 필요.
 - [ ] 루프 호스트 결정: ☐ 홈 Windows PC (Git Bash/WSL) ☐ Mac Mini M4 (도입 후) ☐ Termux (단기 실험만)
 - [ ] git worktree 격리 작업공간 (`../mes-agent-ralph`)
 - [ ] 첫 실험: 작고 검증 가능한 작업 1개, 5회 반복 human-in-the-loop, pytest를 종료 게이트로
