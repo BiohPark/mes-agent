@@ -1,15 +1,11 @@
-import os
-import pytesseract
 import pyautogui
+
+from agent.core.ocr_provider import get_ocr_provider
 
 
 def capture_screen_ocr() -> str:
-    tesseract_cmd = os.environ.get('OCR_TESSERACT_CMD', 'tesseract')
-    lang = os.environ.get('OCR_LANG', 'kor+eng')
-    pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-
     screenshot = pyautogui.screenshot()
-    text = pytesseract.image_to_string(screenshot, lang=lang)
+    text = get_ocr_provider().image_to_string(screenshot)
     return text.strip() or '(인식된 텍스트 없음)'
 
 

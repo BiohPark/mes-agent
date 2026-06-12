@@ -14,8 +14,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 import mss
-import pytesseract
 from PIL import Image
+
+from agent.core.ocr_provider import get_ocr_provider
 
 
 # ── 공통 유틸 ─────────────────────────────────────────────────
@@ -55,10 +56,9 @@ def _bgr_to_pil(img: np.ndarray) -> Image.Image:
 def capture_region_ocr(x: int, y: int, width: int, height: int) -> str:
     """지정 영역만 캡처하고 OCR로 텍스트를 추출합니다.
     전체 화면 OCR보다 빠르고 정확합니다."""
-    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd()
     img = _capture_region(x, y, width, height)
     pil = _bgr_to_pil(img)
-    text = pytesseract.image_to_string(pil, lang=_lang())
+    text = get_ocr_provider().image_to_string(pil)
     return text.strip() or "(인식된 텍스트 없음)"
 
 
@@ -90,10 +90,9 @@ def find_image_on_screen(template_path: str, confidence: float = 0.8) -> str:
 def find_text_location(text: str) -> str:
     """화면에서 특정 텍스트의 위치(중심 좌표)를 찾아 반환합니다.
     찾은 경우 x, y 좌표를 반환하며, 바로 mouse_click으로 클릭할 수 있습니다."""
-    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd()
     screen = _capture_full()
     pil = _bgr_to_pil(screen)
-    data = pytesseract.image_to_data(pil, lang=_lang(), output_type=pytesseract.Output.DICT)
+    data = get_ocr_provider().image_to_data(pil)
 
     text_lower = text.lower()
     candidates = []
@@ -135,13 +134,12 @@ def wait_for_image(template_path: str, timeout: int = 10,
 def wait_for_text(text: str, timeout: int = 10, interval: float = 0.5) -> str:
     """지정한 텍스트가 화면에 나타날 때까지 기다립니다.
     '배포 완료', '오류' 등의 메시지를 감지하는 데 사용합니다."""
-    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd()
     deadline = time.time() + timeout
     start = time.time()
     while time.time() < deadline:
         screen = _capture_full()
         pil = _bgr_to_pil(screen)
-        page_text = pytesseract.image_to_string(pil, lang=_lang())
+        page_text = get_ocr_provider().image_to_string(pil)
         if text.lower() in page_text.lower():
             elapsed = round(time.time() - start, 1)
             return json.dumps({"found": True, "elapsed_sec": elapsed,

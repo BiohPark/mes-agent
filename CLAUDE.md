@@ -42,6 +42,7 @@
 | LLM 프로파일 전환 | `agent/config.py` | OpenAI ↔ 사내 LLM 런타임 전환, UI 버튼 |
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |
 | OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
+| OCRProvider 어댑터 (트랙3a 1단계) ✅ | `agent/core/ocr_provider.py` + `ocr.py`·`screen.py` | OCR을 `pytesseract` 직접결합에서 분리 — `OCRProvider`(ABC)·`TesseractProvider`·`get_ocr_provider()`(`OCR_PROVIDER` env, 미지원값 tesseract 폴백). 도구 4곳이 provider 경유 → 향후 UIA/멀티모달로 교체·롤백 가능. tesseract 제거는 후속. 첫 Ralph 루프 실험 산출. 상세: `docs/specs/ocr-provider.md` |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결**, **포커스 비탈취(백로그 I): open/navigate 시 사용자 foreground 창 복원, `bring_to_front`·`BROWSER_FOCUS_STEAL`** |
@@ -266,7 +267,8 @@ mes-agent/
 │   ├── core/
 │   │   ├── events.py       ← SSE 이벤트 타입 상수
 │   │   ├── compaction.py   ← G1 컨텍스트 compaction 순수 로직(짝 보존) ✅
-│   │   └── timeouts.py     ← 도구 타임아웃 baseline·escalation·분류 순수 로직(백로그 V 1단계) ✅
+│   │   ├── timeouts.py     ← 도구 타임아웃 baseline·escalation·분류 순수 로직(백로그 V 1단계) ✅
+│   │   └── ocr_provider.py ← OCR 제공자 어댑터(Tesseract 래퍼, OCR_PROVIDER 전환) 트랙3a 1단계 ✅
 │   ├── workflow/
 │   │   ├── model.py        ← WorkflowDefinition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py      ← Vault 저장/로드(YAML frontmatter) + 구포맷 자동 마이그레이션

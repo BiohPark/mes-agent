@@ -95,13 +95,19 @@ class TestWaitForTextInterval:
     def test_interval_controls_sleep_between_polls(self):
         """interval=0.2이면 폴링 사이에 sleep(0.2)가 호출되어야 한다."""
         from agent.tools.screen import wait_for_text
-        with patch("agent.tools.screen.pytesseract") as mock_ocr, \
+
+        class _FakeProvider:
+            def image_to_string(self, image, lang=None):
+                return ""  # 텍스트 미발견 → 타임아웃까지 폴링
+
+            def image_to_data(self, image, lang=None):
+                return {}
+
+        with patch("agent.tools.screen.get_ocr_provider", return_value=_FakeProvider()), \
              patch("agent.tools.screen._capture_full", return_value=__import__("numpy").zeros((10, 10, 3), dtype=__import__("numpy").uint8)), \
              patch("agent.tools.screen.time") as mock_time:
             # time.time() 호출 순서: deadline(0) + start(0) → 1회 루프(0.1) → 2회 루프(0.5) → 탈출(1.5)
             mock_time.time.side_effect = [0, 0, 0.1, 0.5, 1.5]
-            mock_ocr.pytesseract.tesseract_cmd = ""
-            mock_ocr.image_to_string.return_value = ""
             wait_for_text("완료", timeout=1, interval=0.2)
         sleep_args = [c.args[0] for c in mock_time.sleep.call_args_list]
         assert len(sleep_args) >= 1
