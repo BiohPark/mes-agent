@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git branch *)",
+      "Bash(git pull)",
+      "PowerShell(.\\test.ps1)",
+      "PowerShell(.\\test.ps1 *)",
+      "Bash(conda run -n mes-agent python -m pytest *)",
+      "Bash(conda run -n mes-agent pytest *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git diff --name-only HEAD 2>/dev/null | grep -q 'agent/tools/' && echo '[hook] 툴 파일 변경됨 — smoke test: conda run -n mes-agent pytest tests/smoke/ -q' || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git status --short 2>/dev/null | head -20 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
