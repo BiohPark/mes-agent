@@ -1343,6 +1343,34 @@ body {
 }
 #stop-btn:hover { background: #2a0a0a; color: #e94560; border-color: #e94560; }
 
+/* 백로그 Q: waiting(당신 차례) 상태 강조 — 놓치지 않게 색·펄스 */
+#agent-state-bar[data-state="waiting"] {
+  background: #2a230a;
+  border-top-color: #c9a227;
+  color: #ffd95e;
+  animation: waitingPulse 1.4s ease-in-out infinite;
+}
+#agent-state-bar[data-state="waiting"] #agent-state-text { font-weight: 600; }
+@keyframes waitingPulse {
+  0%, 100% { background: #2a230a; }
+  50%      { background: #3a3010; }
+}
+
+/* 백로그 Q: 끼어들기 버튼 (stop과 구분되는 강조색) */
+#interject-btn {
+  background: transparent;
+  border: 1px solid #1f4a6a;
+  color: #6fa8d8;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+#interject-btn:hover { background: #0a1f2a; color: #8fd0ff; border-color: #3a7bb5; }
+#interject-btn.hidden { display: none; }
+
 /* ── 우측 패널 ───────────────────────────────────────────────── */
 
 #right-resize-handle {

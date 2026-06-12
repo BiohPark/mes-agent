@@ -47,6 +47,9 @@ app = FastAPI()
 _pending_confirms: dict[str, asyncio.Event] = {}
 _confirm_results: dict[str, dict] = {}
 _stop_flags: dict[str, bool] = {}
+# 백로그 Q: 실행 중 끼어들기 큐. 키=request_id, 값=주입 대기 메시지 목록.
+# generate() 루프가 단계 경계(I1 도구 짝 보존)에서 드레인한다. 백로그 O가 재사용.
+_pending_messages: dict[str, list[str]] = {}
 
 # G3 안전 게이트: 사용자 확인 대기 타임아웃(초). 타임아웃=거부(무인 자동승인 금지).
 _CONFIRM_TIMEOUT = 300
@@ -406,6 +409,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
 
     request_id = uuid.uuid4().hex[:12]
     _stop_flags[request_id] = False
+    _pending_messages[request_id] = []  # 백로그 Q: 끼어들기 큐 활성화
     yield sse({ev.REQUEST_ID: request_id})
 
     # 메시지 초기화
@@ -463,6 +467,17 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             if _stop_flags.get(request_id):
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
+
+            # 백로그 Q: 끼어들기 드레인. 이 지점은 직전 반복이 tool 묶음과 캡처 이미지를
+            # 모두 append한 뒤라 메시지 짝(I1)이 완결된 안전 경계다(nudge·compaction 의
+            # continue 경로도 여기를 거친다). 도구 실행 도중 도착한 메시지는 현재 묶음
+            # 완료 후 다음 반복 최상단에서 주입된다.
+            _injected = _pending_messages.get(request_id) or []
+            if _injected:
+                _pending_messages[request_id] = []
+                for _msg in _injected:
+                    messages.append({"role": "user", "content": f"[사용자 끼어들기] {_msg}"})
+                    yield sse({"type": ev.INJECTED, "content": _msg})
 
             # M2 이미지 eviction: 최신 N개 화면 이미지만 남기고 과거는 텍스트 자리표시자로 치환
             # (텍스트 compaction과 독립 — 누적 캡처가 컨텍스트를 잠식하는 것을 선제 차단)
@@ -876,6 +891,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         return
     finally:
         _stop_flags.pop(request_id, None)
+        _pending_messages.pop(request_id, None)  # 백로그 Q: 끼어들기 큐 정리
         # 스레드 없는 단발 요청의 허용목록은 정리(스레드 키는 세션 유지)
         if not thread_id:
             _session_allowlists.pop(request_id, None)
@@ -956,6 +972,23 @@ async def chat(body: ChatRequest):
 async def stop_agent(request_id: str):
     _stop_flags[request_id] = True
     return {"ok": True}
+
+
+class InjectRequest(BaseModel):
+    message: str
+
+
+@app.post("/inject/{request_id}")
+async def inject_message(request_id: str, body: InjectRequest):
+    """백로그 Q: 실행 중 에이전트에 메시지를 끼어들기로 주입한다(stop과 구분).
+
+    generate() 루프가 다음 단계 경계에서 큐를 드레인해 user 메시지로 반영한다.
+    활성 요청이 아니면 ok=False (이미 끝났거나 잘못된 id).
+    """
+    if request_id not in _pending_messages:
+        return {"ok": False, "reason": "no_active_request"}
+    _pending_messages[request_id].append(body.message)
+    return {"ok": True, "queued": len(_pending_messages[request_id])}
 
 
 class MemoryAddRequest(BaseModel):

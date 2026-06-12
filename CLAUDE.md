@@ -70,7 +70,7 @@
 | SSE 파일 감지 엔드포인트 (Phase 4B ✅) | `agent/server.py` | `GET /threads/{type}/{id}/workflow/events` — mtime 폴링 SSE, `WF_POLL_INTERVAL` 환경변수(기본 2s), heartbeat 30s 주기 |
 | 워크플로우 파일 감지 (Phase 4 frontend ✅) | `electron/renderer/workflow.js` | `_startFileWatcher()`·`_stopFileWatcher()` EventSource, 스레드 전환 시 자동 연결·해제, 편집 중 캐시 갱신 |
 | 빠른 작업 버튼 | `electron/renderer/index.html` | OCR·파일은 **완성형 → 원클릭 자동 실행**, 브라우저·타이핑은 템플릿 삽입 후 포커스 |
-| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/CONTEXT_TRIM/PLAN/VISION_CAPTURE/**TOOL_WAIT**/DONE/ERROR |
+| SSE 이벤트 상수 | `agent/core/events.py` | TEXT/TOOL_START/TOOL_DONE/CONFIRM/AGENT_STATE/CONTEXT_USAGE/WORKFLOW_UPDATE/COMPACTION/CONTEXT_TRIM/PLAN/VISION_CAPTURE/TOOL_WAIT/**INJECTED**/DONE/ERROR |
 | 툴 실패 자동 error 전환 | `agent/server.py` | 툴 예외 발생 시 running 단계 → error 상태 자동 갱신, WORKFLOW_UPDATE SSE 발행 |
 | 단계 재시도 버튼 | `electron/renderer/workflow.js` + `style.css` | error 단계에 ↺ 재시도 버튼, 클릭 시 채팅 입력으로 에이전트 재시작 |
 | `WorkflowStep.max_retry` | `agent/workflow/model.py` | 재시도 횟수 설정 (기본 0), 직렬화/역직렬화 + 기존 JSON 하위 호환 |
@@ -114,6 +114,7 @@
 | 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
 | 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.min.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 anvaka/panzoom UMD(`vendor/panzoom.min.js`, 무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`anvaka`에 `reset`/`setTransform`이 없어 `zoomAbs`+`moveTo`로 복원), **최초 렌더 시 `_fitToViewport`로 그래프 전체가 보이도록 축소·중앙정렬**(⊙=전체 보기) — 미적용 시 큰 그래프 하단이 잘리던 문제 해결. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
 | 도구 타임아웃 안전망·작업 가시성 (백로그 V 1단계) ✅ | `agent/core/timeouts.py` + `agent/server.py` + `agent/tools/office_com.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`style.css` | **무한 행 방지**: 도구별 작은 baseline에서 시작해 단계적으로 타임아웃을 늘려 같은 작업을 더 기다리고, 디스패치 하드 캡(`TOOL_TIMEOUT_CAP`) 도달 시 구조화 오류로 마감(`_run_tool_watched`). office COM은 `OFFICE_COM_TIMEOUT` 워치독+**PID 스코프 킬**(사용자가 연 Office 보호)+executor 재생성+Open 대화상자 억제(`Notify=False`)로 무한 행 제거. **가시성**: 길어지면 `TOOL_WAIT` SSE 내레이션('더 기다리는 중')+경과시간+상태바 현재 도구+중단 강조. 전체 적응형(진행도 탐지·인루프 판단·자동 백그라운드)은 백로그 V 2단계. 출처 클린룸(claw-code MIT, 패턴만). 상세: `docs/adr/0003-adaptive-tool-timeout.md` |
+| 작업 상태 명확화·작업 중 끼어들기 (백로그 Q) ✅ | `agent/server.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`index.html`·`style.css` | **① 끼어들기**: 실행 중에도 입력칸을 열어 두고(전송 버튼만 비활성) 별도 `↩ 끼어들기` 버튼·Enter로 메시지를 `POST /inject/{request_id}` → `_pending_messages` 큐 적재. `generate()` 루프가 **단계 경계(I1 도구 짝 보존 지점, 중단 확인 직후)에서 드레인**해 `[사용자 끼어들기]` user 메시지로 주입, `INJECTED` SSE로 투명 고지. stop과 구분(작업 유지). **② 상태 강조**: waiting을 "⏳ 당신 차례 — 입력해 주세요"로 색·펄스 강조(`data-state` 클래스). **큐 메커니즘은 백로그 O(외부 원격 제어)가 재사용**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md` |
 
 **총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -257,7 +258,7 @@ mes-agent/
 │       ├── hud.html/hud.js ← 협업 코치 플로팅 HUD (백로그 H)
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S). (/health /chat /stop /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S). (/health /chat /stop /inject /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
 │   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
@@ -366,7 +367,7 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 ---
 
 > **에픽 N–U (2026-06-11 추가)** — 하네스·외부제어·UI/UX 전면 개선. 상세 설계·확인사항은 각 `docs/backlog/{N..U}-*.md`.
-> **PO 추천 시퀀스**: ✅ Tier 1 **P·R·S 완료**(현재 상태 표 참조) → ② 핵심 **U·Q** → ③ 확장 **T(P 이후)·O(Q 큐 공유)** → ④ 리서치 트랙 **N(L과 통합)**.
+> **PO 추천 시퀀스**: ✅ Tier 1 **P·R·S·U·Q 완료**(현재 상태 표 참조) → ③ 확장 **T(P 이후)·O(Q 큐 재사용)** → ④ 리서치 트랙 **N(L과 통합)**.
 > **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · S↔U(로그 이관) · N↔L(이벤트 스트림).
 
 ### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
@@ -381,9 +382,9 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 3영역 사이드바(상단 고정 검색·진행중 / 중단 스크롤 / 하단 고정 관리·개발자도구) + 전역 검색(`/search`) + Active runs. 빠른작업·도구테스트는 접이식 개발자 도구로 이동. (즐겨찾기·최근활동은 미구현 — 필요 시 후속.) 상세: `docs/backlog/done/P-left-frame-ia.md`.
 
-### Q. 작업 상태 명확화 + 작업 중 개입 ⏯️ — 🔲 미착수 (우선순위 상)
+### Q. 작업 상태 명확화 + 작업 중 개입 ⏯️ — ✅ 완료 (현재 상태 표 참조)
 
-running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재→`generate()`가 단계 경계(I1 보존)에서 드레인 주입. **O와 큐 메커니즘 공유**. 상세: `docs/backlog/pending/Q-agent-state-and-intervention.md`.
+running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재(`POST /inject/{id}`)→`generate()`가 단계 경계(I1 보존)에서 드레인 주입(`INJECTED` SSE). **O와 큐 메커니즘 공유**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md`.
 
 ### R. 대화 입력 에디터 개선 ⌨️ — ✅ 완료 (현재 상태 표 참조)
 

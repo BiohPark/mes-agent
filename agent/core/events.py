@@ -11,5 +11,6 @@ CONTEXT_TRIM = "context_trim"
 PLAN = "plan"
 VISION_CAPTURE = "vision_capture"
 TOOL_WAIT = "tool_wait"  # 도구가 예상보다 오래 걸려 타임아웃을 연장하는 중(가시성/내레이션)
+INJECTED = "injected"  # 백로그 Q: 실행 중 끼어들기 메시지가 대화에 주입됨(투명 고지)
 DONE = "done"
 ERROR = "error"

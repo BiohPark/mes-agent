@@ -21,7 +21,9 @@ Origin 게이트 + 토큰**(`agent/server.py` `_security_gate`)이라 원격 접
 - **장점**: 실시간. **단점**: 네트워크 노출 → 회사 정책·인증 강화 필수.
 
 ## Q와 공유
-외부 명령 주입은 **작업 중 메시지 큐**(백로그 Q)와 동일 메커니즘 → 함께 설계(`_pending_messages`).
+외부 명령 주입은 **작업 중 메시지 큐**(백로그 Q)와 동일 메커니즘. **Q 완료(2026-06-13)** 로 큐가 이미 존재한다:
+`agent.server._pending_messages` + `POST /inject/{request_id}` + `generate()` 단계 경계 드레인.
+O의 명령함 폴러는 inbox에서 읽은 명령을 **이 큐에 그대로 적재**(또는 활성 요청이 없으면 신규 `/chat` 시작)하면 된다.
 
 ## 핵심 파일 (예정)
 - 수정: `agent/server.py`(명령함 폴러/인증/바인딩), `electron/main.js`(LAN 옵트인 토글·페어링 UI).

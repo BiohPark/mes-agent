@@ -37,6 +37,7 @@ const agentStateBar = document.getElementById('agent-state-bar')
 const agentStateIcon = document.getElementById('agent-state-icon')
 const agentStateText = document.getElementById('agent-state-text')
 const stopBtn = document.getElementById('stop-btn')
+const interjectBtn = document.getElementById('interject-btn')
 const contextBar = document.getElementById('context-bar')
 const contextFill = document.getElementById('context-fill')
 const contextLabel = document.getElementById('context-label')
@@ -140,7 +141,7 @@ function renderTabs() {
 const STATE_META = {
   thinking: { icon: '🧠', text: '생각 중...' },
   running:  { icon: '⚙️', text: '도구 실행 중...' },
-  waiting:  { icon: '⏸️', text: '사용자 입력 대기' },
+  waiting:  { icon: '⏳', text: '당신 차례 — 입력해 주세요' },
   idle:     { icon: '✓',  text: '완료' },
 }
 
@@ -148,6 +149,10 @@ function setAgentState(state) {
   const meta = STATE_META[state] || STATE_META.thinking
   agentStateIcon.textContent = meta.icon
   agentStateText.textContent = meta.text
+  // 상태별 클래스 → CSS에서 waiting(당신 차례)/running 시각 강조 (백로그 Q)
+  agentStateBar.dataset.state = state
+  // 끼어들기 버튼: 실행 중(thinking/running/waiting)만 노출, idle엔 숨김
+  if (interjectBtn) interjectBtn.classList.toggle('hidden', state === 'idle')
   if (state === 'idle') {
     setTimeout(() => agentStateBar.classList.add('hidden'), 800)
     // 실행 종료 → 창 원복 (개선 아이디어 C)
@@ -219,6 +224,15 @@ stopBtn.addEventListener('click', async () => {
   try {
     await fetch(`${BASE_URL}/stop/${currentRequestId}`, { method: 'POST' })
   } catch {}
+})
+
+// 백로그 Q: 끼어들기 버튼 — 입력칸 내용을 작업을 멈추지 않고 주입한다.
+interjectBtn?.addEventListener('click', () => {
+  const text = inputEl.value.trim()
+  if (!text || !currentRequestId) return
+  inputEl.value = ''
+  autoGrowInput()
+  injectMessage(text)
 })
 
 const PROFILE_LABELS = {
@@ -338,9 +352,11 @@ async function initWhenReady() {
 initWhenReady()
 
 function setInputEnabled(enabled) {
-  inputEl.disabled = !enabled
+  // 백로그 Q: 실행 중에도 입력칸·확대 에디터는 열어 둬 끼어들기를 칠 수 있게 한다.
+  // 새 메시지 전송(전송 버튼)만 비활성 — 실행 중엔 끼어들기 버튼/Enter로 주입한다.
+  inputEl.disabled = false
   sendBtn.disabled = !enabled
-  if (inputExpandBtn) inputExpandBtn.disabled = !enabled
+  if (inputExpandBtn) inputExpandBtn.disabled = false
 }
 
 // ── 입력칸 자동 높이 확장 (백로그 R) ──────────────────────────
@@ -594,6 +610,16 @@ function handleEvent(event, agentEl, bubble) {
       const note = document.createElement('div')
       note.className = 'context-trim-note'
       note.textContent = `🧹 ${event.action || '컨텍스트를 정리해 재시도했습니다.'}`
+      agentEl.querySelector('.msg-bubble').before(note)
+      scrollToBottom()
+      break
+    }
+
+    case 'injected': {
+      // 백로그 Q: 끼어든 메시지가 다음 단계에서 반영됐음을 투명 고지
+      const note = document.createElement('div')
+      note.className = 'context-trim-note'
+      note.textContent = '↩ 끼어든 메시지를 반영합니다.'
       agentEl.querySelector('.msg-bubble').before(note)
       scrollToBottom()
       break
@@ -1210,11 +1236,35 @@ async function closeCurrentThread() {
 
 // ── 이벤트 바인딩 ──────────────────────────────────────────
 
+// 백로그 Q: 실행 중이면 끼어들기(/inject), 아니면 새 메시지(/chat)로 라우팅.
+function submitInput(text) {
+  if (!text.trim()) return
+  if (currentRequestId) injectMessage(text)
+  else sendMessage(text)
+}
+
+async function injectMessage(text) {
+  if (!text.trim() || !currentRequestId) return
+  const rid = currentRequestId
+  try {
+    const r = await fetch(`${BASE_URL}/inject/${rid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    })
+    const body = await r.json().catch(() => ({}))
+    if (body.ok) {
+      appendUserMessage(`↩ ${text}`)  // 끼어든 메시지 로컬 에코
+      scrollToBottom()
+    }
+  } catch (e) { console.error('끼어들기 주입 실패', e) }
+}
+
 function submitFromInput() {
   const text = inputEl.value.trim()
   inputEl.value = ''
   autoGrowInput()
-  sendMessage(text)
+  submitInput(text)
 }
 
 // 커서 위치에 줄바꿈 삽입 (Ctrl+Enter / Ctrl+J 용)
@@ -1271,7 +1321,7 @@ inputEditorSend?.addEventListener('click', () => {
   inputEditorOverlay.classList.add('hidden')
   inputEl.value = ''
   autoGrowInput()
-  if (text) sendMessage(text)
+  if (text) submitInput(text)
 })
 inputEditorTextarea?.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); inputEditorSend.click() }
