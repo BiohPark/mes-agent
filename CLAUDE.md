@@ -414,3 +414,5 @@ running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 �
 - Electron 배포는 나중에 (현재는 개발 단계)
 - `npx -y`는 외부 다운로드 시도 → `mcp-obsidian`은 외부망에서 `npm pack`으로 챙길 것
 - MCP 클라이언트(백로그 J): Python `mcp` 패키지 + Oracle MCP 서버(python-oracledb 기반 권장)를 USB 사전반입. 미설치여도 앱은 동작(지연 import)
+
+대전환 프로젝트 진행 시 docs/TRANSFORMATION_PLAN.md를 먼저 읽을 것
