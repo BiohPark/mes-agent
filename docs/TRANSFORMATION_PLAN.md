@@ -17,6 +17,8 @@
 
 **목표**: "대화하며 한 작업씩" → "스펙 작성 → 루프 실행 → diff 리뷰" 워크플로우로 전환.
 
+**활성 스펙**: `docs/specs/development-harness.md`
+
 ### 1단계: 하네스 구조 도입 (레포만, 무위험) ✅ 2026-06-13 완료
 - [x] `.claude/settings.json` 생성 — 권한 기본값(test/git), Stop·PostToolUse 훅
 - [x] `.claude/agents/code-reviewer.md` — CLAUDE.md 규칙·L1 불변식·보안·툴 스키마 검토 서브에이전트
@@ -38,6 +40,21 @@
 
 **미해결 질문**: 루프 호스트 머신, Claude Code 요금제 한도 내 루프 비용
 
+## 트랙 1B — 작업 감독 UX 격상
+
+**목표**: 자동화가 실행되는 동안 사용자가 목표·현재 단계·근거·위험·승인 상태를 계속 감독할 수 있게 한다.
+
+**활성 스펙**: `docs/specs/supervisor-console.md`
+
+- [ ] 우측 패널을 `감독 / 워크플로우 / 근거 / 로그` 구조로 재정의
+- [ ] 기존 SSE 이벤트를 감독 콘솔 상태로 모으는 프론트엔드 reducer 설계
+- [ ] 기본 실행 중 창 동작을 `자동 최소화`에서 `작게 비켜 보기 HUD`로 전환
+- [ ] 워크플로우 그래프 최초 표시가 화면 밖으로 나가지 않도록 fit-to-view 보장
+- [ ] MES 검증·Office 작성·배포 자동화 기본 템플릿을 도메인별로 구체화
+- [ ] 후속: `RunSnapshot`/`RunLedger` 영속 모델로 새로고침 후에도 실행 상태 복원
+
+**우선순위**: Track 1의 Task T 루프 성공 후, 첫 UX 구현 과제로 진행.
+
 ## 트랙 2 — 상용급 격상 (명세 역설계)
 
 **목표**: 잘 알려진 상용/오픈 서비스의 기능을 스펙으로 역설계하여 `docs/specs/`에 축적 → 트랙 1의 루프가 구현.
@@ -54,6 +71,7 @@
 ### 분석 대상 및 차용 후보
 - **OpenHands**: event stream 아키텍처, condenser(컨텍스트 압축), agent delegation, 샌드박스 격리
 - **OpenClaw**: heartbeat(자가 점검), cron(예약 작업), IM 채널 라우팅, 사용자별 세션/메모리 → 트랙 3과 연결
+- **ECC / Claude Code 생태계**: hooks, skills, subagents, slash-command형 루프 → 트랙 1 개발 하네스 강화
 - 기존 차용 확정(REFACTOR_BRIEF): n8n 노드/커넥션 분리, UiPath 재시도, Temporal/LangGraph 상태 분리, Playwright auto-wait
 - 기존 4대 갭과 매핑: safety gate / 컨텍스트 압축 / 조기 종료 / plan mode
 
