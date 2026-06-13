@@ -514,6 +514,8 @@ function buildToolResult(tool, text, isError) {
 }
 
 function handleEvent(event, agentEl, bubble) {
+  if (window.workflowPanel?.handleEvent) window.workflowPanel.handleEvent(event)
+
   // type 없이 request_id만 있는 경우 (최초 SSE)
   if (event.request_id && !event.type) {
     currentRequestId = event.request_id

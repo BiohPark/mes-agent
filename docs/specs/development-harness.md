@@ -24,6 +24,7 @@
 6. 작업 완료 후 사용자가 다음에 어떻게 쓰고 검증할지 알 수 있는 짧은 가이드가 남는다.
 
 운영 관점의 상세 절차는 `docs/ORCHESTRATION_GUIDE.md`를 기준으로 한다.
+실행 기록, 작업 카드 템플릿, critic 준비 상태는 `docs/harness/README.md`를 기준으로 찾는다.
 
 ## 비목표
 
@@ -39,8 +40,11 @@
 |------|------|
 | 사용자 | 제품 방향, 우선순위, 위험 작업 승인 |
 | Codex | 설계 정리, 백로그 분해, 리뷰, 작업 흐름 복구, 보조 구현 |
+| Codex CLI | read-only critic, 격리 worktree worker, CLI 실행성 진단 |
 | Claude Code | worktree 안에서 주 구현, 테스트 작성, 로컬 검증 |
 | Ralph loop | Claude Code 반복 실행, 종료 조건까지 자동 재시도 |
+| Implementation Critic | 구현 가능성, 파일 범위, 단계 분해, 의존성 위험 검토 |
+| Risk/Test Critic | L1 루프 불변식, 보안 게이트, 테스트, 문서 갱신, 폐쇄망 제약 검토 |
 | code-reviewer | L1 루프 불변식, 보안 게이트, 툴 스키마, 문서 갱신 누락 검토 |
 | 테스트 하네스 | `.\test.ps1`, unit/integration/smoke 게이트 실행 |
 
@@ -51,7 +55,7 @@
 세션 시작 시 다음 문서를 읽는다.
 
 - `CLAUDE.md`
-- `REFACTOR_BRIEF.md`
+- `docs/REFACTOR_BRIEF.md`
 - `docs/TRANSFORMATION_PLAN.md`
 - 현재 작업 스펙(예: `docs/specs/task-types-dynamic.md`)
 
@@ -65,6 +69,12 @@ title: 동적 업무 타입 관리
 spec: docs/specs/task-types-dynamic.md
 branch: ralph/task-T
 worktree: ../mes-agent-ralph
+base_branch: master
+owners:
+  worktree_setup: Codex Desktop
+  merge: Codex Desktop
+spec_synced: false
+conflict_policy: "한 worker는 files.owned만 수정한다. files.readonly는 참고만 한다. 같은 파일은 동시에 두 worker에게 배정하지 않는다."
 scope:
   in:
     - TASK_CONFIGS를 get_task_configs()로 동적화
@@ -80,19 +90,62 @@ gates:
   - tests/integration/test_task_config_api.py
   - tests/smoke/test_tool_schemas.py
   - .\test.ps1 ci
+test_dod:
+  unit:
+    - tests/unit/test_task_type_tools.py
+  integration:
+    - tests/integration/test_task_config_api.py
+  smoke:
+    - tests/smoke/test_tool_schemas.py
+  invariant:
+    - tool-pair invariant 영향 없음 또는 별도 테스트 명시
+  offline:
+    - 런타임 패키지 다운로드 없음
 completion_promise: DONE
 ```
 
 작업 카드의 `spec` 파일은 반드시 대상 worktree에서 볼 수 있어야 한다. 이번에 발생한 혼선처럼 스펙이 메인 worktree에만 있으면 루프를 시작하지 않는다.
 
-### 2. worktree 준비
+`owners.worktree_setup`, `owners.merge`, `base_branch`, `spec_synced`, `conflict_policy`, `test_dod`가 비어 있으면 작업 카드는 critic 단계에서 반려한다.
+
+`task_id`는 작업 층을 드러내야 한다. 개발환경 하네스 작업은 `dev-harness-*`, 제품 내부 런타임 하네스 작업은 `product-harness-*`, 감독 콘솔 UX 작업은 `supervisor-*` prefix를 쓴다.
+
+### 2. 계획 품질 critic
+
+작업 카드를 만들면 구현 전에 critic 두 개를 먼저 돌린다.
+
+1. **Implementation Critic**: 구현 가능성, 파일 범위, 단계 분해, 의존성 위험, worker 충돌 가능성만 본다.
+2. **Risk/Test Critic**: L1 루프 불변식, safety gate, 테스트 누락, 문서 갱신 누락, 폐쇄망 제약만 본다.
+3. Codex Desktop이 두 결과를 통합해 `scope.in`, `scope.out`, `gates`, worker 지시를 갱신한다.
+
+Critic 통합 후에는 다음이 선명해야 한다.
+
+- `files.owned`와 `files.readonly`
+- worktree 생성/merge 책임자
+- tool-pair invariant 영향 여부와 테스트
+- tool 추가/삭제 시 `EXPECTED_TOOL_COUNT` 갱신 여부
+- 폐쇄망에서 실패할 수 있는 런타임 다운로드가 없는지
+
+로컬 실행 기본형:
+
+```powershell
+.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+```
+
+주의: 이 critic 실행은 repo 문서 내용을 외부 모델 제공자에게 보낼 수 있으므로, 민감 문서가 포함된 계획에서는 사용자 명시 승인 후에만 실행한다. 승인 없이 검토해야 할 때는 Codex Desktop 현재 세션에서 수동 critic을 수행하고, 외부 agent 미사용 사유를 완료 보고에 남긴다.
+
+Claude Code가 파일 Read critic에서 타임아웃되면, 승인된 repo 계약 요약을 짧은 프롬프트로 전달하는 Risk/Test Critic fallback을 사용한다. fallback도 산출물 경로와 제한사항을 남기면 공식 critic 라운드로 인정한다.
+
+### 3. worktree 준비
 
 - 큰 작업은 항상 별도 worktree에서 진행한다.
 - 브랜치명은 작업 주체와 작업명을 드러내게 짓는다. 예: `ralph/task-T`, `codex/supervisor-console`.
 - `master`와 worktree 브랜치 차이가 없는 상태인지 확인한 뒤 시작한다.
 - 이미 진행 중인 변경이 있으면 새 루프 지시 전에 `git status`를 먼저 사용자에게 보고한다.
+- 같은 파일을 두 worker가 동시에 수정하지 않는다.
+- 충돌이 생기면 worker가 직접 merge하지 않고 Codex Desktop이 diff를 통합한다.
 
-### 3. 루프 실행
+### 4. 루프 실행
 
 Ralph loop 지시는 다음 내용을 포함한다.
 
@@ -112,7 +165,15 @@ docs/specs/task-types-dynamic.md 명세대로 구현하라.
 모든 게이트가 통과하면 DONE을 출력하라.
 ```
 
-### 4. 리뷰
+Codex CLI worker를 쓸 때는 별도 worktree에서만 `workspace-write`를 허용한다. 계획 비평이나 조사에는 다음 read-only 형식을 기본으로 한다.
+
+```powershell
+cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "비평 프롬프트"
+```
+
+PowerShell에서 `codex` 직접 호출이 실행 정책에 막히면 `cmd /c codex`를 사용한다.
+
+### 5. 리뷰
 
 구현 완료 후 다음 순서로 확인한다.
 
@@ -123,13 +184,14 @@ docs/specs/task-types-dynamic.md 명세대로 구현하라.
 
 리뷰는 칭찬보다 결함 탐지를 우선한다.
 
-### 5. 커밋과 가이드
+### 6. 커밋과 가이드
 
 커밋 전 체크리스트:
 
 - 테스트 결과가 명시되어 있다.
 - 관련 문서가 갱신됐다.
 - 툴 수 변경 시 smoke 기대값이 맞다.
+- 히스토리 조작, compaction, vision, 끼어들기 작업은 tool-pair invariant 테스트를 통과했다.
 - 새 설정/의존성이 있으면 `.env.example`, `SETUP.md`가 갱신됐다.
 - 사용자에게 “어떻게 써보면 되는지” 짧은 사용 가이드가 있다.
 
@@ -162,6 +224,8 @@ ECC, OpenHands, OpenClaw 등은 다음 순서로만 반영한다.
 
 - [ ] 작업 카드가 없으면 loop 작업을 시작하지 않는다.
 - [ ] 대상 worktree에서 스펙 파일이 보이는지 확인한다.
+- [ ] 구현 전에 Implementation Critic과 Risk/Test Critic 결과를 통합한다.
+- [ ] Codex CLI critic은 read-only로, Codex CLI worker는 별도 worktree의 workspace-write로만 실행한다.
 - [ ] 루프 완료는 테스트 통과와 리뷰 통과를 포함한다.
 - [ ] 구현 결과에는 사용자용 확인/사용 가이드가 포함된다.
 - [ ] 오픈소스 차용은 기능 계약과 출처 기록을 남긴다.

@@ -205,12 +205,45 @@
       <!-- 우측 패널 -->
       <aside id="right-panel">
         <div id="right-panel-tabs">
-          <button class="rp-tab active" data-tab="workflow">📋 워크플로우</button>
+          <button class="rp-tab active" data-tab="supervisor">감독</button>
+          <button class="rp-tab" data-tab="workflow">📋 워크플로우</button>
           <button class="rp-tab" data-tab="log">🗒️ 실행 로그</button>
           <button id="right-panel-toggle" title="패널 닫기/열기">›</button>
         </div>
         <div id="right-panel-body">
-          <div id="workflow-panel" class="rp-content active">
+          <div id="supervisor-panel" class="rp-content active">
+            <div id="supervisor-status-card" class="sv-card">
+              <div class="sv-card-label">현재 실행</div>
+              <div id="sv-goal" class="sv-title">대기 중</div>
+              <div id="sv-state" class="sv-state idle">idle</div>
+            </div>
+            <div class="sv-grid">
+              <div class="sv-card">
+                <div class="sv-card-label">현재 단계</div>
+                <div id="sv-step" class="sv-value">-</div>
+              </div>
+              <div class="sv-card">
+                <div class="sv-card-label">현재 도구</div>
+                <div id="sv-tool" class="sv-value">-</div>
+                <div id="sv-elapsed" class="sv-meta">0.0s</div>
+              </div>
+              <div class="sv-card">
+                <div class="sv-card-label">승인/위험</div>
+                <div id="sv-approval" class="sv-value">대기 없음</div>
+                <div id="sv-risk" class="sv-meta">risk: none</div>
+              </div>
+              <div class="sv-card">
+                <div class="sv-card-label">컨텍스트</div>
+                <div id="sv-context" class="sv-value">-</div>
+              </div>
+            </div>
+            <div class="sv-card sv-evidence-card">
+              <div class="sv-card-label">근거 요약</div>
+              <div id="sv-evidence" class="sv-evidence-empty">아직 수집된 근거가 없습니다.</div>
+            </div>
+            <div id="sv-error" class="sv-error hidden"></div>
+          </div>
+          <div id="workflow-panel" class="rp-content">
             <div id="workflow-toolbar">
               <button id="workflow-template-btn" class="wf-tmpl-btn" title="이 업무의 기본 워크플로우 단계를 편집합니다">📋 기본 템플릿 편집</button>
               <div id="wf-zoom-controls" class="hidden">

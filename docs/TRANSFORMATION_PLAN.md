@@ -28,6 +28,21 @@
 - [x] `AGENTS.md` 루트 — 이미 존재 확인 (기존 파일 유지)
 - 참고: ECC(everything-claude-code)는 전체 설치 대신 **선별 차용**
 
+### 1.5단계: Codex CLI critic 표면 정상화 ✅ 2026-06-13 확인
+- [x] `cmd /c codex --version` → `codex-cli 0.139.0`
+- [x] `cmd /c codex doctor` → 설치·인증·상태 DB·네트워크 정상, 경고는 `git --version` 탐지와 mixed auth 신호
+- [x] read-only exec 기본형 확인: `cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "..."`
+- [x] critic 실행 스크립트 추가: `scripts/harness/run-plan-critics.ps1`
+- [x] 하네스 운영 인덱스와 작업 카드 템플릿 추가: `docs/harness/README.md`, `docs/harness/task-card-template.md`
+- [x] 우선순위 기반 Phase 보고서 추가: `docs/harness/phase-report.md`
+- [x] 첫 추천 작업 카드 추가: `docs/harness/cards/supervisor-phase1-reducer.md`
+- [x] 기존 계획 수동 critic 리뷰 기록: `docs/harness/2026-06-13-existing-plan-review.md`
+- [x] Claude Code CLI 인증 확인: `cmd /c claude auth status --text`에서 Claude Pro 로그인 확인
+- [x] Claude Code smoke 확인: 승인된 샌드박스 외부 실행에서 `CLAUDE_EXEC_OK`
+- [x] repo 문서 기반 critic 라운드 수행: 사용자 명시 승인 후 Codex Implementation Critic + Claude Risk/Test Critic 결과를 `docs/harness/2026-06-13-critic-round-1.md`에 통합
+- [x] Claude 긴 Read critic 타임아웃 fallback 반영: `scripts/harness/run-plan-critics.ps1`가 120초 초과 시 timeout note를 남기고 종료
+- [x] root 문서 정리: `REFACTOR_BRIEF.md` 본문을 `docs/REFACTOR_BRIEF.md`로 이동하고 root에는 pointer 유지
+
 ### 2단계: Ralph loop 시험 운전
 - [ ] **먼저 설치된 `ralph-loop` 플러그인으로 시험**(세션 내 Stop 훅 반복 — 직접 만들 것 없음): `/ralph-loop "작업…완료 시 DONE" --completion-promise "DONE" --max-iterations N`, 종료 게이트=`.\test.ps1`. 감독형/대화형에 적합.
 - [ ] (무인 자동이 필요할 때만) `scripts/ralph/` 구성 — ralph.sh + prompt.md + prd.json (snarktank/ralph 패턴 참고). 헤드리스 외부 `while` 루프, 호스트 머신 필요.
@@ -49,14 +64,14 @@
 **활성 스펙**: `docs/specs/supervisor-console.md`
 **제품 내부 하네스 스펙**: `docs/specs/product-agent-harness.md`
 
-- [ ] 우측 패널을 `감독 / 워크플로우 / 근거 / 로그` 구조로 재정의
-- [ ] 기존 SSE 이벤트를 감독 콘솔 상태로 모으는 프론트엔드 reducer 설계
+- [x] 우측 패널에 `감독` 탭 추가 (`감독 / 워크플로우 / 로그`)
+- [x] 기존 SSE 이벤트를 감독 콘솔 상태로 모으는 프론트엔드 reducer 구현
 - [ ] 기본 실행 중 창 동작을 `자동 최소화`에서 `작게 비켜 보기 HUD`로 전환
 - [ ] 워크플로우 그래프 최초 표시가 화면 밖으로 나가지 않도록 fit-to-view 보장
 - [ ] MES 검증·Office 작성·배포 자동화 기본 템플릿을 도메인별로 구체화
 - [ ] 후속: `RunSnapshot`/`RunLedger` 영속 모델로 새로고침 후에도 실행 상태 복원
 
-**우선순위**: Track 1의 Task T 루프 성공 후, 첫 UX 구현 과제로 진행.
+**우선순위**: 감독 탭 reducer는 1차 구현 완료. 다음은 Electron 수동 확인과 HUD 동작 분리 카드.
 
 ## 트랙 1C — 제품 내부 에이전트 하네스
 
@@ -89,7 +104,7 @@
 - **OpenHands**: event stream 아키텍처, condenser(컨텍스트 압축), agent delegation, 샌드박스 격리
 - **OpenClaw**: heartbeat(자가 점검), cron(예약 작업), IM 채널 라우팅, 사용자별 세션/메모리 → 트랙 3과 연결
 - **ECC / Claude Code 생태계**: hooks, skills, subagents, slash-command형 루프 → 트랙 1 개발 하네스 강화
-- 기존 차용 확정(REFACTOR_BRIEF): n8n 노드/커넥션 분리, UiPath 재시도, Temporal/LangGraph 상태 분리, Playwright auto-wait
+- 기존 차용 확정(`docs/REFACTOR_BRIEF.md`): n8n 노드/커넥션 분리, UiPath 재시도, Temporal/LangGraph 상태 분리, Playwright auto-wait
 - 기존 4대 갭과 매핑: safety gate / 컨텍스트 압축 / 조기 종료 / plan mode
 
 ### 작업 방식
@@ -115,7 +130,7 @@
 
 ## 진행 규칙 (Claude Code 세션용)
 
-1. 세션 시작 시 본 문서 + CLAUDE.md + REFACTOR_BRIEF.md를 읽는다.
+1. 세션 시작 시 본 문서 + CLAUDE.md + `docs/REFACTOR_BRIEF.md`를 읽는다.
 2. 계획 변경은 본 문서를 수정하고, 구현은 트랙별 Issue/prd.json 단위로만.
 3. 코드 작성 전 discovery audit — README 추측 기반 작업 금지.
 4. 미체크 항목 중 사람 결정이 필요한 것은 멈추고 질문한다.

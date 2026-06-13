@@ -4,6 +4,7 @@ const rightPanel = document.getElementById('right-panel')
 const rightResizeHandle = document.getElementById('right-resize-handle')
 const rightPanelToggle = document.getElementById('right-panel-toggle')
 const rpTabs = document.querySelectorAll('.rp-tab')
+const supervisorPanel = document.getElementById('supervisor-panel')
 const workflowPanel = document.getElementById('workflow-panel')
 const logPanel = document.getElementById('log-panel')
 const workflowEmpty = document.getElementById('workflow-empty')
@@ -16,6 +17,16 @@ const workflowSaveBtn = document.getElementById('workflow-save-btn')
 const workflowCancelBtn = document.getElementById('workflow-cancel-btn')
 const workflowTemplateBtn = document.getElementById('workflow-template-btn')
 const logEntries = document.getElementById('log-entries')
+const svGoal = document.getElementById('sv-goal')
+const svState = document.getElementById('sv-state')
+const svStep = document.getElementById('sv-step')
+const svTool = document.getElementById('sv-tool')
+const svElapsed = document.getElementById('sv-elapsed')
+const svApproval = document.getElementById('sv-approval')
+const svRisk = document.getElementById('sv-risk')
+const svContext = document.getElementById('sv-context')
+const svEvidence = document.getElementById('sv-evidence')
+const svError = document.getElementById('sv-error')
 
 let _currentWorkflow = null
 let _panelCollapsed = false
@@ -59,10 +70,186 @@ rpTabs.forEach(tab => {
     rpTabs.forEach(t => t.classList.remove('active'))
     tab.classList.add('active')
     const target = tab.dataset.tab
+    supervisorPanel.classList.toggle('active', target === 'supervisor')
     workflowPanel.classList.toggle('active', target === 'workflow')
     logPanel.classList.toggle('active', target === 'log')
   })
 })
+
+// ── 감독 패널 reducer ────────────────────────────────────────
+
+const SUPERVISOR_INITIAL = {
+  requestId: '',
+  goal: '대기 중',
+  step: '-',
+  agentState: 'idle',
+  currentTool: '',
+  currentToolLabel: '',
+  toolStartedAt: 0,
+  elapsedMs: 0,
+  waitingApproval: false,
+  approvalText: '대기 없음',
+  risk: 'none',
+  contextText: '-',
+  evidence: [],
+  lastError: '',
+}
+
+let _supervisorState = { ...SUPERVISOR_INITIAL }
+let _supervisorTimer = null
+
+function _summarizeWorkflow(wf) {
+  const steps = wf?.steps || []
+  const current = steps.find(s => ['running', 'waiting', 'error'].includes(s.status)) ||
+    steps.find(s => s.status === 'pending') ||
+    steps[steps.length - 1]
+  const doneCount = steps.filter(s => s.status === 'done' || s.status === 'skipped').length
+  const total = steps.length
+  return {
+    goal: wf?.title || '실행 중',
+    step: current
+      ? `${doneCount}/${total || 1} · ${current.title || current.id || '현재 단계'}`
+      : '-',
+  }
+}
+
+function _appendEvidence(label, detail = '') {
+  const text = detail ? `${label}: ${detail}` : label
+  _supervisorState.evidence = [
+    { text, at: new Date().toTimeString().slice(0, 8) },
+    ..._supervisorState.evidence,
+  ].slice(0, 5)
+}
+
+function _startSupervisorTimer() {
+  if (_supervisorTimer) return
+  _supervisorTimer = setInterval(() => {
+    if (!_supervisorState.toolStartedAt) return
+    _supervisorState.elapsedMs = Date.now() - _supervisorState.toolStartedAt
+    renderSupervisor()
+  }, 500)
+}
+
+function _stopSupervisorTimer() {
+  if (_supervisorTimer) clearInterval(_supervisorTimer)
+  _supervisorTimer = null
+}
+
+function _reduceSupervisor(event) {
+  if (!event) return
+  if (event.request_id && !event.type) {
+    _supervisorState.requestId = event.request_id
+    renderSupervisor()
+    return
+  }
+
+  switch (event.type) {
+    case 'agent_state':
+      _supervisorState.agentState = event.state || 'unknown'
+      if (event.state === 'idle') {
+        _supervisorState.currentTool = ''
+        _supervisorState.currentToolLabel = ''
+        _supervisorState.toolStartedAt = 0
+        _supervisorState.elapsedMs = 0
+        _stopSupervisorTimer()
+      }
+      break
+
+    case 'tool_start':
+      _supervisorState.agentState = 'working'
+      _supervisorState.currentTool = event.tool || ''
+      _supervisorState.currentToolLabel = event.label || event.tool || '도구 실행 중'
+      _supervisorState.toolStartedAt = Date.now()
+      _supervisorState.elapsedMs = 0
+      _supervisorState.waitingApproval = false
+      _supervisorState.approvalText = '대기 없음'
+      _startSupervisorTimer()
+      break
+
+    case 'tool_wait':
+      _supervisorState.agentState = 'waiting'
+      _supervisorState.approvalText = `도구 지연: ${event.next || '?'}s까지 대기`
+      break
+
+    case 'tool_done':
+      if (_supervisorState.currentTool === event.tool) {
+        _supervisorState.currentTool = ''
+        _supervisorState.currentToolLabel = ''
+        _supervisorState.toolStartedAt = 0
+        _supervisorState.elapsedMs = 0
+        _stopSupervisorTimer()
+      }
+      _appendEvidence(event.tool || 'tool', (event.result || '').slice(0, 80))
+      break
+
+    case 'confirm':
+      _supervisorState.agentState = 'waiting'
+      _supervisorState.waitingApproval = true
+      _supervisorState.approvalText = event.question || '사용자 승인 대기'
+      _supervisorState.risk = event.risk || 'confirm'
+      if (event.command) _appendEvidence('승인 대상 명령', event.command.slice(0, 80))
+      break
+
+    case 'workflow_update': {
+      const summary = _summarizeWorkflow(event.workflow)
+      _supervisorState.goal = summary.goal
+      _supervisorState.step = summary.step
+      break
+    }
+
+    case 'context_usage':
+      _supervisorState.contextText = `${event.tokens_used || 0}/${event.tokens_total || 0}`
+      break
+
+    case 'vision_capture':
+      _appendEvidence('화면 캡처', event.image_b64 ? '이미지 수집됨' : '캡처 이벤트')
+      break
+
+    case 'done':
+      _supervisorState.agentState = 'idle'
+      _supervisorState.currentTool = ''
+      _supervisorState.currentToolLabel = ''
+      _supervisorState.toolStartedAt = 0
+      _supervisorState.elapsedMs = 0
+      _supervisorState.waitingApproval = false
+      _supervisorState.approvalText = '대기 없음'
+      _supervisorState.risk = 'none'
+      _stopSupervisorTimer()
+      break
+
+    case 'error':
+      _supervisorState.agentState = 'error'
+      _supervisorState.lastError = event.message || '알 수 없는 오류'
+      _stopSupervisorTimer()
+      break
+  }
+  renderSupervisor()
+}
+
+function renderSupervisor() {
+  if (!supervisorPanel) return
+  svGoal.textContent = _supervisorState.goal
+  svState.textContent = _supervisorState.agentState
+  svState.className = `sv-state ${_supervisorState.agentState || 'idle'}`
+  svStep.textContent = _supervisorState.step
+  svTool.textContent = _supervisorState.currentToolLabel || '-'
+  svElapsed.textContent = `${(_supervisorState.elapsedMs / 1000).toFixed(1)}s`
+  svApproval.textContent = _supervisorState.approvalText
+  svRisk.textContent = `risk: ${_supervisorState.risk}`
+  svContext.textContent = _supervisorState.contextText
+  svError.textContent = _supervisorState.lastError
+  svError.classList.toggle('hidden', !_supervisorState.lastError)
+
+  if (_supervisorState.evidence.length) {
+    svEvidence.className = 'sv-evidence-list'
+    svEvidence.innerHTML = _supervisorState.evidence
+      .map(item => `<div class="sv-evidence-item"><span>${escapeWf(item.at)}</span>${escapeWf(item.text)}</div>`)
+      .join('')
+  } else {
+    svEvidence.className = 'sv-evidence-empty'
+    svEvidence.textContent = '아직 수집된 근거가 없습니다.'
+  }
+}
 
 // ── 패널 접기/펼치기 ─────────────────────────────────────────
 
@@ -197,6 +384,11 @@ function _computeLayout(steps, connections, groupOf = {}) {
 
 function renderWorkflow(wf) {
   _currentWorkflow = wf
+  const supervisorSummary = _summarizeWorkflow(wf)
+  _supervisorState.goal = supervisorSummary.goal
+  _supervisorState.step = supervisorSummary.step
+  renderSupervisor()
+
   workflowEmpty.classList.add('hidden')
   workflowContent.classList.remove('hidden')
 
@@ -755,6 +947,9 @@ function clearWorkflow() {
   const pw = workflowContent.querySelector('[data-wf-progress]')
   if (pw) pw.remove()
   document.querySelectorAll('.wf-action-panel').forEach(p => p.remove())
+  _supervisorState.goal = '대기 중'
+  _supervisorState.step = '-'
+  renderSupervisor()
 }
 
 // ── 파일 변경 감지 (SSE) ──────────────────────────────────────
@@ -1136,6 +1331,7 @@ workflowClearBtn.addEventListener('click', async () => {
 window.workflowPanel = {
   load: loadWorkflowForThread,
   handleUpdate: handleWorkflowUpdate,
+  handleEvent: _reduceSupervisor,
   appendLog,
   recordToolLog,
   clearLog,

@@ -68,6 +68,32 @@ Codex worktree가 맡기 좋은 일:
 - Codex sub-agent 결과를 반영하는 작은 patch
 - Claude가 막힌 작업의 대안 구현
 
+### 로컬 Codex CLI 엔진
+
+Codex CLI는 Codex Desktop 안에서 **중첩 read-only critic** 또는 **격리 worktree worker**로 쓴다. Windows PowerShell에서는 `codex.ps1` 실행 정책이나 WindowsApps shim 때문에 직접 `codex` 호출이 막힐 수 있으므로, 현재 환경의 표준 실행형은 `cmd /c codex ...`다.
+
+검증된 기본 명령:
+
+```powershell
+cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "Do not edit files. Reply with exactly: CODEX_EXEC_OK"
+```
+
+용도별 기본값:
+
+| 용도 | 명령 옵션 | 판단 |
+|------|-----------|------|
+| 계획 비평/조사 | `-a never exec -s read-only --ephemeral --ignore-user-config --ignore-rules` | 파일 수정 없이 빠르게 독립 의견을 받는다 |
+| 구현 worker | `-a on-request exec -s workspace-write --ephemeral` | 별도 worktree에서만 사용한다 |
+| 진단 | `cmd /c codex doctor` | 설치·인증·sandbox·네트워크 상태 확인 |
+
+주의:
+
+- repo 문서를 읽게 하는 Codex CLI critic은 로컬 문서 내용이 외부 모델 제공자에게 전송될 수 있다.
+- 따라서 민감한 계획/사내 문서 기반 critic 실행은 사용자 명시 승인 후에만 한다.
+- 기본 config를 그대로 로드하면 플러그인/MCP/훅 경고가 많으므로, critic 용도는 `--ignore-user-config --ignore-rules --ephemeral`을 기본으로 한다.
+- Claude Code critic은 `claude -p ... --permission-mode plan --tools "Read" --add-dir <repo>` 형태를 쓴다. Claude Pro/OAuth 로그인 환경에서는 `--bare`를 쓰지 않는다.
+- Codex Desktop 관리 셸의 네트워크/파일 샌드박스에서 CLI agent 호출이 실패하면, 승인된 샌드박스 외부 실행으로 smoke/critic을 수행한다.
+
 ### 조사/리뷰 엔진: sub-agent
 
 Codex sub-agent는 병렬 조사와 리뷰에 적합하다.
@@ -92,6 +118,13 @@ sub-agent가 맡기 좋은 일:
 | Worker | Claude/Ralph 또는 Codex worktree | 작은 스펙 구현 |
 | Reviewer | Codex sub-agent 또는 Claude `code-reviewer` | 결함, 테스트, 보안, 문서 누락 검토 |
 
+계획 품질을 올릴 때는 구현 전 critic 2개를 추가한다.
+
+| 역할 | 기본 도구 | 책임 |
+|------|----------|------|
+| Implementation Critic | Codex CLI read-only exec | 구현 가능성, 파일 범위, 단계 분해, 의존성 위험, worker 충돌 검토 |
+| Risk/Test Critic | Claude Code plan mode 또는 Codex CLI read-only exec | L1 불변식, safety gate, 테스트, 문서 갱신, 폐쇄망 제약 검토 |
+
 확장 편성:
 
 | 역할 | 기본 도구 | 책임 |
@@ -111,7 +144,7 @@ Everything Claude Code v2 같은 ECC 계열 도구는 추천한다. 다만 **Cod
 2. 기능을 분류한다.
 3. Claude Code 전용인 것은 `.claude/`에 둔다.
 4. Codex에도 유용한 개념은 `.codex/`, sub-agent, thread/worktree 운영법으로 미러링한다.
-5. 공통 계약은 `AGENTS.md`, `CLAUDE.md`, `docs/specs/`, `docs/TRANSFORMATION_PLAN.md`에 둔다.
+5. 공통 계약은 `AGENTS.md`, `CLAUDE.md`, `docs/specs/`, `docs/TRANSFORMATION_PLAN.md`, `docs/REFACTOR_BRIEF.md`에 둔다.
 
 분류 기준:
 
@@ -136,7 +169,7 @@ OpenHands, OpenClaw, ECC 등은 좋은 아이디어를 빠르게 흡수하기 �
 4. `docs/specs/`에 스펙으로 고정한다.
 5. 테스트 기준을 먼저 정한다.
 6. 우리 코드 스타일과 폐쇄망 제약에 맞춰 구현한다.
-7. 출처와 차용 이유를 `REFACTOR_BRIEF.md` 또는 관련 ADR에 기록한다.
+7. 출처와 차용 이유를 `docs/REFACTOR_BRIEF.md` 또는 관련 ADR에 기록한다.
 
 1차 차용 후보:
 
@@ -151,6 +184,8 @@ OpenHands, OpenClaw, ECC 등은 좋은 아이디어를 빠르게 흡수하기 �
 | ECC | hooks/skills/subagents | 개발 하네스 자동화 |
 
 ## 표준 작업 흐름
+
+실행 기록, Phase 보고, 템플릿은 `docs/harness/README.md`를 기준으로 찾는다.
 
 ### 1. 오케스트레이터가 작업 카드를 만든다
 
@@ -172,19 +207,68 @@ gates:
 completion_promise: DONE
 ```
 
-### 2. 작업 표면을 고른다
+작업 카드에는 최소한 `scope.in`과 `scope.out`을 함께 둔다. `scope.out`이 없으면 critic 단계에서 범위 확장 위험으로 본다.
+
+작업 카드는 worker 충돌을 막기 위해 다음 필드를 추가로 가진다.
+
+- `base_branch`: worktree를 만들 기준 브랜치
+- `owners.worktree_setup`: `git worktree add`, 브랜치 생성, 스펙 동기화를 책임지는 주체
+- `owners.merge`: diff 통합, merge/commit을 책임지는 주체
+- `files.owned`: worker가 실제로 소유해 수정할 파일
+- `files.readonly`: worker가 읽을 수 있지만 수정하지 않을 파일
+- `spec_synced`: 대상 worktree에서 `spec` 파일이 보이는지 확인한 결과
+- `conflict_policy`: 같은 파일을 여러 worker가 동시에 수정하지 않는다는 정책
+- `test_dod`: unit/integration/smoke/invariant/offline 완료 기준
+
+`owners.worktree_setup`가 비어 있거나 `spec_synced`가 false면 worker를 시작하지 않는다.
+
+`task_id`에는 하네스 층을 드러내는 prefix를 붙인다.
+
+| Prefix | 의미 | 예 |
+|--------|------|----|
+| `dev-harness-*` | Codex/Claude/Ralph가 repo를 개발하는 개발환경 하네스 | `dev-harness-task-T` |
+| `product-harness-*` | mes-agent 런타임 내부 역할 분리 | `product-harness-phase-role` |
+| `supervisor-*` | 제품 내부 하네스 상태를 보여주는 Electron UX | `supervisor-phase1` |
+
+새 작업을 만들 때는 `docs/harness/task-card-template.md`를 복사해 채운다.
+
+### 2. 계획 critic을 돌린다
+
+초안 계획을 바로 worker에게 넘기지 않는다. 먼저 두 critic이 서로 다른 관점으로 공격한다.
+
+```powershell
+.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+```
+
+이 스크립트는 다음을 수행한다.
+
+- Codex CLI: Implementation Critic
+- Claude Code: Risk/Test Critic
+- 결과 저장: `C:\tmp\mes-agent-harness-reviews`
+
+외부 전송이 불가능하거나 Claude Code 로그인이 안 된 환경에서는 `-SkipClaude` 또는 수동 critic으로 대체하고, 완료 보고에 그 제한을 남긴다.
+
+외부 전송 불가, Claude 타임아웃, 사내망 차단은 예외 상황이 아니라 공식 fallback 경로다. 이 경우 다음을 남긴다.
+
+- 실행하지 못한 agent와 이유
+- 대신 수행한 수동 critic 체크리스트
+- 산출물 위치
+- 다음에 외부 전송 승인이 가능할 때 재실행할 명령
+
+### 3. 작업 표면을 고른다
 
 | 작업 성격 | 추천 실행 표면 |
 |-----------|----------------|
 | 백로그/설계/스펙 | Codex Desktop |
-| 작은 구현 + 반복 테스트 | Claude Code + Ralph |
+| 계획 비평 | Codex CLI read-only exec + Claude Code plan mode |
+| 작은 구현 + 반복 테스트 | Claude Code + Ralph 또는 Codex CLI workspace-write worktree |
 | 병렬 구현 | Codex worktree thread 또는 Claude 별도 worktree |
 | 코드 구조 조사 | Codex explorer sub-agent |
 | diff 리뷰 | Codex reviewer 또는 Claude `code-reviewer` |
 | 정기 점검/리마인드 | Codex automation |
 | UI 시각 비교 | Codex Desktop + 브라우저/시각화 |
 
-### 3. worktree를 확인한다
+### 4. worktree를 확인한다
 
 루프 시작 전 필수 확인:
 
@@ -193,6 +277,15 @@ completion_promise: DONE
 - 스펙 파일이 그 worktree에 존재하는가
 - 이전 지시 파일이 남아 있지 않은가
 - `git status`가 예상 범위 안인가
+- `files.owned`가 다른 worker의 소유 파일과 겹치지 않는가
+- `files.readonly`를 수정하지 않는다는 지시가 worker prompt에 들어갔는가
+
+충돌 정책:
+
+- 같은 파일은 동시에 두 worker에게 배정하지 않는다.
+- Codex Desktop이 worktree 생성, diff 통합, merge/commit의 최종 책임을 가진다.
+- Claude worker와 Codex CLI worker가 병렬로 움직일 때는 서로 다른 `files.owned` 집합을 가져야 한다.
+- 충돌이 발생하면 worker가 직접 merge하지 않고 Codex Desktop이 diff를 읽고 통합한다.
 
 이번에 겪은 혼선의 원인:
 
@@ -202,7 +295,7 @@ completion_promise: DONE
 
 따라서 앞으로는 **스펙이 대상 worktree에 보이지 않으면 루프를 시작하지 않는다.**
 
-### 4. Worker에게 명령한다
+### 5. Worker에게 명령한다
 
 Claude/Ralph 지시 예:
 
@@ -223,7 +316,7 @@ Codex worktree worker 지시 예:
 테스트/검증 방법을 마지막에 적어라.
 ```
 
-### 5. Reviewer가 검토한다
+### 6. Reviewer가 검토한다
 
 리뷰 기준:
 
@@ -235,7 +328,7 @@ Codex worktree worker 지시 예:
 - `.env.example`, `SETUP.md`, `CLAUDE.md`, `README.md`, `CONTRIBUTING.md` 갱신 필요 여부
 - 사용자에게 쓸 수 있는 가이드가 있는지
 
-### 6. 오케스트레이터가 통합한다
+### 7. 오케스트레이터가 통합한다
 
 오케스트레이터는 다음을 결정한다.
 
