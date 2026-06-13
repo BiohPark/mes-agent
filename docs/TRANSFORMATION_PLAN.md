@@ -47,6 +47,7 @@
 **목표**: 자동화가 실행되는 동안 사용자가 목표·현재 단계·근거·위험·승인 상태를 계속 감독할 수 있게 한다.
 
 **활성 스펙**: `docs/specs/supervisor-console.md`
+**제품 내부 하네스 스펙**: `docs/specs/product-agent-harness.md`
 
 - [ ] 우측 패널을 `감독 / 워크플로우 / 근거 / 로그` 구조로 재정의
 - [ ] 기존 SSE 이벤트를 감독 콘솔 상태로 모으는 프론트엔드 reducer 설계
@@ -56,6 +57,20 @@
 - [ ] 후속: `RunSnapshot`/`RunLedger` 영속 모델로 새로고침 후에도 실행 상태 복원
 
 **우선순위**: Track 1의 Task T 루프 성공 후, 첫 UX 구현 과제로 진행.
+
+## 트랙 1C — 제품 내부 에이전트 하네스
+
+**목표**: mes-agent 자체가 Planner/Executor/Observer/Verifier/Safety/Memory/Reporter 역할 기반 루프로 업무를 수행하게 한다.
+
+**활성 스펙**: `docs/specs/product-agent-harness.md`
+
+- [ ] 기존 `generate()` 루프에 phase/role 라벨을 도입
+- [ ] RunSnapshot을 프론트엔드 감독 콘솔 상태와 연결
+- [ ] Verifier 단계를 명시해 도구 실행 성공과 업무 검증 성공을 분리
+- [ ] RunLedger 영속화로 실행 증적과 감사추적 기반 마련
+- [ ] MES 검증·Office 작성·배포 자동화 도메인 하네스 팩으로 확장
+
+**우선순위**: 감독 콘솔 Phase 1과 함께 1단계(role/phase 라벨)부터 점진 도입.
 
 ## 트랙 2 — 상용급 격상 (명세 역설계)
 

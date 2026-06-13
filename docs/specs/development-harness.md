@@ -28,6 +28,7 @@
 ## 비목표
 
 - 이번 스펙은 제품 내부 multi-agent 런타임을 구현하지 않는다.
+- 제품 내부 역할 기반 실행 루프는 `docs/specs/product-agent-harness.md`에서 별도로 다룬다.
 - ECC, OpenHands, OpenClaw를 통째로 설치하거나 소스코드를 반입하지 않는다.
 - CI/CD, GitHub PR 자동화 전체를 한 번에 완성하지 않는다.
 - 회사 폐쇄망 PC에 새 개발 도구 설치를 전제로 하지 않는다.
