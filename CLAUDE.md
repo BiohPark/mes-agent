@@ -115,6 +115,7 @@
 | 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.min.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 anvaka/panzoom UMD(`vendor/panzoom.min.js`, 무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`anvaka`에 `reset`/`setTransform`이 없어 `zoomAbs`+`moveTo`로 복원), **최초 렌더 시 `_fitToViewport`로 그래프 전체가 보이도록 축소·중앙정렬**(⊙=전체 보기) — 미적용 시 큰 그래프 하단이 잘리던 문제 해결. **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
 | 도구 타임아웃 안전망·작업 가시성 (백로그 V 1단계) ✅ | `agent/core/timeouts.py` + `agent/server.py` + `agent/tools/office_com.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`style.css` | **무한 행 방지**: 도구별 작은 baseline에서 시작해 단계적으로 타임아웃을 늘려 같은 작업을 더 기다리고, 디스패치 하드 캡(`TOOL_TIMEOUT_CAP`) 도달 시 구조화 오류로 마감(`_run_tool_watched`). office COM은 `OFFICE_COM_TIMEOUT` 워치독+**PID 스코프 킬**(사용자가 연 Office 보호)+executor 재생성+Open 대화상자 억제(`Notify=False`)로 무한 행 제거. **가시성**: 길어지면 `TOOL_WAIT` SSE 내레이션('더 기다리는 중')+경과시간+상태바 현재 도구+중단 강조. 전체 적응형(진행도 탐지·인루프 판단·자동 백그라운드)은 백로그 V 2단계. 출처 클린룸(claw-code MIT, 패턴만). 상세: `docs/adr/0003-adaptive-tool-timeout.md` |
 | 작업 상태 명확화·작업 중 끼어들기 (백로그 Q) ✅ | `agent/server.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`index.html`·`style.css` | **① 끼어들기**: 실행 중에도 입력칸을 열어 두고(전송 버튼만 비활성) 별도 `↩ 끼어들기` 버튼·Enter로 메시지를 `POST /inject/{request_id}` → `_pending_messages` 큐 적재. `generate()` 루프가 **단계 경계(I1 도구 짝 보존 지점, 중단 확인 직후)에서 드레인**해 `[사용자 끼어들기]` user 메시지로 주입, `INJECTED` SSE로 투명 고지. stop과 구분(작업 유지). **② 상태 강조**: waiting을 "⏳ 당신 차례 — 입력해 주세요"로 색·펄스 강조(`data-state` 클래스). **큐 메커니즘은 백로그 O(외부 원격 제어)가 재사용**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md` |
+| Vault 매개 원격 제어(명령함) (백로그 O) ✅ | `agent/control/inbox.py` + `agent/server.py` | **포트 개방 없이** 동기화되는 Obsidian Vault 파일로 원격 지시·모니터링. 폴러가 `agent/control/inbox.md`의 `- [ ] 명령`을 집어(체크박스=멱등 마커, 처리 시 `- [x]`) 실행하고 `agent/control/status.md`에 결과 누적(newest-first). 활성 러닝이 있으면 **백로그 Q 끼어들기 큐에 합류**(`_pending_messages`), 없으면 `generate(auto_confirm="deny")` **헤드리스 실행**. `auto_confirm`은 G3 게이트에서 UI 라운드트립 없이 즉시 결정 — 무인 환경이라 **위험·쓰기 작업 자동 거부**(GxP 안전, 읽기·관찰만 실행). `CONTROL_ENABLED` opt-in(기본 false)·`CONTROL_POLL_INTERVAL`. (B) LAN 바인딩은 후속. 상세: `docs/backlog/done/O-external-control.md` |
 
 **총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -258,7 +259,8 @@ mes-agent/
 │       ├── hud.html/hud.js ← 협업 코치 플로팅 HUD (백로그 H)
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S). (/health /chat /stop /inject /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S) + 명령함 폴러(O). (/health /chat /stop /inject /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
+│   ├── control/            ← 백로그 O: Vault 매개 원격 제어(명령함). inbox.py=순수 파싱/마킹/status 포맷, 폴러는 server.py ✅
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
 │   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
@@ -326,9 +328,9 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 ## 향후 개선 아이디어 (Backlog) — 미착수만
 
-> **완료 항목은 위 "현재 상태" 표가 단일 기록**(중복 방지). 완료된 백로그 — A IDE식 탭·B 반응형 워크플로우 패널·
-> C 실행 중 창 최소화·D 모델 선택 UI·E 장기기억·**H 협업모드·I 포커스 비탈취·J MCP 클라이언트·M 컨텍스트 초과 처리** — 는 표 참조.
-> H·I·J·M 상세 설계·구현 기록은 `docs/backlog/{H,I,J,M}-*.md`.
+> **완료 항목은 위 "현재 상태" 표가 단일 기록**(중복 방지). 완료된 백로그 — A·B·C·D·E·H·I·J·M·P·Q·R·S·U 등 — 은 표 참조. 상세 설계·구현 기록은 `docs/backlog/done/` 참조.
+
+> **설계 원칙 — 외부 서비스 Config 분리**: LLM API(`LLM_*`)·SharePoint/M365(`GRAPH_*`, `SHAREPOINT_*`)·외부 SaaS 설정은 각각 별도 `.env` 블록으로 관리한다. 회사 PC(폐쇄망)가 기본 배포 환경이지만, 동일 코드가 개발 환경(홈PC, 외부 API)에서도 동작하도록 설계한다. **폐쇄망 여부는 feature 제거 이유가 아니라 config 선택 이유다.**
 
 ### F. Electron 패키징 배포 🔲
 
@@ -340,7 +342,7 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 **방식 비교**:
 
-| 방식 | 장점 | 한계 | 폐쇄망 적합 |
+| 방식 | 장점 | 한계 | 자체호스팅 적합 |
 |------|------|------|:---:|
 | **MS COM** (구현됨) | 로컬 파일 완전충실도(수식·서식·수정추적·메모·PDF) | Windows+Office 설치 필요 | 로컬 ◎ |
 | **MS Graph API** (구현됨) | Excel 셀/수식 REST 편집(세션 기반), 클라우드 파일 직접 | **M365+Azure AD OAuth 필요**, Word/PPT 콘텐츠 편집 미지원 | M365 연결 시만 △ |
@@ -354,10 +356,10 @@ Vault 경로는 하드코딩하지 않는다. 반드시 `.env` 파일에서 읽�
 
 **⏭ 가이드**: `docs/backlog/pending/office-editing-next-steps.md` — **`sbiologics.com`이 사내 전용이라 회사 PC에서 실제 문서 URL/경로 확인 선행.** `GRAPH_BASE_URL`로 사내 M365 엔드포인트 재정의 지원.
 
-### K. Office 문서 base64 멀티모달 📄 — 🔲 대기 (회사 테스트 선행)
+### K. Office 문서 base64 멀티모달 📄 — 🔲 미착수
 
-Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`capture_screen` 주입 패턴을 문서로 확장).
-**선행 블로커**: 회사 DRM 환경에서 base64 멀티모달 인식 여부 테스트 필요(DRM이 바이트 접근 차단 가능). 통과 시 `vision.py` 패턴 재사용.
+Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`capture_screen` 주입 패턴을 문서로 확장). `vision.py` 패턴 직접 재사용.
+**선행 확인**: ① 사내 LLM 멀티모달 지원 여부 — 미지원 시 `.env`의 `VISION_*` 설정으로 외부 API(OpenAI) 전환 후 즉시 적용 가능. ② DRM 바이트 접근 제한은 확인 필요하나 블로커로 간주하지 않는다.
 
 ### L. OpenHands 기능 이식 🛠 — 🔲 대기 (조사 중심)
 
@@ -366,41 +368,25 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 ---
 
-> **에픽 N–U (2026-06-11 추가)** — 하네스·외부제어·UI/UX 전면 개선. 상세 설계·확인사항은 각 `docs/backlog/{N..U}-*.md`.
-> **PO 추천 시퀀스**: ✅ Tier 1 **P·R·S·U·Q 완료**(현재 상태 표 참조) → ③ 확장 **T(P 이후)·O(Q 큐 재사용)** → ④ 리서치 트랙 **N(L과 통합)**.
-> **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · S↔U(로그 이관) · N↔L(이벤트 스트림).
+> **에픽 N·O·T·V** 상세 설계·확인사항은 각 `docs/backlog/pending/{N,O,T,V}-*.md`.
+> **PO 추천 시퀀스**: **T**(Vault 영속 업무타입) → **O**(원격 제어) → **V-2단계**(타임아웃 고도화) → **N**(멀티에이전트, L과 통합).
+> **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · N↔L(이벤트 스트림).
 
 ### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
 
 단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/pending/N-harness-mode.md`.
 
-### O. 외부 기기 지시·모니터링(원격 제어) 📱 — 🔲 미착수
+### O. 외부 기기 지시·모니터링(원격 제어) 📱 — ✅ (A)안 완료 (현재 상태 표 참조)
 
-폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함**(`agent/control/inbox.md`, mtime 폴링 — 포트 개방 없이 동기화로 원격, 권장) / **(B) LAN 바인딩+인증 강화**(옵트인). 명령 주입은 **백로그 Q의 메시지 큐와 공유**. 확인: 회사 네트워크 정책·Vault 동기화 수단·인증·권한분리. 상세: `docs/backlog/pending/O-external-control.md`.
-
-### P. 좌측 프레임 정보구조(IA) 개편 🗂️ — ✅ 완료 (현재 상태 표 참조)
-
-3영역 사이드바(상단 고정 검색·진행중 / 중단 스크롤 / 하단 고정 관리·개발자도구) + 전역 검색(`/search`) + Active runs. 빠른작업·도구테스트는 접이식 개발자 도구로 이동. (즐겨찾기·최근활동은 미구현 — 필요 시 후속.) 상세: `docs/backlog/done/P-left-frame-ia.md`.
-
-### Q. 작업 상태 명확화 + 작업 중 개입 ⏯️ — ✅ 완료 (현재 상태 표 참조)
-
-running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 끼어들기**(stop과 구분). 입력→`_pending_messages[request_id]` 큐 적재(`POST /inject/{id}`)→`generate()`가 단계 경계(I1 보존)에서 드레인 주입(`INJECTED` SSE). **O와 큐 메커니즘 공유**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md`.
-
-### R. 대화 입력 에디터 개선 ⌨️ — ✅ 완료 (현재 상태 표 참조)
-
-자동 높이 확장 + ⛶ 확대(팝업) 에디터 + Ctrl+Enter·Ctrl+J 줄바꿈. 상세: `docs/backlog/done/R-chat-input-editor.md`.
-
-### S. 대화 가독성: 의도 내레이션 + 명령 로그 축소 📖 — ✅ 완료 (현재 상태 표 참조)
-
-규칙 기반 의도 라벨(서버 `_intent_label`) + 스크립트/긴 로그 기본 접힘·모노 작은폰트. 근본 해결(로그 우측 패널 이관)은 **U와 병행** 예정. 상세: `docs/backlog/done/S-chat-readability.md`.
+폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함** ✅ 완료(`agent/control/inbox.md` 폴링 — 포트 개방 없이 동기화로 원격, 백로그 Q 큐 재사용, 무인 위험작업 자동 거부). **(B) LAN 바인딩+인증 강화** 🔲 후속: `host=0.0.0.0` 옵트인 + Origin 허용목록 + 토큰 영속화, `LAN_ENABLED=true`로 활성화. 상세: `docs/backlog/done/O-external-control.md`.
 
 ### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🔲 미착수
 
-`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. **P 이후**(사이드바 동적화 공유). 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
+`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
 
-### U. 워크플로우 시각화 고도화 🗺️ — ✅ 완료 (현재 상태 표 참조)
+### V-2단계. 적응형 타임아웃 고도화 🔲
 
-분기 그래프(from_output 0/1/2, BFS 2D) 위에 팬/줌(벤더링 anvaka/panzoom `panzoom.min.js`)·동적 디테일(LoD)·노드 인라인 로그(S 근본 해결)·진행률 미니맵·그룹(서브워크플로우, `WorkflowNode.group` + `workflow_set_group`)을 증축. 상세: `docs/backlog/done/U-workflow-visualization.md`.
+V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
 
 ### (대기) Office 편집 백엔드 확정
 
@@ -408,7 +394,7 @@ running/waiting 시각적 강조 구분("당신 차례" 배지) + **작업 중 �
 
 ---
 
-## 폐쇄망 환경 제약
+## 설치·배포 환경 특이사항
 
 - npm, pip 외부 설치 불가 (네트워크 차단)
 - 패키지는 외부망 PC에서 미리 받아 USB로 이동

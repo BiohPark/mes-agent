@@ -109,9 +109,19 @@ OCR_LANG=kor+eng
 OBSIDIAN_VAULT_PATH=D:/archive/obsidian/brain
 OBSIDIAN_HOST=https://127.0.0.1:27124
 OBSIDIAN_API_KEY=<발급받은 API 키>
+
+# ── Vault 매개 원격 제어(명령함, 백로그 O) — 선택 ────────
+# 기본 비활성. 켜면 동기화되는 Vault의 agent/control/inbox.md 에 "- [ ] 명령" 을
+# 적으면 에이전트가 실행하고 agent/control/status.md 에 결과를 적는다(포트 개방 없음).
+CONTROL_ENABLED=false
+CONTROL_POLL_INTERVAL=5
 ```
 
 > **주의**: `.env`는 `.gitignore`에 포함되어 있어 git에 올라가지 않습니다.
+
+> **원격 제어(선택)**: `CONTROL_ENABLED=true`로 켜면 Obsidian Sync 등으로 공유되는 Vault를 통해
+> 폰/다른 PC에서 명령을 던질 수 있습니다. 무인 실행이므로 위험·쓰기 작업은 자동 거부(읽기·관찰 위주),
+> 위험 작업은 데스크톱에서 직접 승인하세요.
 
 ### Obsidian API 키 발급
 

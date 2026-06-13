@@ -1,6 +1,30 @@
 # 백로그 O — 외부 기기에서 지시·모니터링 (원격 제어) 📱
 
-> 상태: 🔲 미착수 · 사용자 선택: **다른 기기에서 지시 + 모니터링** · 폐쇄망 보안 설계가 관문
+> 상태: ✅ (A) Vault 명령함 MVP 완료 (2026-06-13) · (B) LAN 바인딩은 후속
+
+## 구현 결과 (2026-06-13) — (A) Vault 매개 명령함
+
+- **순수 로직** `agent/control/inbox.py`: `extract_pending`(미체크 `- [ ]` 명령 추출)·`mark_processed`(처리 시
+  `- [x]`로 멱등 치환)·`format_status_entry`/`prepend_status`(status.md newest-first 누적)·`INBOX_TEMPLATE`.
+- **폴러** `agent/server.py`: `@app.on_event("startup") startup_control`(`CONTROL_ENABLED` opt-in·Vault 준비 확인·
+  inbox 시드) → `_control_loop`(매 틱 예외 격리) → `_process_inbox_once`(픽업 즉시 마킹→실행→status 기록).
+- **실행 경로**: 활성 러닝이 있으면 **백로그 Q 끼어들기 큐**(`_pending_messages`)에 합류, 없으면
+  `_run_remote_command` = `generate(..., auto_confirm="deny")` 헤드리스 소비(SSE 역파싱으로 최종 텍스트 수집).
+- **안전**: `generate`에 `auto_confirm` 파라미터 추가 — G3 게이트에서 UI 라운드트립 없이 즉시 결정.
+  기본 `""`=기존 동작 보존(L1 무영향), 원격=`"deny"`로 위험·쓰기 자동 거부(읽기·관찰만). status.md=감사추적 기초.
+- **설정**: `CONTROL_ENABLED`(기본 false)·`CONTROL_POLL_INTERVAL`(기본 5s) — `.env.example`·`SETUP.md`.
+- **테스트**: `tests/unit/test_control_inbox.py`(11)·`tests/integration/test_control_loop.py`(7). `.\test.ps1 ci` 582 통과.
+
+### 남은 후속
+- (B) LAN 바인딩(0.0.0.0)+인증 강화 — 회사 네트워크 정책 확인 선행.
+- `CONTROL_AUTO_APPROVE` 토글(신뢰된 Vault에서 위험작업 자동 승인) — 필요 시.
+- 원격 승인 채널(status.md에 질문 게시 → inbox.md로 응답)로 위험작업 원격 승인.
+
+아래는 원래 설계 메모(보존).
+
+---
+
+> (원안) 상태: 🔲 미착수 · 사용자 선택: **다른 기기에서 지시 + 모니터링** · 폐쇄망 보안 설계가 관문
 
 ## 문제·가치
 

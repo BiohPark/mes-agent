@@ -398,7 +398,8 @@ def _summarize_history(history: list) -> str:
     return (resp.choices[0].message.content or "").strip()
 
 
-async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto"):
+async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto",
+                   auto_confirm: str = ""):
     client = get_client()
     model = get_model()
     # M5 모델별 컨텍스트 예산: 하드코딩(_CONTEXT_MAX_TOKENS) 대신 현재 모델의 윈도우를 사용.
@@ -697,25 +698,34 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 _gate_denied = False
                 _gate_choice = ""
                 if _risk != "safe":
-                    _cid = uuid.uuid4().hex[:8]
-                    yield sse({
-                        "type": ev.CONFIRM,
-                        "confirm_id": _cid,
-                        "question": risk_confirm_message(tc["name"], _risk, tc["arguments"]),
-                        "options": ["예 (이번만)", "항상 허용", "아니오"],
-                        "risk": _risk,
-                        "command": command_excerpt(tc["arguments"]),
-                    })
-                    yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
-                    _cr = await _resolve_confirm(_cid)
-                    yield sse({"type": ev.AGENT_STATE, "state": "running"})
-                    _gate_choice = _cr.get("choice", "")
-                    if "항상" in _gate_choice:
-                        _allow.add(tc["name"])
-                    elif _gate_choice.startswith("예"):
-                        pass
+                    if auto_confirm:
+                        # 백로그 O: 무인(원격) 채널 — UI 라운드트립 없이 즉시 결정.
+                        # deny(기본 권장)=위험·쓰기 작업 자동 거부(GxP 안전), approve=이번만 허용.
+                        if auto_confirm == "approve":
+                            _gate_choice = "예 (이번만, 원격 자동)"
+                        else:
+                            _gate_choice = "아니오 (원격 자동 거부)"
+                            _gate_denied = True
                     else:
-                        _gate_denied = True
+                        _cid = uuid.uuid4().hex[:8]
+                        yield sse({
+                            "type": ev.CONFIRM,
+                            "confirm_id": _cid,
+                            "question": risk_confirm_message(tc["name"], _risk, tc["arguments"]),
+                            "options": ["예 (이번만)", "항상 허용", "아니오"],
+                            "risk": _risk,
+                            "command": command_excerpt(tc["arguments"]),
+                        })
+                        yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
+                        _cr = await _resolve_confirm(_cid)
+                        yield sse({"type": ev.AGENT_STATE, "state": "running"})
+                        _gate_choice = _cr.get("choice", "")
+                        if "항상" in _gate_choice:
+                            _allow.add(tc["name"])
+                        elif _gate_choice.startswith("예"):
+                            pass
+                        else:
+                            _gate_denied = True
 
                 _tool_failed = False
                 if _gate_denied:
@@ -989,6 +999,108 @@ async def inject_message(request_id: str, body: InjectRequest):
         return {"ok": False, "reason": "no_active_request"}
     _pending_messages[request_id].append(body.message)
     return {"ok": True, "queued": len(_pending_messages[request_id])}
+
+
+# ── 백로그 O: Vault 매개 원격 제어(명령함) ────────────────────────
+# 포트 개방 없이 동기화 Vault 파일을 매개로 원격 명령을 받아 실행하고 상태를 적는다.
+# CONTROL_ENABLED opt-in. 무인 환경이므로 위험·쓰기 작업은 auto_confirm='deny'로 자동 거부.
+from datetime import datetime
+from agent.control.inbox import (
+    extract_pending as _ctrl_extract,
+    mark_processed as _ctrl_mark,
+    format_status_entry as _ctrl_status_entry,
+    prepend_status as _ctrl_prepend,
+    INBOX_TEMPLATE as _CTRL_INBOX_TEMPLATE,
+)
+
+_CONTROL_INBOX = "agent/control/inbox.md"
+_CONTROL_STATUS = "agent/control/status.md"
+_control_stop = False
+
+
+async def _run_remote_command(text: str) -> str:
+    """원격 명령을 헤드리스로 실행하고 최종 텍스트를 반환한다.
+    위험·쓰기 작업은 auto_confirm='deny'로 자동 거부(무인 안전)."""
+    final_chunks: list[str] = []
+    async for raw in generate(text, "", "", auto_confirm="deny"):
+        for line in raw.splitlines():
+            if not line.startswith("data: "):
+                continue
+            try:
+                evt = json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+            if evt.get("type") == ev.TEXT and evt.get("content"):
+                final_chunks.append(evt["content"])
+            elif evt.get("type") == ev.ERROR:
+                final_chunks.append(f"[오류] {evt.get('message', '')}")
+    return "".join(final_chunks).strip()
+
+
+async def _process_inbox_once():
+    """명령함을 1회 처리한다(폴러의 단일 틱 = 테스트 진입점)."""
+    loop = asyncio.get_event_loop()
+    sm = get_session_manager()
+    text = await loop.run_in_executor(None, sm._read, _CONTROL_INBOX)
+    pending = _ctrl_extract(text)
+    if not pending:
+        return
+    for cmd in pending:
+        # 픽업 즉시 마킹(중복 방지) — 최신 상태를 다시 읽어 반영
+        cur = await loop.run_in_executor(None, sm._read, _CONTROL_INBOX)
+        await loop.run_in_executor(None, sm._write, _CONTROL_INBOX, _ctrl_mark(cur, cmd))
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 활성 러닝이 있으면 끼어들기 큐에 합류(백로그 Q 재사용), 없으면 헤드리스 실행
+        active = next(iter(_pending_messages), None)
+        if active is not None:
+            _pending_messages[active].append(cmd)
+            result, status = "실행 중인 작업에 합류시켰습니다.", "주입됨"
+        else:
+            try:
+                result = await _run_remote_command(cmd)
+                status = "완료"
+            except Exception as e:
+                result, status = f"{e}", "오류"
+
+        entry = _ctrl_status_entry(cmd, result, status, ts)
+        cur_status = await loop.run_in_executor(None, sm._read, _CONTROL_STATUS)
+        await loop.run_in_executor(None, sm._write, _CONTROL_STATUS, _ctrl_prepend(cur_status, entry))
+
+
+async def _control_loop():
+    interval = float(os.environ.get("CONTROL_POLL_INTERVAL", "5"))
+    while not _control_stop:
+        await asyncio.sleep(interval)
+        try:
+            await _process_inbox_once()
+        except Exception as e:
+            print(f"[control] 명령함 처리 오류(무시): {e}")
+
+
+@app.on_event("startup")
+async def startup_control():
+    if os.environ.get("CONTROL_ENABLED", "false").lower() != "true":
+        return
+    sm = get_session_manager()
+    if not getattr(sm, "_ready", False):
+        print("[control] Vault 미설정 — 명령함 비활성")
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        existing = await loop.run_in_executor(None, sm._read, _CONTROL_INBOX)
+        if not existing.strip():
+            await loop.run_in_executor(None, sm._write, _CONTROL_INBOX, _CTRL_INBOX_TEMPLATE)
+    except Exception:
+        pass
+    asyncio.create_task(_control_loop())
+    print("[control] Vault 명령함 폴러 시작")
+
+
+@app.on_event("shutdown")
+async def shutdown_control():
+    global _control_stop
+    _control_stop = True
 
 
 class MemoryAddRequest(BaseModel):
