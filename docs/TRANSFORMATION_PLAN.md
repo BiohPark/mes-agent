@@ -19,6 +19,8 @@
 
 **활성 스펙**: `docs/specs/development-harness.md`
 
+**운영 가이드**: `docs/ORCHESTRATION_GUIDE.md`
+
 ### 1단계: 하네스 구조 도입 (레포만, 무위험) ✅ 2026-06-13 완료
 - [x] `.claude/settings.json` 생성 — 권한 기본값(test/git), Stop·PostToolUse 훅
 - [x] `.claude/agents/code-reviewer.md` — CLAUDE.md 규칙·L1 불변식·보안·툴 스키마 검토 서브에이전트
