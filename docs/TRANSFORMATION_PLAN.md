@@ -5,9 +5,10 @@
 
 ## 불변 제약 (모든 트랙 공통)
 
-- **폐쇄망**: 런타임에서 외부 네트워크 호출 불가. 의존성 추가 = conda-pack 번들 갱신 비용. 신규 패키지는 근거와 함께 제안만.
+- **배포 환경**: 회사 PC 기본 배포는 폐쇄망(런타임 외부 호출 불가). **기능 설계는 외부 API도 지원하도록 작성하고, 폐쇄망/개방망 전환은 config로 처리한다.** 의존성 추가 = conda-pack 번들 갱신 비용 → 신규 패키지는 근거와 함께 제안만.
 - **개발 브리지**: Termux/홈PC에서 개발 → GitHub push → 회사 PC git pull. 회사 PC에는 개발 도구를 설치하지 않는다.
 - **LLM**: 사내 OpenAI-compatible 엔드포인트 (`openai` 라이브러리 + base_url). 멀티모달 지원 여부 확인 필요 → ☐ 미확인
+- **외부 서비스 Config 분리**: LLM(`LLM_*`)·SharePoint/M365(`GRAPH_*`)는 각각 독립 `.env` 블록. 폐쇄망 배포 시 내부 엔드포인트, 개발 환경(홈PC)에서는 외부 API 사용.
 - **Obsidian**: urllib.request → localhost:27123 REST 직접 호출 유지.
 - **GMP/GxP**: MES 데이터를 변경하는 자동화 경로에는 감사추적(누가/언제/무엇을) 필수.
 - **출처 위생**: 오픈소스는 개념만 차용, 코드 복사 금지. claw-code 계열 코드는 어떤 형태로도 반입 금지 (개념 참조 시 본 문서에 출처 기록).
@@ -16,11 +17,11 @@
 
 **목표**: "대화하며 한 작업씩" → "스펙 작성 → 루프 실행 → diff 리뷰" 워크플로우로 전환.
 
-### 1단계: 하네스 구조 도입 (레포만, 무위험)
-- [ ] `.claude/settings.json` 생성 (권한 기본값, 훅 등록)
-- [ ] `.claude/agents/code-reviewer.md` — 첫 서브에이전트 (ECC의 code-reviewer 프롬프트 설계 참고, 직접 작성)
-- [ ] `.claude/skills/` — TDD 워크플로우 등 2~3개 선별 도입
-- [ ] `AGENTS.md` 루트 생성 (Codex 등 호환 대비)
+### 1단계: 하네스 구조 도입 (레포만, 무위험) ✅ 2026-06-13 완료
+- [x] `.claude/settings.json` 생성 — 권한 기본값(test/git), Stop·PostToolUse 훅
+- [x] `.claude/agents/code-reviewer.md` — CLAUDE.md 규칙·L1 불변식·보안·툴 스키마 검토 서브에이전트
+- [x] `.claude/skills/` — tdd·add-tool·loop-audit 3종
+- [x] `AGENTS.md` 루트 — 이미 존재 확인 (기존 파일 유지)
 - 참고: ECC(everything-claude-code)는 전체 설치 대신 **선별 차용**
 
 ### 2단계: Ralph loop 시험 운전
