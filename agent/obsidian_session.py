@@ -64,7 +64,7 @@ _AUTO_EXEC = (
     " 명확히 보고해라. 막연히 '실패했습니다'로 끝내지 마라."
 )
 
-TASK_CONFIGS = {
+_DEFAULT_TASK_CONFIGS = {
     "general": {
         "label": "기본업무",
         "icon": "💬",
@@ -194,6 +194,32 @@ def get_session_manager() -> "ObsidianSession":
     return _instance
 
 
+TASK_TYPES_REL_PATH = "agent/task_types.json"
+
+
+def _load_vault_task_configs() -> dict:
+    raw = get_session_manager()._read(TASK_TYPES_REL_PATH)
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_vault_task_configs(configs: dict) -> None:
+    get_session_manager()._write(
+        TASK_TYPES_REL_PATH,
+        json.dumps(configs, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
+def get_task_configs() -> dict:
+    """Return built-in task configs merged with Vault custom task types."""
+    return {**_DEFAULT_TASK_CONFIGS, **_load_vault_task_configs()}
+
+
 # ── 메인 클래스 ───────────────────────────────────────────────
 
 class ObsidianSession:
@@ -222,7 +248,7 @@ class ObsidianSession:
             "agent/notes/_index.md": self._tpl_notes_index(),
             "agent/plans/backlog.md": self._tpl_backlog(),
         }
-        for task_type, cfg in TASK_CONFIGS.items():
+        for task_type, cfg in get_task_configs().items():
             desc = cfg.get("description", "")
             files[f"agent/threads/{task_type}/_index.md"] = (
                 f"---\ntype: thread-index\ntask_type: {task_type}\n---\n\n"
@@ -342,7 +368,7 @@ tags: []
         now = datetime.now()
         date_str = now.strftime("%Y-%m-%d")
         thread_id = self._next_thread_id(task_type, date_str)
-        config = TASK_CONFIGS.get(task_type, {})
+        config = get_task_configs().get(task_type, {})
         date_part = thread_id[:10]   # YYYY-MM-DD
         num_part  = thread_id[-3:]   # NNN
         display_title = title or f"{config.get('label', task_type)} {date_part} #{num_part}"
@@ -372,7 +398,7 @@ tags: []
             return self._parse_thread_messages(content)
         except Exception as e:
             print(f"[obsidian] 스레드 메시지 로드 실패: {e}")
-            config = TASK_CONFIGS.get(task_type, {})
+            config = get_task_configs().get(task_type, {})
             sp = config.get("system_prompt", "")
             return [{"role": "system", "content": sp}] if sp else []
 
@@ -493,7 +519,7 @@ tags: []
     def list_all_threads(self) -> dict:
         """모든 업무 타입의 활성·완료·보관 스레드를 묶어 반환한다."""
         result = {}
-        for task_type in TASK_CONFIGS:
+        for task_type in get_task_configs():
             active = self.list_threads(task_type)
             archived = self.list_archived_threads(task_type)
             for t in active:
@@ -515,7 +541,7 @@ tags: []
         if not q:
             return []
         hits = []
-        for task_type in TASK_CONFIGS:
+        for task_type in get_task_configs():
             sources = [
                 (self.list_threads(task_type), False),
                 (self.list_archived_threads(task_type), True),

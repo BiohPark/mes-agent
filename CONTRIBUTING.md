@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (132종)
+## 구현된 툴 목록 (134종)
 
 > 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
 > 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
@@ -255,6 +255,13 @@ OBSIDIAN_API_KEY=발급받은-API-키                 # Obsidian 플러그인에
 | `list_recent_sessions` | `agent/sessions/` 최근 세션 목록 |
 | `search_sessions` | `agent/sessions/` 키워드 검색 |
 
+### 업무 타입 관리 (2종)
+
+| 툴 이름 | 기능 |
+|---------|------|
+| `task_type_create` | Vault `agent/task_types.json`에 사용자 정의 업무 타입 추가 |
+| `task_type_remove` | 사용자 정의 업무 타입 삭제(기본 업무 타입 삭제 거부) |
+
 ### 사용자 확인 (1종)
 
 | 툴 이름 | 기능 |
@@ -402,7 +409,7 @@ agent/
 ├── llm.py               — LLM 클라이언트 팩토리
 ├── config.py            — LLM 프로파일 (openai / internal)
 ├── memory.py            — 대화 간 장기기억 MemoryStore (추출/주입/검색)
-├── obsidian_session.py  — Obsidian 세션·스레드 관리 + TASK_CONFIGS + MANIFEST(4종)
+├── obsidian_session.py  — Obsidian 세션·스레드 관리 + 기본 업무 타입/Vault 오버레이 + MANIFEST(4종)
 ├── core/
 │   ├── events.py        — SSE 이벤트 타입 상수 (TEXT, TOOL_START, AGENT_STATE, COMPACTION, PLAN, ...)
 │   └── compaction.py    — 컨텍스트 compaction 순수 로직(짝 보존)
@@ -426,6 +433,7 @@ agent/
     ├── vision.py        — MANIFEST(3종) capture_screen(메인루프 이미지 주입)·analyze_screen/region
     ├── ui_automation.py — MANIFEST(3종) Windows 접근성 트리
     ├── memory_tools.py  — MANIFEST(3종) memory_remember·forget·recall (명시적 장기기억)
+    ├── task_type.py     — MANIFEST(2종) task_type_create/remove
     └── _safety.py       — 파괴적 작업 가드 + classify_risk (툴 아님)
 ```
 

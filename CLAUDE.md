@@ -118,7 +118,7 @@
 | 작업 상태 명확화·작업 중 끼어들기 (백로그 Q) ✅ | `agent/server.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`index.html`·`style.css` | **① 끼어들기**: 실행 중에도 입력칸을 열어 두고(전송 버튼만 비활성) 별도 `↩ 끼어들기` 버튼·Enter로 메시지를 `POST /inject/{request_id}` → `_pending_messages` 큐 적재. `generate()` 루프가 **단계 경계(I1 도구 짝 보존 지점, 중단 확인 직후)에서 드레인**해 `[사용자 끼어들기]` user 메시지로 주입, `INJECTED` SSE로 투명 고지. stop과 구분(작업 유지). **② 상태 강조**: waiting을 "⏳ 당신 차례 — 입력해 주세요"로 색·펄스 강조(`data-state` 클래스). **큐 메커니즘은 백로그 O(외부 원격 제어)가 재사용**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md` |
 | Vault 매개 원격 제어(명령함) (백로그 O) ✅ | `agent/control/inbox.py` + `agent/server.py` | **포트 개방 없이** 동기화되는 Obsidian Vault 파일로 원격 지시·모니터링. 폴러가 `agent/control/inbox.md`의 `- [ ] 명령`을 집어(체크박스=멱등 마커, 처리 시 `- [x]`) 실행하고 `agent/control/status.md`에 결과 누적(newest-first). 활성 러닝이 있으면 **백로그 Q 끼어들기 큐에 합류**(`_pending_messages`), 없으면 `generate(auto_confirm="deny")` **헤드리스 실행**. `auto_confirm`은 G3 게이트에서 UI 라운드트립 없이 즉시 결정 — 무인 환경이라 **위험·쓰기 작업 자동 거부**(GxP 안전, 읽기·관찰만 실행). `CONTROL_ENABLED` opt-in(기본 false)·`CONTROL_POLL_INTERVAL`. (B) LAN 바인딩은 후속. 상세: `docs/backlog/done/O-external-control.md` |
 
-**총 툴 수: 132종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
+**총 툴 수: 134종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -138,10 +138,11 @@
 | `office_libre.py` | 1 |
 | `office_cloud.py` | 3 |
 | `memory_tools.py` | 3 |
+| `task_type.py` | 2 |
 
 ---
 
-> **Phase 0 기반(2026-05-29) ✅ 완료**: task_type/thread_id 주입·`_AUTO_EXEC` 워크플로우 지침·TASK_CONFIGS 5종·태스크별 기본 템플릿·워크플로우 모델/스토리지/툴/API·우측 패널·상태 바·컨텍스트 바·실행 로그·빠른 작업·SSE 이벤트 상수. (상세는 위 "현재 상태" 표 + `agent/workflow/`·`obsidian_session.py`)
+> **Phase 0 기반(2026-05-29) ✅ 완료**: task_type/thread_id 주입·`_AUTO_EXEC` 워크플로우 지침·기본 업무 타입 5종·태스크별 기본 템플릿·워크플로우 모델/스토리지/툴/API·우측 패널·상태 바·컨텍스트 바·실행 로그·빠른 작업·SSE 이벤트 상수. (상세는 위 "현재 상태" 표 + `agent/workflow/`·`obsidian_session.py`)
 >
 > **미착수 항목은 아래 "향후 개선 아이디어(Backlog)"가 단일 목록**(F·G·K·L).
 
@@ -267,7 +268,7 @@ mes-agent/
 │   ├── memory.py           ← 대화 간 장기기억 MemoryStore (추출/주입/검색) ✅
 │   ├── collaborate.py      ← 협업모드 코치: 화면 변화감지 + toolless 힌트 (백로그 H) ✅
 │   ├── mcp_client.py       ← MCP 클라이언트: 외부 서버 도구 런타임 등록 + sync 브릿지 (백로그 J) ✅
-│   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, TASK_CONFIGS (5종)
+│   ├── obsidian_session.py ← Obsidian 세션·스레드 관리, 기본 업무 타입 + Vault 오버레이
 │   ├── core/
 │   │   ├── events.py       ← SSE 이벤트 타입 상수
 │   │   ├── compaction.py   ← G1 컨텍스트 compaction 순수 로직(짝 보존) ✅
@@ -381,9 +382,9 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함** ✅ 완료(`agent/control/inbox.md` 폴링 — 포트 개방 없이 동기화로 원격, 백로그 Q 큐 재사용, 무인 위험작업 자동 거부). **(B) LAN 바인딩+인증 강화** 🔲 후속: `host=0.0.0.0` 옵트인 + Origin 허용목록 + 토큰 영속화, `LAN_ENABLED=true`로 활성화. 상세: `docs/backlog/done/O-external-control.md`.
 
-### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🔲 미착수
+### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🚧 backend 진행 중
 
-`TASK_CONFIGS` 하드코딩 → **Vault 영속**(스레드와 동일 계층, 사전확인 완료) + 내장 기본값 머지. 신규 도구 `task_type_create/remove`(확인 게이트) + 사이드바 동적 렌더링. 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
+`_DEFAULT_TASK_CONFIGS` + Vault `agent/task_types.json` 오버레이 + 신규 도구 `task_type_create/remove`(확인 게이트) backend 카드 진행 중. 사이드바 동적 렌더링은 후속 `task-T-frontend-sidebar` 카드. 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
 
 ### V-2단계. 적응형 타임아웃 고도화 🔲
 

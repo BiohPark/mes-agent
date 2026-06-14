@@ -36,7 +36,7 @@ from agent.core.compaction import compact_messages, prune_images
 from agent.core.tokens import estimate_message_tokens
 from agent.core.overflow import is_context_overflow, is_recoverable
 from agent.memory import MemoryStore
-from agent.obsidian_session import get_session_manager, TASK_CONFIGS
+from agent.obsidian_session import get_session_manager, get_task_configs
 from agent.workflow import storage as wf_storage
 from agent.workflow.model import WorkflowRunState
 from agent.core import events as ev
@@ -422,7 +422,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         session_id = None
 
         # task_type·thread_id를 항상 최신 시스템 프롬프트에 주입 (LLM이 workflow 툴 호출 시 사용)
-        cfg = TASK_CONFIGS.get(task_type, {})
+        cfg = get_task_configs().get(task_type, {})
         system_content = cfg.get("system_prompt", _AUTONOMOUS_INSTRUCTION) + (
             f"\n\n[현재 세션]\n"
             f"task_type={task_type}  thread_id={thread_id}\n"
@@ -1173,10 +1173,9 @@ async def collaborate_tick(body: CollaborateTickRequest):
 
 @app.get("/task-config")
 async def task_config():
-    from agent.obsidian_session import TASK_CONFIGS
     return {
         k: {"label": v["label"], "icon": v["icon"], "description": v.get("description", "")}
-        for k, v in TASK_CONFIGS.items()
+        for k, v in get_task_configs().items()
     }
 
 
