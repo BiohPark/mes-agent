@@ -653,6 +653,20 @@ function handleEvent(event, agentEl, bubble) {
       break
     }
 
+    case 'harness_round': {
+      // 백로그 N PoC: Executor→Reviewer 하네스 라운드 전환 고지
+      const badge = document.createElement('div')
+      badge.className = 'context-trim-note'
+      if (event.phase === 'reviewing') {
+        badge.textContent = `🔍 검증 중 (라운드 ${event.round})…`
+      } else if (event.phase === 'retrying') {
+        badge.textContent = `↺ 재시도 중 (라운드 ${event.round + 1}): ${event.feedback || ''}`
+      }
+      agentEl.querySelector('.msg-bubble').before(badge)
+      scrollToBottom()
+      break
+    }
+
     case 'vision_capture': {
       // 에이전트가 직접 본 화면을 채팅에 썸네일로 표시
       if (event.image_b64) {
