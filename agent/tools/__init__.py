@@ -84,6 +84,14 @@ _MODULE_PRIORITY = [
 _UNKNOWN_RANK = 13  # mcp(12) 직후, ui_automation(13) 앞
 _RELEVANCE_BOOST = 100  # 관련 모듈을 우선순위 앞으로 당기는 폭
 _TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
+_EXPLICIT_MODULE_KEYWORDS = {
+    # Graph tools require cloud credentials and are intentionally absent from
+    # the default subset unless the user asks for a cloud/M365 route directly.
+    "office_cloud": {
+        "cloud", "graph", "m365", "o365", "office365", "sharepoint",
+        "onedrive", "클라우드", "그래프", "쉐어포인트", "셰어포인트",
+    },
+}
 
 
 def _tokens(text: str) -> set[str]:
@@ -126,13 +134,21 @@ def select_tools(message: str = "", task_type: str = "", limit: int = LLM_MAX_TO
 
     query = _tokens(f"{message} {task_type}")
 
+    def module_matched(module: str) -> bool:
+        explicit_keywords = _EXPLICIT_MODULE_KEYWORDS.get(module)
+        if explicit_keywords is not None:
+            return bool(query & explicit_keywords)
+        return bool(query & _tokens(_module_text(groups[module]))) if query else False
+
     def sort_key(module: str):
         rank = _module_rank(module)
-        matched = bool(query & _tokens(_module_text(groups[module]))) if query else False
+        matched = module_matched(module)
         return (rank - (_RELEVANCE_BOOST if matched else 0), rank, module)
 
     selected: list[dict] = []
     for module in sorted(groups, key=sort_key):
+        if module in _EXPLICIT_MODULE_KEYWORDS and not module_matched(module):
+            continue
         schemas = [t["schema"] for t in groups[module]]
         if len(selected) + len(schemas) <= limit:
             selected.extend(schemas)
