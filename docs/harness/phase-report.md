@@ -193,4 +193,7 @@ Gate:
 7. 2026-06-14 추가 정책: Claude Code smoke/critic은 `cmd /c claude.cmd ...` 표준 호출로 통일한다. Claude 실행이 막히면 Codex가 우회 구현하지 않고 Claude Code 원인분석/셋업 정상화로 계획을 전환한다.
 8. `supervisor-hud-fit-to-view` 카드는 2026-06-14에 구현 완료했다. 기본 busy mode는 `hud`이며, 기존 공용 HUD가 실행 감독 모드에서 목표/단계/도구/위험 상태를 표시한다.
 9. 제품 내부 하네스 계약은 `product-harness-contract-alignment` 카드로 정리했다. phase/role enum은 `RunSnapshot`, `RunLedger`, `product-agent-harness.md`에서 같은 기준을 쓴다.
-10. 다음 우선순위는 `adaptive-timeout-v2-liveness-spike` 카드다. V-2 전체가 아니라 `run_command` 계열 liveness 분류 spike부터 닫는다.
+10. `adaptive-timeout-v2-liveness-spike` 카드는 2026-06-14에 구현 완료했다. `run_command` timeout 경로가 partial stdout/stderr를 liveness observation으로 구조화해 `slow`/`stuck`을 구분한다.
+11. 2026-06-15 기준 다음 단기 개발축은 사용자 체감 UI로 선정했다. `supervisor-ui-verification` 카드에서 감독 reducer를 Node fixture로 검증 가능하게 분리하고, 기존 SSE 이벤트를 RunSnapshot 1차 phase/role 라벨로 표시했다.
+12. RunLedger 저장소는 `run-ledger-storage-selection` 카드에서 append-only JSONL로 선택했다. Vault markdown은 사람이 읽는 export/리포트 후속 경로로 분리한다.
+13. 다음 우선순위는 RunLedger writer 구현 카드 또는 Supervisor ledger timeline 표시 카드다. Office COM kill, background registry, LLM 인루프 판단은 UI/계약 안정화 이후 V-2 후속 카드로 유지한다.

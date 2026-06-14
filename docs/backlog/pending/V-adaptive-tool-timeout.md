@@ -1,6 +1,6 @@
 # 백로그 V — 적응형 도구 타임아웃 (무한 행 방지 + 작업 가시성) ⏱️
 
-> 상태: 🟡 1단계(긴급수정) 구현 완료 · 2단계(전체 적응형) 미착수
+> 상태: 🟡 1단계(긴급수정) 구현 완료 · 2단계 중 `run_command` liveness spike 완료 · 전체 적응형은 후속
 > 동기: Excel 작업이 **3분+ 무한 펜딩**, 사용자는 무슨 일인지 알 수 없었다(`docs/errors/화면 캡처 2026-06-12 054918.png`).
 > 거버넌스: 클린룸. 출처 = 본인 코드 + 일반 에이전트 지식 + openclaw(MIT)/LangGraph + **claw-code(MIT, 사용자 클리어 — 패턴만, 코드 복붙 금지)**.
 
@@ -35,9 +35,17 @@
 4. **baseline 적응 학습**: 관측 p50/p90을 누적해 도구별 baseline을 점진 보정(콜드스타트=정적값).
 5. **취소/정리**: 중단 버튼이 in-flight 작업을 실제로 끊도록(프로세스 트리 kill·COM PID kill 연계).
 
+### 2단계 Spike — `run_command` liveness 분류 ✅
+
+- `agent/core/timeouts.py`에 `LivenessObservation`과 `classify_liveness()`를 추가해 stdout/stderr 증가, 프로세스 생존 여부, elapsed, 무진행 카운트를 구조화한다.
+- `agent/tools/process.py`의 `run_command` timeout 경로가 `TimeoutExpired`의 partial stdout/stderr를 관측해 `slow`/`stuck`을 반환한다.
+- 기존 `timeout_error_text()` 접두와 `TOOL_WAIT` 이벤트 타입은 유지했다.
+- 범위 밖으로 남긴 것: Office COM/프로세스 트리 kill, 백그라운드 작업 레지스트리, 새 SSE 이벤트, LLM 인루프 판단.
+
 ## 핵심 파일
 - 구현됨: `agent/core/timeouts.py`, `agent/server.py`(`_run_tool_watched`), `agent/tools/office_com.py`, `agent/core/events.py`(`TOOL_WAIT`), `electron/renderer/chat.js`·`style.css`.
-- 2단계 예정: `agent/core/timeouts.py`(liveness·분류 확장), `agent/server.py`(디태치·인루프 환류), 백그라운드 작업 레지스트리.
+- 2단계 일부 완료: `agent/core/timeouts.py`(run_command용 liveness·분류 확장), `agent/tools/process.py`(partial stdout/stderr 기반 timeout 구조화).
+- 2단계 후속 예정: `agent/server.py`(디태치·인루프 환류), 백그라운드 작업 레지스트리, Office/COM 외부 관측.
 
 ## 확인 필요 (2단계)
 1. 진행도 신호의 OS별 신뢰성(특히 COM STA 스레드가 막혔을 때 외부 관측만 가능).

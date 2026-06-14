@@ -58,8 +58,70 @@ def test_classify_stuck_vs_slow():
     assert "hint" in stuck and stuck["tool"] == "excel_set_cells"
 
 
+def test_liveness_observation_progress_signal_classifies_slow():
+    obs = T.LivenessObservation(
+        elapsed_seconds=10.0,
+        process_alive=True,
+        stdout_bytes=12,
+        stderr_bytes=0,
+        no_progress_count=3,
+    )
+
+    info = T.classify_liveness("run_command", 10.0, obs)
+
+    assert info["failureClass"] == "slow"
+    assert info["provenance"] == "dispatch.timeout.liveness"
+    assert info["liveness"]["stdout_bytes"] == 12
+
+
+def test_liveness_observation_repeated_no_progress_classifies_stuck():
+    obs = T.LivenessObservation(
+        elapsed_seconds=10.0,
+        process_alive=True,
+        stdout_bytes=0,
+        stderr_bytes=0,
+        no_progress_count=2,
+    )
+
+    info = T.classify_liveness("run_command", 10.0, obs)
+
+    assert info["failureClass"] == "stuck"
+    assert "no_progress_count" in info["liveness"]
+
+
+def test_liveness_observation_process_exited_race_is_stuck_not_alive_slow():
+    obs = T.LivenessObservation(
+        elapsed_seconds=10.0,
+        process_alive=False,
+        stdout_bytes=0,
+        stderr_bytes=0,
+        no_progress_count=1,
+    )
+
+    info = T.classify_liveness("run_command", 10.0, obs)
+
+    assert info["failureClass"] == "stuck"
+    assert info["liveness"]["process_alive"] is False
+
+
 def test_timeout_error_text_prefix_for_ui_reuse():
     txt = T.timeout_error_text("excel_set_cells", 45.0, progressed=False)
     # 기존 UI/서버 에러 분기(‘툴 실행 오류’ 접두) 재사용을 위해 반드시 이 접두여야 함
     assert txt.startswith("툴 실행 오류")
     assert "excel_set_cells" in txt
+
+
+def test_timeout_error_text_accepts_liveness_observation():
+    obs = T.LivenessObservation(
+        elapsed_seconds=3.0,
+        process_alive=True,
+        stdout_bytes=5,
+        stderr_bytes=0,
+        no_progress_count=0,
+    )
+
+    txt = T.timeout_error_text("run_command", 3.0, observation=obs)
+
+    assert txt.startswith("툴 실행 오류")
+    assert "run_command" in txt
+    assert "slow" in txt

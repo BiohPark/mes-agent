@@ -188,6 +188,8 @@ HUD는 다음만 보여준다.
 - [x] 기본 busy mode를 “작게 비켜 보기”로 변경
 - [x] 그래프 최초 렌더 fit-to-view 보장
 - [x] 실행 노드가 바뀌면 그래프 뷰를 현재 노드 쪽으로 보정
+- [x] 감독 reducer를 `electron/renderer/supervisor-state.js`로 분리하고 Node fixture로 상태 전이를 검증
+- [x] 기존 SSE 이벤트를 RunSnapshot 1차 `phase`/`role` 라벨로 표시
 
 ### Phase 2 — 실행 상태 영속화
 
@@ -210,4 +212,4 @@ HUD는 다음만 보여준다.
 - [x] 현재 실행 노드가 그래프/목록에서 명확히 강조된다.
 - [x] 도구 실행이 오래 걸리면 경과 시간과 중단 버튼이 눈에 띈다.
 - [ ] MES/Office/배포 업무별 초기 워크플로우가 일반 템플릿보다 구체적이다.
-- [ ] 구현 전 Playwright 또는 DOM 단위 테스트 기준이 정의된다.
+- [x] 구현 전 Playwright 또는 DOM 단위 테스트 기준이 정의된다.

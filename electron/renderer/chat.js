@@ -206,10 +206,11 @@ function updateAgentHud(extra = {}) {
   const tool = _currentTool?.label || state?.currentToolLabel || '도구 준비 중'
   const elapsed = state?.elapsedMs ? ` · ${(state.elapsedMs / 1000).toFixed(0)}초` : ''
   const risk = state?.waitingApproval ? ` · 승인 필요(${state.risk || 'confirm'})` : ''
+  const phase = state?.phase && state?.role ? ` · ${state.phase}/${state.role}` : ''
   window.electronAPI?.collabUpdateHud?.({
     mode: 'agent',
     title: '📌 작업 감독',
-    hint: `${goal}\n${step}\n${tool}${elapsed}${risk}`,
+    hint: `${goal}\n${step}${phase}\n${tool}${elapsed}${risk}`,
     actionLabel: '자세히 보기',
     ...extra,
   })

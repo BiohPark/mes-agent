@@ -13,6 +13,31 @@ from pathlib import Path
 
 import psutil
 
+from agent.core.timeouts import LivenessObservation, classify_liveness, timeout_error_text
+
+
+def _timeout_stream_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _timeout_observation(exc: subprocess.TimeoutExpired, timeout: int) -> LivenessObservation:
+    stdout = _timeout_stream_text(getattr(exc, "stdout", ""))
+    stderr = _timeout_stream_text(getattr(exc, "stderr", ""))
+    stdout_bytes = len(stdout.encode("utf-8", errors="replace"))
+    stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+    progressed = (stdout_bytes + stderr_bytes) > 0
+    return LivenessObservation(
+        elapsed_seconds=float(timeout),
+        process_alive=True,
+        stdout_bytes=stdout_bytes,
+        stderr_bytes=stderr_bytes,
+        no_progress_count=0 if progressed else 2,
+    )
+
 
 def run_command(cmd: str, timeout: int = 30, shell: str = "powershell",
                 force: bool = False) -> str:
@@ -41,8 +66,16 @@ def run_command(cmd: str, timeout: int = 30, shell: str = "powershell",
             "stderr": result.stderr.strip()[:500],
             "success": result.returncode == 0
         }, ensure_ascii=False)
-    except subprocess.TimeoutExpired:
-        return json.dumps({"error": f"명령 시간 초과 ({timeout}초)", "success": False})
+    except subprocess.TimeoutExpired as e:
+        observation = _timeout_observation(e, timeout)
+        timeout_info = classify_liveness("run_command", timeout, observation)
+        return json.dumps({
+            "error": timeout_error_text("run_command", timeout, observation=observation),
+            "stdout": _timeout_stream_text(getattr(e, "stdout", "")).strip()[:2000],
+            "stderr": _timeout_stream_text(getattr(e, "stderr", "")).strip()[:500],
+            "timeout": timeout_info,
+            "success": False,
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e), "success": False})
 

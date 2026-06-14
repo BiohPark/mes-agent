@@ -27,6 +27,7 @@ const svRisk = document.getElementById('sv-risk')
 const svContext = document.getElementById('sv-context')
 const svEvidence = document.getElementById('sv-evidence')
 const svError = document.getElementById('sv-error')
+const svPhaseRole = document.getElementById('sv-phase-role')
 
 let _currentWorkflow = null
 let _panelCollapsed = false
@@ -88,52 +89,14 @@ rpTabs.forEach(tab => {
 
 // ── 감독 패널 reducer ────────────────────────────────────────
 
-const SUPERVISOR_INITIAL = {
-  requestId: '',
-  goal: '대기 중',
-  step: '-',
-  agentState: 'idle',
-  currentTool: '',
-  currentToolLabel: '',
-  toolStartedAt: 0,
-  elapsedMs: 0,
-  waitingApproval: false,
-  approvalText: '대기 없음',
-  risk: 'none',
-  contextText: '-',
-  evidence: [],
-  lastError: '',
-}
+const SUPERVISOR_INITIAL = window.SupervisorState.initialState()
 
 let _supervisorState = { ...SUPERVISOR_INITIAL }
 let _supervisorTimer = null
 
 function _resetSupervisorState(requestId = '') {
   _stopSupervisorTimer()
-  _supervisorState = { ...SUPERVISOR_INITIAL, requestId }
-}
-
-function _summarizeWorkflow(wf) {
-  const steps = wf?.steps || []
-  const current = steps.find(s => ['running', 'waiting', 'error'].includes(s.status)) ||
-    steps.find(s => s.status === 'pending') ||
-    steps[steps.length - 1]
-  const doneCount = steps.filter(s => s.status === 'done' || s.status === 'skipped').length
-  const total = steps.length
-  return {
-    goal: wf?.title || '실행 중',
-    step: current
-      ? `${doneCount}/${total || 1} · ${current.title || current.id || '현재 단계'}`
-      : '-',
-  }
-}
-
-function _appendEvidence(label, detail = '') {
-  const text = detail ? `${label}: ${detail}` : label
-  _supervisorState.evidence = [
-    { text, at: new Date().toTimeString().slice(0, 8) },
-    ..._supervisorState.evidence,
-  ].slice(0, 5)
+  _supervisorState = window.SupervisorState.initialState(requestId)
 }
 
 function _startSupervisorTimer() {
@@ -158,103 +121,22 @@ function _reduceSupervisor(event) {
     return
   }
 
-  switch (event.type) {
-    case 'agent_state':
-      _supervisorState.agentState = event.state || 'unknown'
-      if (event.state === 'idle') {
-        _supervisorState.currentTool = ''
-        _supervisorState.currentToolLabel = ''
-        _supervisorState.toolStartedAt = 0
-        _supervisorState.elapsedMs = 0
-        _supervisorState.waitingApproval = false
-        _supervisorState.approvalText = '대기 없음'
-        _supervisorState.risk = 'none'
-        _stopSupervisorTimer()
-      }
-      break
-
-    case 'tool_start':
-      _supervisorState.agentState = 'working'
-      _supervisorState.currentTool = event.tool || ''
-      _supervisorState.currentToolLabel = event.label || event.tool || '도구 실행 중'
-      _supervisorState.toolStartedAt = Date.now()
-      _supervisorState.elapsedMs = 0
-      _supervisorState.waitingApproval = false
-      _supervisorState.approvalText = '대기 없음'
-      _supervisorState.risk = 'none'
-      _supervisorState.lastError = ''
-      _startSupervisorTimer()
-      break
-
-    case 'tool_wait':
-      _supervisorState.agentState = 'waiting'
-      _supervisorState.approvalText = `도구 지연: ${event.next || '?'}s까지 대기`
-      break
-
-    case 'tool_done':
-      if (_supervisorState.currentTool === event.tool) {
-        _supervisorState.currentTool = ''
-        _supervisorState.currentToolLabel = ''
-        _supervisorState.toolStartedAt = 0
-        _supervisorState.elapsedMs = 0
-        _stopSupervisorTimer()
-      }
-      if (!_supervisorState.waitingApproval) {
-        _supervisorState.agentState = 'running'
-        _supervisorState.approvalText = '대기 없음'
-        _supervisorState.risk = 'none'
-      }
-      _appendEvidence(event.tool || 'tool', String(event.result || '').slice(0, 80))
-      break
-
-    case 'confirm':
-      _supervisorState.agentState = 'waiting'
-      _supervisorState.waitingApproval = true
-      _supervisorState.approvalText = event.question || '사용자 승인 대기'
-      _supervisorState.risk = event.risk || 'confirm'
-      if (event.command) _appendEvidence('승인 대상 명령', event.command.slice(0, 80))
-      break
-
-    case 'workflow_update': {
-      const summary = _summarizeWorkflow(event.workflow)
-      _supervisorState.goal = summary.goal
-      _supervisorState.step = summary.step
-      break
-    }
-
-    case 'context_usage':
-      _supervisorState.contextText = `${event.tokens_used || 0}/${event.tokens_total || 0}`
-      break
-
-    case 'vision_capture':
-      _appendEvidence('화면 캡처', event.image_b64 ? '이미지 수집됨' : '캡처 이벤트')
-      break
-
-    case 'done':
-      _supervisorState.agentState = 'idle'
-      _supervisorState.currentTool = ''
-      _supervisorState.currentToolLabel = ''
-      _supervisorState.toolStartedAt = 0
-      _supervisorState.elapsedMs = 0
-      _supervisorState.waitingApproval = false
-      _supervisorState.approvalText = '대기 없음'
-      _supervisorState.risk = 'none'
-      _supervisorState.lastError = ''
-      _stopSupervisorTimer()
-      break
-
-    case 'error':
-      _supervisorState.agentState = 'error'
-      _supervisorState.currentTool = ''
-      _supervisorState.currentToolLabel = ''
-      _supervisorState.toolStartedAt = 0
-      _supervisorState.elapsedMs = 0
-      _supervisorState.waitingApproval = false
-      _supervisorState.lastError = event.message || '알 수 없는 오류'
-      _stopSupervisorTimer()
-      break
-  }
+  const hadTimer = !!_supervisorState.toolStartedAt
+  _supervisorState = window.SupervisorState.reduce(_supervisorState, event)
+  const hasTimer = !!_supervisorState.toolStartedAt
+  if (!hadTimer && hasTimer) _startSupervisorTimer()
+  if (hadTimer && !hasTimer) _stopSupervisorTimer()
   renderSupervisor()
+}
+
+function _summarizeWorkflow(wf) {
+  return window.SupervisorState.summarizeWorkflow(wf)
+}
+
+function _mergeWorkflowSummary(wf) {
+  const summary = _summarizeWorkflow(wf)
+  _supervisorState.goal = summary.goal
+  _supervisorState.step = summary.step
 }
 
 function renderSupervisor() {
@@ -262,6 +144,7 @@ function renderSupervisor() {
   svGoal.textContent = _supervisorState.goal
   svState.textContent = _supervisorState.agentState
   svState.className = `sv-state ${_supervisorState.agentState || 'idle'}`
+  if (svPhaseRole) svPhaseRole.textContent = `${_supervisorState.phase} · ${_supervisorState.role}`
   svStep.textContent = _supervisorState.step
   svTool.textContent = _supervisorState.currentToolLabel || '-'
   svElapsed.textContent = `${(_supervisorState.elapsedMs / 1000).toFixed(1)}s`
@@ -415,9 +298,7 @@ function _computeLayout(steps, connections, groupOf = {}) {
 
 function renderWorkflow(wf) {
   _currentWorkflow = wf
-  const supervisorSummary = _summarizeWorkflow(wf)
-  _supervisorState.goal = supervisorSummary.goal
-  _supervisorState.step = supervisorSummary.step
+  _mergeWorkflowSummary(wf)
   renderSupervisor()
 
   workflowEmpty.classList.add('hidden')

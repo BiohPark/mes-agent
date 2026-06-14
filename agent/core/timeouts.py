@@ -9,6 +9,7 @@
 """
 import os
 import json
+from dataclasses import asdict, dataclass
 
 DEFAULT_BASELINE = 6.0  # 미등록 도구 기본 예상시간(초)
 
@@ -50,6 +51,21 @@ _PREFIX_BASELINES = [
     ("memory_", 4.0),
     ("workflow_", 2.0),
 ]
+
+
+@dataclass(frozen=True)
+class LivenessObservation:
+    """도구 외부에서 관측 가능한 최소 진행 신호.
+
+    process/run_command처럼 stdout/stderr와 프로세스 생존 여부를 볼 수 있는 경로만
+    이 구조를 채운다. COM/브라우저/UI 도구는 후속 카드에서 별도 관측자를 붙인다.
+    """
+
+    elapsed_seconds: float
+    process_alive: bool
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
+    no_progress_count: int = 0
 
 
 def _baseline_overrides() -> dict:
@@ -117,25 +133,49 @@ def escalation_schedule(baseline: float, cap: float, factor: float = 4.0) -> lis
     return out
 
 
-def classify_timeout(name: str, waited: float, progressed: bool = False) -> dict:
+def _observation_progressed(observation: LivenessObservation) -> bool:
+    return (observation.stdout_bytes + observation.stderr_bytes) > 0
+
+
+def classify_liveness(name: str, waited: float, observation: LivenessObservation) -> dict:
+    """진행 관측값을 기준으로 slow/stuck을 분류한다.
+
+    첫 spike의 보수적 규칙:
+    - stdout/stderr 증가가 한 번이라도 있으면 "느리지만 살아있음(slow)".
+    - 출력 증가가 없고 프로세스가 계속 살아 있거나 이미 경합적으로 종료됐으면 "stuck".
+    - no_progress_count는 근거로 남기되, 출력 증가 신호를 뒤집지는 않는다.
+    """
+    return classify_timeout(name, waited, progressed=_observation_progressed(observation),
+                            observation=observation)
+
+
+def classify_timeout(name: str, waited: float, progressed: bool = False,
+                     observation: LivenessObservation | None = None) -> dict:
     """캡 도달/중단 시 구조화·분류 결과. 에이전트가 재시도/대안/질의를 판단하게 한다."""
+    if observation:
+        progressed = _observation_progressed(observation)
     failure = "slow" if progressed else "stuck"
     if progressed:
         hint = ("작업이 진행 중일 수 있습니다(부분 진행 신호) — 더 큰 timeout으로 재시도하거나 작업을 분할하세요.")
     else:
         hint = ("진행 신호가 없어 멈춘 것으로 판단됩니다 — 원인(파일이 이미 열림/모달 대화상자/잠금)을 제거하거나, "
                 "대안 경로(예: Excel COM 대신 openpyxl)·사용자 확인을 고려하세요.")
-    return {
+    out = {
         "failureClass": failure,
-        "provenance": "dispatch.timeout",
+        "provenance": "dispatch.timeout.liveness" if observation else "dispatch.timeout",
         "tool": name,
         "waited_seconds": round(waited, 1),
         "hint": hint,
     }
+    if observation:
+        out["liveness"] = asdict(observation)
+        out["liveness"]["elapsed_seconds"] = round(observation.elapsed_seconds, 1)
+    return out
 
 
-def timeout_error_text(name: str, waited: float, progressed: bool = False) -> str:
+def timeout_error_text(name: str, waited: float, progressed: bool = False,
+                       observation: LivenessObservation | None = None) -> str:
     """tool 결과 문자열. '툴 실행 오류' 접두 → 기존 UI/서버 에러 분기 재사용."""
-    info = classify_timeout(name, waited, progressed)
+    info = classify_timeout(name, waited, progressed, observation)
     return (f"툴 실행 오류: '{name}'이(가) {info['waited_seconds']}초 내에 끝나지 않아 중단했습니다"
             f"({info['failureClass']}). {info['hint']}")

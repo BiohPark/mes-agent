@@ -45,8 +45,8 @@
 
 ## 1차 구현 기준
 
-- 초기 구현은 append-only JSONL 또는 Vault markdown 중 하나를 선택할 수 있다.
-- 저장소 선택 전에는 이 계약과 테스트 fixture를 먼저 고정한다.
+- 초기 구현은 **append-only JSONL**을 사용한다.
+- Vault markdown은 사람이 읽는 export/리포트 후속 경로로 분리한다.
 - Supervisor UI는 최신 상태를 `RunSnapshot`으로 읽고, 상세 로그/증적 탭에서 `RunLedger`를 참조한다.
 
 ## 저장 전 기본 정책
@@ -54,3 +54,6 @@
 - phase/role enum은 `RunSnapshot`과 동일하게 유지한다.
 - 원문 tool result는 길이 제한 요약만 저장하고, 전체 원문은 기존 대화/로그 출처를 참조한다.
 - `approval_requested`와 `approval_resolved`는 같은 `confirm_id`를 details에 남겨 감사추적에서 짝을 찾을 수 있게 한다.
+- 저장 경로 기본값은 Vault 하위 `agent/run-ledgers/<task_type>/<thread_id>/<request_id>.jsonl`이다.
+- 각 줄은 하나의 UTF-8 JSON object이며 append-only로 기록한다.
+- 저장 실패는 현재 실행을 깨뜨리지 않고, 실패 요약만 감독 상태나 로그에 노출한다.
