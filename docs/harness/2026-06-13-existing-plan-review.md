@@ -9,7 +9,7 @@
 - `docs/backlog/pending/N-harness-mode.md`
 - `docs/TRANSFORMATION_PLAN.md`
 
-외부 모델 provider로 repo 문서 전송이 차단되어, 이번 리뷰는 Codex Desktop 현재 세션에서 수동 critic으로 수행했다. 실제 Codex CLI + Claude Code 독립 critic 라운드는 사용자 승인 후 `scripts/harness/run-plan-critics.ps1 -AllowExternalSend`를 샌드박스 외부 실행으로 수행한다.
+외부 모델 provider로 repo 문서 전송이 차단되어, 이번 리뷰는 Codex Desktop 현재 세션에서 수동 critic으로 수행했다. 당시에는 사용자 승인 후 `scripts/harness/run-plan-critics.ps1 -AllowExternalSend`를 샌드박스 외부 실행으로 수행하는 경로를 두었다. 현재 기준으로 `-AllowExternalSend`는 deprecated이며 repo 파생 Claude prompt를 허용하지 않고, `-ClaudeMode Generic` 또는 승인된 sanitized prompt만 사용한다.
 
 ## Implementation Critic Findings
 

@@ -18,7 +18,7 @@ conflict_policy: "이 카드는 backend와 frontend 구현이 병합된 뒤 문�
 scope:
   in:
     - `docs/specs/task-types-dynamic.md` 수용 기준 체크 상태 갱신
-    - `docs/backlog/pending/T-dynamic-task-types.md` 상태 갱신 또는 done 이동 계획 작성
+    - `docs/backlog/done/T-dynamic-task-types.md` 상태 갱신
     - `CLAUDE.md`, `CONTRIBUTING.md`의 tool count/tool list 반영 여부 확인
     - `.\test.ps1 ci`와 smoke 결과를 최종 기록
     - Computer Use 접근성 기반 sidebar 확인 결과 기록
@@ -29,7 +29,7 @@ scope:
 files:
   owned:
     - docs/specs/task-types-dynamic.md
-    - docs/backlog/pending/T-dynamic-task-types.md
+    - docs/backlog/done/T-dynamic-task-types.md
     - docs/harness/phase-report.md
     - CLAUDE.md
     - CONTRIBUTING.md
@@ -58,8 +58,8 @@ docs:
   update:
     - docs/harness/phase-report.md
     - docs/specs/task-types-dynamic.md
-    - docs/backlog/pending/T-dynamic-task-types.md
-external_send: false
+    - docs/backlog/done/T-dynamic-task-types.md
+external_send: none
 completion_promise: DONE
 ```
 

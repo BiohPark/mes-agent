@@ -47,9 +47,18 @@ docs:
     - docs/TRANSFORMATION_PLAN.md
   not_required:
     - README.md
-external_send: false
+external_send: none # none | generic | sanitized | repo
 completion_promise: DONE
 ```
+
+`external_send`는 Claude Code 등 외부 모델 provider로 보낼 수 있는 정보의 최대 등급이다.
+
+| 등급 | 의미 | 기본 처리 |
+|------|------|-----------|
+| `none` | 외부 모델로 작업 카드/repo 파생 정보를 보내지 않음 | 기본값 |
+| `generic` | repo 고유명, 파일명, 코드, 내부 업무명 없는 일반 체크리스트만 전송 | 허용 가능 |
+| `sanitized` | 사람이 비밀/고유 정보를 제거한 요약만 전송 | 매번 명시 승인과 기록 필요 |
+| `repo` | 파일명, 코드, 내부 업무명, 구조 설명 등 repo 파생 정보 포함 | 현재 하네스 스크립트에서는 차단 |
 
 ## Critic 체크리스트
 
@@ -70,7 +79,7 @@ Risk/Test Critic:
 - 툴/설정/워크플로우 변경 시 문서와 smoke count 갱신이 포함됐는가
 - 히스토리 조작, compaction, vision, 끼어들기 작업은 tool-pair invariant 테스트를 착수 게이트로 갖는가
 - RunLedger/RunSnapshot 같은 감사추적 모델은 계약 문서가 먼저 있는가
-- 외부 모델 provider로 보낼 문서와 승인 여부가 명시됐는가
+- 외부 모델 provider로 보낼 정보 등급(`external_send`)과 승인/fallback 기록 기준이 명시됐는가
 
 ## Worker 지시 형태
 

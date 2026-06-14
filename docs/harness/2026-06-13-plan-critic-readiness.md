@@ -16,7 +16,8 @@
   - 승인된 샌드박스 외부 실행에서 `-Smoke` 검증 결과:
     - `[harness] Codex CLI smoke: CODEX_EXEC_OK`
     - `[harness] Claude Code smoke: CLAUDE_EXEC_OK` (`--safe-mode` 제거 후)
-  - `-AllowExternalSend`가 없으면 repo 문서 전송을 거부한다.
+  - 당시에는 `-AllowExternalSend`가 없으면 repo 문서 전송을 거부했다.
+  - 현재 기준으로 `-AllowExternalSend`는 deprecated이며 repo 파생 Claude prompt를 허용하지 않는다. Claude 호출은 `-ClaudeMode None|Smoke|Generic|Sanitized|Repo`로 분리하고, `Repo`는 스크립트에서 반려한다.
 - Claude Code CLI 인증은 정상이다.
   - `cmd /c claude auth status --text` → Claude Pro 계정 로그인 확인
   - `claude --version` → `2.1.168`
@@ -52,13 +53,14 @@
 
 ## 다음 실제 실행 절차
 
-승인된 샌드박스 외부 실행으로 critic 라운드를 수행한다.
+현재 스크립트 기준으로 critic 라운드를 수행한다. 아래의 과거 `-AllowExternalSend` 예시는 더 이상 repo 파생 Claude 전송을 허용하지 않는다.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
 ```
 
-Claude Code 토큰이 더 여유 있을 때는 Claude를 우선 critic/worker로 쓰고, Codex CLI는 smoke 또는 Implementation Critic 보조로 제한한다.
+Claude Code 토큰이 더 여유 있어도 Codex sandbox 안에서는 L0 smoke 또는 L1 generic critic까지만 자동 실행한다. repo worker는 Enterprise ZDR/사내 승인 gateway 같은 별도 경로가 있을 때만 사용한다.
 
 Codex CLI 최소 동작만 확인하려면:
 
@@ -69,7 +71,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-c
 Claude Code 없이 먼저 Codex CLI만 검증하려면:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1
 ```
 
 결과는 `C:\tmp\mes-agent-harness-reviews`에 저장한다.

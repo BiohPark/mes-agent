@@ -130,9 +130,9 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (132종)
+### 툴 (134종)
 
-> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 132).
+> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 134).
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -146,6 +146,7 @@
 | **클라우드 Office (MS Graph: M365 Excel 셀/수식 REST 편집)** | 3 | ✅ |
 | Obsidian PKM (탐색·편집·이동·고급검색·Templater) | 18 | ✅ |
 | Obsidian 세션 (작업 이력·노트·백로그) | 4 | ✅ |
+| 업무 타입 관리 (Vault 사용자 정의 업무 타입 추가·삭제) | 2 | ✅ |
 | 사용자 확인 (ask_user 팝업) | 1 | ✅ |
 | 워크플로우 (init·set_step·add·update·remove·reorder·add_connection·remove_connection·set_group) | 9 | ✅ |
 | 멀티모달 화면 (capture_screen 메인루프 이미지 주입·전체화면·영역 분석, VISION_ENABLED 기본 켬) | 3 | ✅ |
@@ -235,14 +236,14 @@ mes-agent/
 │   ├── memory.py            — 대화 간 장기기억 MemoryStore
 │   ├── collaborate.py       — 협업모드 코치(화면 변화감지 + toolless 힌트)
 │   ├── mcp_client.py        — MCP 클라이언트(외부 서버 도구 런타임 등록)
-│   ├── obsidian_session.py  — 세션·스레드 관리, TASK_CONFIGS 5종
+│   ├── obsidian_session.py  — 세션·스레드 관리, 기본 업무 타입 + Vault 오버레이
 │   ├── core/
 │   │   ├── events.py        — SSE 이벤트 타입 상수
 │   │   └── compaction.py    — 컨텍스트 compaction 순수 로직(짝 보존)
 │   ├── workflow/
 │   │   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
-│   └── tools/               — 132종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 134종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)

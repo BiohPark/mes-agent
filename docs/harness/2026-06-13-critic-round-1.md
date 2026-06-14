@@ -14,6 +14,7 @@
 - 최초 `run-plan-critics.ps1 -AllowExternalSend`는 Codex 결과를 생성한 뒤 Claude Read 호출에서 타임아웃됐다.
 - Claude Code smoke와 짧은 critic 호출은 정상 통과했다.
 - 반복 실행성을 위해 Claude critic은 파일 Read 도구 대신 승인된 repo 계약 요약을 짧은 프롬프트로 전달하는 방식으로 스크립트를 조정했다.
+- 현재 기준으로 `-AllowExternalSend`는 deprecated이며 repo 파생 Claude prompt를 허용하지 않는다. 새 critic 라운드는 `-ClaudeMode None`, `-ClaudeMode Generic`, 또는 승인된 `-ClaudeMode Sanitized`로 실행한다.
 
 ## Codex Implementation Critic 요약
 

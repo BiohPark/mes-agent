@@ -70,7 +70,7 @@ docs:
   not_required:
     - README.md
     - CONTRIBUTING.md
-external_send: false
+external_send: none
 completion_promise: DONE
 ```
 

@@ -1,7 +1,9 @@
 param(
-    [switch]$AllowExternalSend,
     [switch]$Smoke,
     [switch]$SkipClaude,
+    [ValidateSet("None", "Smoke", "Generic", "Sanitized", "Repo")]
+    [string]$ClaudeMode = "None",
+    [switch]$AllowExternalSend,
     [switch]$Help,
     [string]$OutputDir = "C:\tmp\mes-agent-harness-reviews"
 )
@@ -11,29 +13,202 @@ if ($Help) {
 Usage:
   .\scripts\harness\run-plan-critics.ps1 -Smoke
   .\scripts\harness\run-plan-critics.ps1 -Smoke -SkipClaude
-  .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
-  .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
+  .\scripts\harness\run-plan-critics.ps1
+  .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
+  .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Sanitized
+  .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Repo
 
   If PowerShell execution policy blocks direct script execution:
   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
 
 Purpose:
-  Runs local Codex CLI and Claude Code as read-only critics for the mes-agent
-  development harness plans.
+  Runs Codex CLI as a read-only critic for mes-agent development harness plans.
+  Claude Code is optional and separated by external-send sensitivity level.
+  Claude Code is invoked through cmd.exe, not PowerShell-native argument
+  parsing, so Windows quoting is exercised the same way in smoke and critic
+  runs.
 
 Safety:
-  This sends repository context to external model providers. The script refuses
-  to run critic mode unless -AllowExternalSend is provided.
-
   -Smoke sends only minimal health prompts and does not ask the agents to read
   repository files. Use -SkipClaude when Claude Code network access is not
   approved for the current shell.
+
+  ClaudeMode values:
+    None      Do not call Claude Code. This is the default for critic mode.
+    Smoke     Send only CLAUDE_EXEC_OK health prompt. No repo information.
+    Generic   Send a generic risk/test checklist prompt. No repo name, files,
+              code, internal task names, or project structure.
+    Sanitized Use only a human-redacted prompt supplied in
+              MES_AGENT_SANITIZED_CLAUDE_PROMPT. Record explicit approval.
+    Repo      Blocked here. Use only a separately approved ZDR/gateway path.
+
+  -AllowExternalSend is kept only as a deprecated compatibility flag. It no
+  longer permits repo-derived Claude prompts.
 "@
     exit 0
 }
 
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path ".").Path
+$claudeSmokeCommand = 'claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence'
+$claudeFailureLog = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-failure-analysis.txt"
+$repoDerivedClaudePatterns = @(
+    "mes-agent",
+    "agent/",
+    "agent\\",
+    "electron/",
+    "electron\\",
+    "docs/",
+    "docs\\",
+    "Task T",
+    "task-T",
+    "TASK_CONFIGS",
+    "RunSnapshot",
+    "RunLedger",
+    "OpenAI tool-pair"
+)
+
+function Assert-GenericClaudePrompt {
+    param([string]$Prompt)
+
+    foreach ($pattern in $repoDerivedClaudePatterns) {
+        if ($Prompt -match [regex]::Escape($pattern)) {
+            throw "Generic Claude prompt contains repo-derived term: $pattern"
+        }
+    }
+}
+
+function Get-ClaudeFailureClass {
+    param(
+        [int]$ExitCode,
+        [string]$StdOut,
+        [string]$StdErr
+    )
+
+    $text = "$StdOut`n$StdErr"
+    if ($text -match "terminator|ParserError|Unexpected token|The string is missing") {
+        return "quoting/powershell"
+    }
+    if ($text -match "auth|login|not authenticated|unauthorized|OAuth|session") {
+        return "auth/session"
+    }
+    if ($text -match "permission-mode|--tools|unknown option|invalid option|not allowed") {
+        return "permission-mode/tools"
+    }
+    if ($text -match "hook|plugin|SessionEnd|Hook cancelled") {
+        return "hook/plugin"
+    }
+    if ($text -match "Permission denied|Access is denied|EACCES|EPERM|sandbox|file access") {
+        return "sandbox/file-permission"
+    }
+    if ($text -match "CLAUDE_TIMEOUT|timed out|timeout" -or $ExitCode -eq 124) {
+        return "timeout/model-call"
+    }
+    if ($ExitCode -ne 0) {
+        return "unknown-nonzero-exit"
+    }
+    return "unknown-output-mismatch"
+}
+
+function Write-ClaudeFailureAnalysis {
+    param(
+        [string]$Context,
+        [int]$ExitCode,
+        [string]$StdOut,
+        [string]$StdErr
+    )
+
+    $failureClass = Get-ClaudeFailureClass -ExitCode $ExitCode -StdOut $StdOut -StdErr $StdErr
+    $analysis = @(
+        "[harness] Claude Code failure context: $Context",
+        "[harness] Claude Code failure class: $failureClass",
+        "[harness] Claude Code exit code: $ExitCode",
+        "[harness] Claude stderr:",
+        $StdErr,
+        "[harness] Claude stdout:",
+        $StdOut
+    ) -join "`n"
+    $analysis | Set-Content -Encoding UTF8 -Path $claudeFailureLog
+    Write-Host "[harness] Claude Code failure context: $Context"
+    Write-Host "[harness] Claude Code failure class: $failureClass"
+    Write-Host "[harness] Claude Code failure log: $claudeFailureLog"
+    if (-not [string]::IsNullOrWhiteSpace($StdErr)) {
+        Write-Host "[harness] Claude stderr:"
+        Write-Host $StdErr
+    }
+    if (-not [string]::IsNullOrWhiteSpace($StdOut)) {
+        Write-Host "[harness] Claude stdout:"
+        Write-Host $StdOut
+    }
+}
+
+function Invoke-ClaudeCmd {
+    param(
+        [string]$CommandLine,
+        [string]$OutputPath,
+        [string]$ErrorPath,
+        [int]$TimeoutMs = 120000
+    )
+
+    $cmdArgs = @("/d", "/s", "/c", $CommandLine)
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -WindowStyle Hidden -RedirectStandardOutput $OutputPath -RedirectStandardError $ErrorPath -PassThru
+    if (-not $proc.WaitForExit($TimeoutMs)) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        "CLAUDE_TIMEOUT`nClaude Code command exceeded $TimeoutMs ms and was stopped." | Set-Content -Encoding UTF8 -Path $ErrorPath
+        return 124
+    }
+    return $proc.ExitCode
+}
+
+function Invoke-ClaudeSmoke {
+    Write-Host "[harness] Running Claude Code smoke check..."
+    Write-Host "[harness] Claude Code standard command: cmd /d /s /c $claudeSmokeCommand"
+    $stdout = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-smoke.out.txt"
+    $stderr = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-smoke.err.txt"
+    $code = Invoke-ClaudeCmd -CommandLine $claudeSmokeCommand -OutputPath $stdout -ErrorPath $stderr -TimeoutMs 120000
+    $claudeSmoke = if (Test-Path $stdout) { Get-Content -Raw -Encoding UTF8 -Path $stdout } else { "" }
+    $claudeError = if (Test-Path $stderr) { Get-Content -Raw -Encoding UTF8 -Path $stderr } else { "" }
+    if ($code -ne 0) {
+        Write-ClaudeFailureAnalysis -Context "smoke" -ExitCode $code -StdOut $claudeSmoke -StdErr $claudeError
+        Write-Error "Claude Code smoke command failed with exit code $code"
+        exit $code
+    }
+    if ($claudeSmoke.Trim() -ne "CLAUDE_EXEC_OK") {
+        Write-ClaudeFailureAnalysis -Context "smoke-output" -ExitCode $code -StdOut $claudeSmoke -StdErr $claudeError
+        Write-Error "Claude Code smoke did not produce CLAUDE_EXEC_OK"
+        exit 3
+    }
+    Write-Host "[harness] Claude Code smoke: CLAUDE_EXEC_OK"
+}
+
+function Invoke-ClaudePrompt {
+    param(
+        [string]$Prompt,
+        [string]$OutputPath,
+        [string]$ErrorPath
+    )
+
+    $promptArg = (($Prompt -replace "\s+", " ").Trim() -replace '"', '\"')
+    $commandLine = 'claude.cmd -p "' + $promptArg + '" --permission-mode plan --tools "" --no-session-persistence --max-budget-usd 0.50'
+    Write-Host "[harness] Claude Code standard command: cmd /d /s /c claude.cmd -p <prompt> --permission-mode plan --tools """" --no-session-persistence --max-budget-usd 0.50"
+    $code = Invoke-ClaudeCmd -CommandLine $commandLine -OutputPath $OutputPath -ErrorPath $ErrorPath -TimeoutMs 120000
+    if ($code -eq 124) {
+        @"
+CLAUDE_CRITIC_TIMEOUT
+Claude Code critic exceeded 120 seconds and was stopped.
+Do not route around Claude Code with a hidden implementation path. Switch to Claude Code setup/root-cause analysis, then rerun this gate.
+"@ | Set-Content -Encoding UTF8 -Path $OutputPath
+        Write-Warning "Claude Code critic timed out after 120 seconds; timeout note written to $OutputPath"
+    } elseif ($code -ne 0) {
+        $claudeOutText = if (Test-Path $OutputPath) { Get-Content -Raw -Encoding UTF8 -Path $OutputPath } else { "" }
+        $claudeErrText = if (Test-Path $ErrorPath) { Get-Content -Raw -Encoding UTF8 -Path $ErrorPath } else { "" }
+        Write-ClaudeFailureAnalysis -Context "critic" -ExitCode $code -StdOut $claudeOutText -StdErr $claudeErrText
+        Write-Warning "Claude Code critic exited with code $code; see $ErrorPath"
+    }
+    if (Test-Path $OutputPath) {
+        Get-Content -Encoding UTF8 -Path $OutputPath | Write-Host
+    }
+}
 
 if ($Smoke) {
     Write-Host "[harness] Running Codex CLI smoke check..."
@@ -55,24 +230,28 @@ if ($Smoke) {
     }
 
     if (-not $SkipClaude) {
-        Write-Host "[harness] Running Claude Code smoke check..."
-        $claudeSmoke = (claude -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence)
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Claude Code smoke command failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
-        if ($claudeSmoke.Trim() -ne "CLAUDE_EXEC_OK") {
-            Write-Error "Claude Code smoke did not produce CLAUDE_EXEC_OK"
-            exit 3
-        }
-        Write-Host "[harness] Claude Code smoke: CLAUDE_EXEC_OK"
+        Invoke-ClaudeSmoke
     }
 
     exit 0
 }
 
-if (-not $AllowExternalSend) {
-    Write-Error "Refusing to run: this sends repository context to external model providers. Re-run with -AllowExternalSend after explicit approval."
+if ($AllowExternalSend) {
+    Write-Warning "-AllowExternalSend is deprecated and does not permit repo-derived Claude prompts. Use -ClaudeMode Generic or -ClaudeMode Sanitized."
+}
+
+if ($SkipClaude -and $ClaudeMode -ne "None") {
+    Write-Warning "-SkipClaude overrides -ClaudeMode $ClaudeMode. Claude Code will not be called."
+    $ClaudeMode = "None"
+}
+
+if ($ClaudeMode -eq "Repo") {
+    Write-Error "Refusing ClaudeMode Repo: repo context/code export is blocked in this script. Use only a separately approved Enterprise ZDR or company gateway path and record that approval." -ErrorAction Continue
+    exit 2
+}
+
+if ($ClaudeMode -eq "Sanitized" -and [string]::IsNullOrWhiteSpace($env:MES_AGENT_SANITIZED_CLAUDE_PROMPT)) {
+    Write-Error "ClaudeMode Sanitized requires MES_AGENT_SANITIZED_CLAUDE_PROMPT with a human-redacted, approved prompt." -ErrorAction Continue
     exit 2
 }
 
@@ -80,7 +259,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $codexOut = Join-Path $OutputDir "$stamp-codex-implementation-critic.txt"
-$claudeOut = Join-Path $OutputDir "$stamp-claude-risk-test-critic.txt"
+$claudeOut = Join-Path $OutputDir "$stamp-claude-$($ClaudeMode.ToLowerInvariant())-critic.txt"
 
 $codexPrompt = @"
 You are Implementation Critic for mes-agent.
@@ -94,25 +273,18 @@ Return concise Korean findings with BLOCKER/RISK/SUGGESTION.
 
 $claudePrompt = @"
 Risk/Test Critic. Korean only.
-Approved repo docs summary: mes-agent is a Windows closed-network desktop
-automation agent. Critical constraints: OpenAI tool-pair invariant, safety
-approvals, max 128 tools, no runtime downloads, worktree spec must exist, tests
-include test.ps1 ci and smoke EXPECTED_TOOL_COUNT. Development harness plan:
-Codex Desktop orchestrates, Codex CLI runs implementation critic read-only,
-Claude Code runs risk/test critic, Claude/Ralph or Codex worktree workers
-implement task cards, code-reviewer performs diff review. Every task card needs
-task_id, title, spec, branch, worktree, owner, reviewer, scope.in, scope.out,
-gates, completion_promise. Worker must not start if spec is absent in target
-worktree. External OSS patterns are functional contracts only, no code copying.
-First card supervisor-phase1-reducer modifies only Electron renderer and docs,
-no server RunSnapshot.
-Critique only L1 loop invariant risk, safety gate risk, missing tests, docs
-update omissions, closed-network constraints, and completion gates.
+For a Python API plus desktop UI automation project, list a risk/test checklist
+for adding a new state-mutating tool and a dynamic configuration endpoint.
+Focus on assistant/tool message pairing invariants, user approval gates,
+bounded tool schemas/count checks, no runtime dependency downloads,
+unit/integration/smoke tests, documentation updates, and backend-before-UI
+sequencing.
+Do not assume or mention any specific repository, file path, product name,
+internal task name, code, or project structure.
 Return exactly 6 Korean bullets: 2 BLOCKER, 2 RISK, 2 SUGGESTION.
 "@
 
 $codexPromptArg = ($codexPrompt -replace "\s+", " ").Trim()
-$claudePromptArg = ($claudePrompt -replace "\s+", " ").Trim()
 
 Write-Host "[harness] Running Codex CLI Implementation Critic..."
 $oldErrorActionPreference = $ErrorActionPreference
@@ -125,34 +297,23 @@ if ($code -ne 0) {
     exit $code
 }
 
-if (-not $SkipClaude) {
-    Write-Host "[harness] Running Claude Code Risk/Test Critic..."
-    $claudeErr = Join-Path $OutputDir "$stamp-claude-risk-test-critic.err.txt"
-    $claudeArgs = @(
-        "-p", $claudePromptArg,
-        "--permission-mode", "plan",
-        "--no-session-persistence",
-        "--max-budget-usd", "0.50"
-    )
-    $proc = Start-Process -FilePath "claude" -ArgumentList $claudeArgs -WindowStyle Hidden -RedirectStandardOutput $claudeOut -RedirectStandardError $claudeErr -PassThru
-    if (-not $proc.WaitForExit(120000)) {
-        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-        @"
-CLAUDE_CRITIC_TIMEOUT
-Claude Code Risk/Test Critic exceeded 120 seconds and was stopped.
-Use -SkipClaude or run a shorter prompt manually, then record the output in docs/harness.
-"@ | Set-Content -Encoding UTF8 -Path $claudeOut
-        Write-Warning "Claude Code critic timed out after 120 seconds; timeout note written to $claudeOut"
-    } elseif ($proc.ExitCode -ne 0) {
-        Write-Warning "Claude Code critic exited with code $($proc.ExitCode); see $claudeErr"
-    }
-    if (Test-Path $claudeOut) {
-        Get-Content -Encoding UTF8 -Path $claudeOut | Write-Host
-    }
+if ($ClaudeMode -eq "Smoke") {
+    Invoke-ClaudeSmoke
+} elseif ($ClaudeMode -eq "Generic") {
+    Assert-GenericClaudePrompt -Prompt $claudePrompt
+    Write-Host "[harness] Running Claude Code Generic Risk/Test Critic..."
+    $claudeErr = Join-Path $OutputDir "$stamp-claude-generic-critic.err.txt"
+    Invoke-ClaudePrompt -Prompt $claudePrompt -OutputPath $claudeOut -ErrorPath $claudeErr
+} elseif ($ClaudeMode -eq "Sanitized") {
+    Write-Host "[harness] Running Claude Code Sanitized Risk/Test Critic..."
+    $claudeErr = Join-Path $OutputDir "$stamp-claude-sanitized-critic.err.txt"
+    Invoke-ClaudePrompt -Prompt $env:MES_AGENT_SANITIZED_CLAUDE_PROMPT -OutputPath $claudeOut -ErrorPath $claudeErr
 }
 
 Write-Host "[harness] Outputs:"
 Write-Host "  Codex:  $codexOut"
-if (-not $SkipClaude) {
+if ($ClaudeMode -ne "None" -and $ClaudeMode -ne "Smoke") {
     Write-Host "  Claude: $claudeOut"
+} elseif ($ClaudeMode -eq "None") {
+    Write-Host "  Claude: skipped (ClaudeMode None)"
 }

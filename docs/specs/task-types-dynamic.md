@@ -142,17 +142,17 @@ async function renderTaskGroups() {
 ## 수용 기준 (테스트로 검증)
 
 ### unit — `tests/unit/test_task_type_tools.py`
-- [ ] `task_type_create`: 중복 이름 거부 / 새 이름 Vault 저장
-- [ ] `task_type_remove`: 기본 5타입 삭제 거부 / 커스텀 타입 삭제 OK
-- [ ] `get_task_configs()`: Vault 없으면 기본 5타입만 / Vault 있으면 머지
+- [x] `task_type_create`: 중복 이름 거부 / 새 이름 Vault 저장
+- [x] `task_type_remove`: 기본 5타입 삭제 거부 / 커스텀 타입 삭제 OK
+- [x] `get_task_configs()`: Vault 없으면 기본 5타입만 / Vault 있으면 머지
 
 ### integration — `tests/integration/test_task_config_api.py`
-- [ ] `GET /task-config` — 기본 5타입 포함 응답
-- [ ] Vault에 커스텀 타입 추가 후 `GET /task-config` — 기본 + 커스텀 모두 반환
-- [ ] 기존 `test_server_health.py`의 `TestTaskConfig` 테스트 계속 통과
+- [x] `GET /task-config` — 기본 5타입 포함 응답
+- [x] Vault에 커스텀 타입 추가 후 `GET /task-config` — 기본 + 커스텀 모두 반환
+- [x] 기존 `test_server_health.py`의 `TestTaskConfig` 테스트 계속 통과
 
 ### smoke
-- [ ] `EXPECTED_TOOL_COUNT` = 134 (기존 132 + 2)
+- [x] `EXPECTED_TOOL_COUNT` = 134 (기존 132 + 2)
 
 ### CI 전체
 - [ ] `.\test.ps1 ci` 전체 통과 (회귀 없음)

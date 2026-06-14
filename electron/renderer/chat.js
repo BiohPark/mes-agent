@@ -811,10 +811,51 @@ async function loadTaskConfig() {
   try {
     const res = await fetch(`${BASE_URL}/task-config`)
     taskConfigs = await res.json()
+    renderTaskGroups()
   } catch {}
 }
 
 // ── 사이드바 그룹 관리 ────────────────────────────────────────
+
+function renderTaskGroups() {
+  const container = document.getElementById('task-groups-container')
+  if (!container) return
+  container.innerHTML = ''
+  Object.entries(taskConfigs).forEach(([taskType, cfg]) => {
+    const group = document.createElement('div')
+    group.className = 'task-group'
+    group.dataset.task = taskType
+    group.innerHTML = `
+      <div class="task-group-header">
+        <span class="tg-arrow">▸</span>
+        <span class="tg-name">${escapeHtml(cfg.icon || '')} ${escapeHtml(cfg.label || taskType)}</span>
+        <span class="tg-badge hidden"></span>
+        <button class="tg-new-btn" title="새 스레드">＋</button>
+      </div>
+      <div class="task-group-body hidden"></div>
+    `
+    bindTaskGroup(group)
+    container.appendChild(group)
+  })
+}
+
+function bindTaskGroup(group) {
+  const header = group.querySelector('.task-group-header')
+  const newBtn = group.querySelector('.tg-new-btn')
+  header?.addEventListener('click', (e) => {
+    if (e.target.closest('.tg-new-btn')) return
+    const taskType = group.dataset.task
+    if (!expandedGroups.has(taskType) || currentTaskType !== taskType) {
+      openTask(taskType)
+    } else {
+      collapseGroup(taskType)
+    }
+  })
+  newBtn?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    createNewThread(group.dataset.task)
+  })
+}
 
 function getGroupEl(taskType) {
   return document.querySelector(`.task-group[data-task="${taskType}"]`)
@@ -1331,25 +1372,6 @@ inputEditorTextarea?.addEventListener('keydown', (e) => {
 })
 inputEditorOverlay?.addEventListener('click', (e) => {
   if (e.target === inputEditorOverlay) closeInputEditor(true)
-})
-
-document.querySelectorAll('.task-group-header').forEach(header => {
-  header.addEventListener('click', (e) => {
-    if (e.target.closest('.tg-new-btn')) return
-    const taskType = header.closest('.task-group').dataset.task
-    if (!expandedGroups.has(taskType) || currentTaskType !== taskType) {
-      openTask(taskType)
-    } else {
-      collapseGroup(taskType)
-    }
-  })
-})
-
-document.querySelectorAll('.tg-new-btn').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation()
-    createNewThread(btn.closest('.task-group').dataset.task)
-  })
 })
 
 document.querySelectorAll('.quick-action-btn').forEach(btn => {

@@ -37,7 +37,9 @@
 
 - Codex Desktop 관리 셸 안에서는 Claude/Codex CLI agent 호출이 네트워크/파일 제한에 걸릴 수 있으므로, 실제 critic/worker 실행은 승인된 샌드박스 외부 실행으로 수행
 - 이 PC에서는 PowerShell 실행 정책 때문에 `*.ps1` 직접 실행이 막힐 수 있으므로 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`로 실행
-- Claude Code 긴 Read critic은 타임아웃될 수 있으므로 짧은 Risk/Test Critic prompt 또는 Claude worker 작업에 우선 사용
+- Claude Code 단독 smoke는 `cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence`를 표준형으로 쓴다. PowerShell-native 호출에서 `terminator`/`ParserError`가 나면 Claude 실패가 아니라 Windows quoting 표면 문제로 분류한다.
+- Claude Code 긴 Read critic/worker는 repo 파생 정보 전송이므로 L3로 분류한다. 현 Codex sandbox에서는 `-ClaudeMode None` 또는 repo 정보 없는 `-ClaudeMode Generic`을 기본으로 사용한다.
+- Claude Code가 맡기로 한 작업에서 실행/승인/권한이 막히면 Codex가 우회 구현하지 않고 Claude Code 셋업 원인분석으로 계획을 전환한다.
 - ECC full/manual installer는 사용하지 않고 plugin path + project-local rules만 유지
 
 Gate:
@@ -68,12 +70,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-c
 
 1. Task T 또는 Supervisor Console 중 하나를 골라 작업 카드를 작성한다.
 2. `spec` 파일이 대상 worktree에서 보이는지 확인한다.
-3. Claude Code 토큰이 남아 있으면 Risk/Test Critic 또는 worker를 Claude 우선으로 실행한다.
-4. Codex CLI는 잔여 토큰이 낮을 때 smoke 또는 보조 critic으로만 쓴다.
+3. Claude Code는 L0 smoke 또는 L1 generic critic까지만 자동 실행한다. repo worker는 Enterprise ZDR/사내 승인 gateway 같은 별도 경로가 있을 때만 사용한다.
+4. Claude가 차단되면 구현을 우회하지 않고 실패 분류(`quoting/powershell`, `auth/session`, `permission-mode/tools`, `hook/plugin`, `sandbox/file-permission`, `timeout/model-call`)와 재현 명령을 남긴 뒤 셋업 정상화 카드로 전환한다.
 
 Gate:
 
-- 작업 카드에 `scope.in`, `scope.out`, `files.owned`, `files.readonly`, `gates`, `external_send`가 있다.
+- 작업 카드에 `scope.in`, `scope.out`, `files.owned`, `files.readonly`, `gates`, `external_send` 등급(`none|generic|sanitized|repo`)이 있다.
 - 작업 카드에 `files.owned`, `files.readonly`, `owners`, `base_branch`, `spec_synced`, `conflict_policy`, `test_dod`가 있다.
 - critic 결과가 worker 지시에 반영됐다.
 
@@ -186,5 +188,7 @@ Gate:
 2. `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`는 2026-06-14 기준 `CODEX_EXEC_OK`, `CLAUDE_EXEC_OK`로 통과했다. Claude Code의 `SessionEnd hook ... Hook cancelled` 경고는 smoke 실패가 아니라 전역 plugin hook 후속 점검 항목이다.
 3. Supervisor Console Phase 1 reducer는 2026-06-14에 상태 초기화/대기 해제/객체 결과 처리 보정을 적용했고, Node VM reducer fixture와 기존 workflow 테스트 80개가 통과했다.
 4. `docs/harness/cards/supervisor-phase1-reducer.md` 구현 결과는 Computer Use 접근성 트리로 실제 Electron `MES Agent` 창에서 확인했다. 스크린샷 캡처는 현재 PC에서 `SetIsBorderRequired failed: 해당 인터페이스를 지원하지 않습니다. (0x80004002)`로 실패하므로, 자동 UI 검증은 접근성 트리 기반으로 수행한다.
-5. Task T는 단일 대형 카드가 아니라 `task-T-backend-config-tools` → `task-T-frontend-sidebar` → `task-T-docs-and-regression` 순서로 나눠 진행한다.
-6. Claude Code Plus 잔여 사용량이 낮은 동안에는 Claude/Ralph-loop를 쓰지 않고 Codex + 로컬 pytest/Computer Use 접근성 검증으로 진행한다. Ralph-loop는 반복 테스트가 명확하고 Claude 사용량이 충분한 카드에서만 재개한다.
+5. Task T는 `task-T-backend-config-tools` → `task-T-frontend-sidebar` → `task-T-docs-and-regression` 순서로 구현 완료했다. 신규 `task_type_create/remove`와 동적 `/task-config`, 동적 사이드바 렌더링이 적용됐고 targeted unit/integration/smoke 및 `node --check`가 통과했다.
+6. Claude Code 외부 실행 정책은 L0 smoke, L1 generic critic, L2 sanitized summary, L3 repo context/code로 분리됐다. `run-plan-critics.ps1`의 기본 critic은 `-ClaudeMode None`이며, `-ClaudeMode Repo`는 스크립트에서 차단한다.
+7. 2026-06-14 추가 정책: Claude Code smoke/critic은 `cmd /c claude.cmd ...` 표준 호출로 통일한다. Claude 실행이 막히면 Codex가 우회 구현하지 않고 Claude Code 원인분석/셋업 정상화로 계획을 전환한다.
+8. 다음 우선순위는 `supervisor-hud-fit-to-view` 카드와 제품 내부 하네스 계약(`RunSnapshot`, `RunLedger`)이다.

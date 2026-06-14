@@ -56,7 +56,7 @@ docs:
     - docs/harness/cards/task-T-frontend-sidebar.md
   not_required:
     - CLAUDE.md
-external_send: false
+external_send: none
 completion_promise: DONE
 ```
 

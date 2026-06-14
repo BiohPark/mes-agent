@@ -130,12 +130,22 @@ Critic 통합 후에는 다음이 선명해야 한다.
 로컬 실행 기본형:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+.\scripts\harness\run-plan-critics.ps1
+.\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
 ```
 
-주의: 이 critic 실행은 repo 문서 내용을 외부 모델 제공자에게 보낼 수 있으므로, 민감 문서가 포함된 계획에서는 사용자 명시 승인 후에만 실행한다. 승인 없이 검토해야 할 때는 Codex Desktop 현재 세션에서 수동 critic을 수행하고, 외부 agent 미사용 사유를 완료 보고에 남긴다.
+주의: Claude Code의 `--permission-mode plan`, `--tools ""`, `--no-session-persistence`는 도구 실행과 로컬 세션 저장을 제한할 뿐 외부 전송을 막지 않는다. 따라서 Claude Code critic/worker는 다음 등급으로만 다룬다.
 
-Claude Code가 파일 Read critic에서 타임아웃되면, 승인된 repo 계약 요약을 짧은 프롬프트로 전달하는 Risk/Test Critic fallback을 사용한다. fallback도 산출물 경로와 제한사항을 남기면 공식 critic 라운드로 인정한다.
+| 등급 | 전송 내용 | 사용 기준 |
+|------|-----------|-----------|
+| L0 Smoke | repo 정보 없는 생존 확인 | `-Smoke` |
+| L1 Generic Critic | repo 고유명, 파일명, 코드, 내부 업무명 없는 일반 체크리스트 | `-ClaudeMode Generic` |
+| L2 Sanitized Summary | 사람이 비밀/고유 정보를 제거한 요약 | `-ClaudeMode Sanitized`, 명시 승인과 기록 필요 |
+| L3 Repo Context/Code | 파일명, 코드, 내부 업무명, 구조 설명 포함 | 현재 스크립트에서 반려. Enterprise ZDR 또는 사내 승인 gateway에서만 별도 수행 |
+
+`-AllowExternalSend`는 deprecated 호환 옵션이며 repo 파생 Claude prompt를 허용하지 않는다. Claude Code worker는 repo 파일을 읽어야 하므로 L3로 분류한다. 현 Codex sandbox에서는 자동 worker로 쓰지 않는다. Claude Code가 필요한 작업에서 L3 승인 경로가 없거나 실행이 막히면 Codex가 우회 구현하지 않고 Claude Code 셋업/승인 경로 원인분석으로 전환한다.
+
+Claude Code가 차단되거나 타임아웃되면 다음 개발 과제보다 원인분석을 우선한다. 완료 보고에는 Claude 사용 여부, 전송 등급, 실패 분류(`quoting/powershell`, `auth/session`, `permission-mode/tools`, `hook/plugin`, `sandbox/file-permission`, `timeout/model-call`), 재현 명령, stdout/stderr 위치, 다음 셋업 조치를 남긴다.
 
 ### 3. worktree 준비
 

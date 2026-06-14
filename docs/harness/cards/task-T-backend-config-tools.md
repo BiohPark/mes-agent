@@ -38,7 +38,7 @@ files:
     - CLAUDE.md
   readonly:
     - docs/specs/task-types-dynamic.md
-    - docs/backlog/pending/T-dynamic-task-types.md
+    - docs/backlog/done/T-dynamic-task-types.md
     - CONTRIBUTING.md
     - agent/tools/_safety.py
     - agent/tools/__init__.py
@@ -69,7 +69,7 @@ docs:
     - CLAUDE.md
   not_required:
     - README.md
-external_send: false
+external_send: none
 completion_promise: DONE
 ```
 

@@ -37,6 +37,7 @@ desktop.ini
 .coverage
 htmlcov/
 .pytest_cache/
+.tmp/
 
 # Superpowers visual brainstorming artifacts
 .superpowers/

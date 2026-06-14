@@ -53,6 +53,7 @@
 | 툴 직접 테스트 패널 | `electron/renderer/tool-test.js` | LLM 없이 `/tool/test` 직접 호출 |
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
+| 동적 업무 타입 관리 (백로그 T) ✅ | `agent/obsidian_session.py` + `agent/tools/task_type.py` + `agent/server.py` + `electron/renderer/chat.js`·`index.html` | 기본 5타입은 `_DEFAULT_TASK_CONFIGS`, 사용자 정의 타입은 Vault `agent/task_types.json` 오버레이로 머지. `task_type_create`/`task_type_remove`(mutate 확인 게이트, 기본 타입 삭제 거부) 2종 추가. `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링. |
 | 업무 스레드 대화 | `agent/obsidian_session.py` + `agent/server.py` | 사이드바 버튼별 독립 다중 스레드, 멀티턴 대화 이력, 완료/보관/삭제, Obsidian 저장 |
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
@@ -382,9 +383,9 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함** ✅ 완료(`agent/control/inbox.md` 폴링 — 포트 개방 없이 동기화로 원격, 백로그 Q 큐 재사용, 무인 위험작업 자동 거부). **(B) LAN 바인딩+인증 강화** 🔲 후속: `host=0.0.0.0` 옵트인 + Origin 허용목록 + 토큰 영속화, `LAN_ENABLED=true`로 활성화. 상세: `docs/backlog/done/O-external-control.md`.
 
-### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — 🚧 backend 진행 중
+### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — ✅ 완료
 
-`_DEFAULT_TASK_CONFIGS` + Vault `agent/task_types.json` 오버레이 + 신규 도구 `task_type_create/remove`(확인 게이트) backend 카드 진행 중. 사이드바 동적 렌더링은 후속 `task-T-frontend-sidebar` 카드. 상세: `docs/backlog/pending/T-dynamic-task-types.md`.
+`_DEFAULT_TASK_CONFIGS` + Vault `agent/task_types.json` 오버레이 + 신규 도구 `task_type_create/remove`(확인 게이트) + `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링까지 완료. 기본 5타입 삭제는 차단. 상세: `docs/backlog/done/T-dynamic-task-types.md`.
 
 ### V-2단계. 적응형 타임아웃 고도화 🔲
 

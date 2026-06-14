@@ -68,7 +68,9 @@ Codex worktree가 맡기 좋은 일:
 - Claude와 병렬로 다른 파일 영역 구현
 - UI/문서/테스트처럼 소유 범위가 분리되는 작업
 - Codex sub-agent 결과를 반영하는 작은 patch
-- Claude가 막힌 작업의 대안 구현
+- Claude와 파일 소유 범위가 분리된 보조 구현
+
+Claude Code가 맡기로 한 작업에서 Claude 실행 자체가 막히면 Codex가 같은 작업을 몰래 대신 구현하지 않는다. 먼저 Claude Code 실행 표면, 인증, 권한, hook/plugin, 외부 전송 승인 경로를 진단하는 하네스 정비 작업으로 전환한다.
 
 ### 로컬 Codex CLI 엔진
 
@@ -93,9 +95,23 @@ cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemera
 - repo 문서를 읽게 하는 Codex CLI critic은 로컬 문서 내용이 외부 모델 제공자에게 전송될 수 있다.
 - 따라서 민감한 계획/사내 문서 기반 critic 실행은 사용자 명시 승인 후에만 한다.
 - 기본 config를 그대로 로드하면 플러그인/MCP/훅 경고가 많으므로, critic 용도는 `--ignore-user-config --ignore-rules --ephemeral`을 기본으로 한다.
-- Claude Code critic은 `claude -p ... --permission-mode plan --tools "Read" --add-dir <repo>` 형태를 쓴다. Claude Pro/OAuth 로그인 환경에서는 `--bare`를 쓰지 않는다.
-- Claude Code 2.1.168 기준 `--safe-mode`는 없으므로 쓰지 않는다. 안전한 smoke는 `claude -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence` 형태다.
+- Claude Code critic은 외부 전송 등급에 따라 실행한다. Codex 관리 셸 안에서는 repo 파생 정보가 포함된 Claude 호출이 차단될 수 있으므로, 기본은 `-ClaudeMode None` 또는 `-ClaudeMode Generic`이다.
+- Claude Code 2.1.168+ 기준 `--safe-mode`는 없으므로 쓰지 않는다. 안전한 smoke는 `cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence` 형태다.
+- PowerShell-native Claude 호출에서 `terminator`/`ParserError`가 나면 Claude 응답 실패가 아니라 Windows quoting 표면 문제로 보고 `cmd /c claude.cmd ...` 표준형으로만 재검증한다.
 - Codex Desktop 관리 셸의 네트워크/파일 샌드박스에서 CLI agent 호출이 실패하면, 승인된 샌드박스 외부 실행으로 smoke/critic을 수행한다.
+
+### Claude 외부 전송 등급
+
+Claude Code의 `--permission-mode plan`, `--tools ""`, `--no-session-persistence`는 도구 실행과 로컬 세션 저장을 제한할 뿐, 프롬프트가 외부 Claude 서비스로 전송되는 사실을 없애지 않는다. 따라서 하네스는 다음 등급으로만 Claude 사용을 허용한다.
+
+| 등급 | 전송 내용 | 실행 경로 |
+|------|-----------|-----------|
+| L0 Smoke | repo 정보 없음. `CLAUDE_EXEC_OK` 같은 생존 확인만 전송 | `.\scripts\harness\run-plan-critics.ps1 -Smoke` |
+| L1 Generic Critic | repo 고유명, 파일명, 코드, 내부 업무명 없는 일반 체크리스트 | `.\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic` |
+| L2 Sanitized Summary | 사람이 비밀과 고유 정보를 제거한 요약 | `-ClaudeMode Sanitized`와 `MES_AGENT_SANITIZED_CLAUDE_PROMPT`, 매번 승인/기록 필요 |
+| L3 Repo Context/Code | 파일명, 코드, 내부 업무명, 구조 설명 포함 | 현재 스크립트에서 차단. Enterprise ZDR 또는 사내 승인 gateway 같은 별도 경로에서만 허용 |
+
+Claude Code worker는 repo 파일을 직접 읽고 수정해야 하므로 L3로 분류한다. 현재 Codex sandbox 안에서는 자동 worker로 호출하지 않는다. Enterprise ZDR 또는 사내 승인 gateway가 준비되지 않았는데 Claude worker가 필요한 작업이면 구현을 우회하지 않고 승인 경로/셋업 원인분석을 먼저 수행한다.
 
 ### 조사/리뷰 엔진: sub-agent
 
@@ -243,23 +259,25 @@ completion_promise: DONE
 초안 계획을 바로 worker에게 넘기지 않는다. 먼저 두 critic이 서로 다른 관점으로 공격한다.
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+.\scripts\harness\run-plan-critics.ps1
+.\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
 ```
 
 이 스크립트는 다음을 수행한다.
 
 - Codex CLI: Implementation Critic
-- Claude Code: Risk/Test Critic
+- Claude Code: 기본 생략. `-ClaudeMode Generic`일 때 repo 정보 없는 Risk/Test Critic
 - 결과 저장: `C:\tmp\mes-agent-harness-reviews`
 
-외부 전송이 불가능하거나 Claude Code 로그인이 안 된 환경에서는 `-SkipClaude` 또는 수동 critic으로 대체하고, 완료 보고에 그 제한을 남긴다.
+`-AllowExternalSend`는 더 이상 repo 파생 Claude prompt를 허용하지 않는 deprecated 호환 옵션이다. Claude에 repo 내용을 직접 보내야 하는 작업은 현재 스크립트의 `-ClaudeMode Repo`에서 반려되며, Enterprise ZDR 또는 사내 승인 gateway 같은 별도 경로와 기록이 필요하다.
 
-외부 전송 불가, Claude 타임아웃, 사내망 차단은 예외 상황이 아니라 공식 fallback 경로다. 이 경우 다음을 남긴다.
+외부 전송 불가, Claude 타임아웃, 사내망 차단은 예외 상황이 아니라 공식 진단 전환 조건이다. 이 경우 구현을 우회하지 않고 다음을 남긴다.
 
 - 실행하지 못한 agent와 이유
-- 대신 수행한 수동 critic 체크리스트
+- 실패 분류: quoting/powershell, auth/session, permission-mode/tools, hook/plugin, sandbox/file-permission, timeout/model-call
+- 재현 명령과 stdout/stderr 위치
 - 산출물 위치
-- 다음에 외부 전송 승인이 가능할 때 재실행할 명령
+- Claude 사용 여부, 전송 등급, 차단 사유, 다음 셋업 조치
 
 ### 3. 작업 표면을 고른다
 
