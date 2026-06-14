@@ -243,6 +243,27 @@ class WorkflowRunState:
         return []
 
 
+@dataclass
+class LedgerEntry:
+    """감사 추적 단일 엔트리 — RunLedger JSONL 한 줄."""
+    ts: str          # ISO datetime
+    event: str       # start/done/error/stopped/max_steps
+    detail: str = ""
+    phase: str = ""
+
+    def to_dict(self) -> dict:
+        return {"ts": self.ts, "event": self.event, "detail": self.detail, "phase": self.phase}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "LedgerEntry":
+        return cls(
+            ts=data.get("ts", ""),
+            event=data.get("event", ""),
+            detail=data.get("detail", ""),
+            phase=data.get("phase", ""),
+        )
+
+
 def migrate_linear_to_graph(
     wf: Workflow,
 ) -> tuple[WorkflowDefinition, WorkflowRunState]:
