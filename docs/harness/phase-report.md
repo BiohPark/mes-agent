@@ -182,9 +182,9 @@ Gate:
 
 ## 현재 최우선 Next Actions
 
-1. P0 하네스 정합화 변경(`run-plan-critics.ps1`, ECC rules, 관련 문서)을 하나의 커밋으로 닫는다.
-2. `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`는 계속 통과 상태로 유지한다.
-3. Claude Code는 `--bare`와 `--safe-mode` 없이 승인된 샌드박스 외부 실행으로 호출한다.
-4. `docs/harness/cards/supervisor-phase1-reducer.md` 구현 결과를 Electron에서 수동 확인한다.
-5. Supervisor Console Phase 1의 DOM/reducer 자동 테스트 도입 여부를 결정한다.
+1. P0 하네스 정합화 변경(`run-plan-critics.ps1`, ECC rules, 관련 문서)은 `ceef24b chore: normalize dev harness setup`으로 로컬 커밋 완료 상태다. 원격 push는 사용자 명시 승인 후 진행한다.
+2. `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`는 2026-06-14 기준 `CODEX_EXEC_OK`, `CLAUDE_EXEC_OK`로 통과했다. Claude Code의 `SessionEnd hook ... Hook cancelled` 경고는 smoke 실패가 아니라 전역 plugin hook 후속 점검 항목이다.
+3. Supervisor Console Phase 1 reducer는 2026-06-14에 상태 초기화/대기 해제/객체 결과 처리 보정을 적용했고, Node VM reducer fixture와 기존 workflow 테스트 80개가 통과했다.
+4. `docs/harness/cards/supervisor-phase1-reducer.md` 구현 결과는 Computer Use 접근성 트리로 실제 Electron `MES Agent` 창에서 확인했다. 스크린샷 캡처는 현재 PC에서 `SetIsBorderRequired failed: 해당 인터페이스를 지원하지 않습니다. (0x80004002)`로 실패하므로, 자동 UI 검증은 접근성 트리 기반으로 수행한다.
+5. Supervisor Console Phase 1 자동 테스트는 새 npm 의존성 없이 `window.workflowPanel.getSupervisorState()`를 이용한 reducer fixture 방식으로 시작한다. 별도 DOM/Playwright 도입은 후속 카드에서 결정한다.
 6. Claude Code/Ralph-loop는 Task T처럼 반복 테스트가 명확한 worker 카드부터 사용한다.

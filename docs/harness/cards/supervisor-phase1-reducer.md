@@ -95,7 +95,7 @@ agent/server.py, agent/core/events.py, workflow model은 수정하지 마라.
 
 ## 구현 결과 — 2026-06-13
 
-상태: **구현 완료, 수동 UI 확인 대기**
+상태: **구현 완료, 자동 reducer 검증 통과, Electron 접근성 UI 확인 완료**
 
 변경 파일:
 
@@ -125,6 +125,30 @@ Reducer 입력 fixture:
 - `tool_done` 이후 근거 요약에 `vision_capture: 캡처 완료`
 - `confirm` 이후 `agentState`: `waiting`, `approvalText`: 승인 질문, `risk`: `destructive`
 - `done` 이후 `agentState`: `idle`, 승인 대기 해제, 현재 도구 비움
+
+## 보정 결과 — 2026-06-14
+
+추가 보정:
+
+- 새 `request_id` 이벤트가 들어오면 이전 실행의 오류/근거/승인 상태를 초기화한다.
+- `tool_wait` 이후 `tool_done`이 들어온 경우 지연/승인 표시가 남지 않도록 `waitingApproval`, `approvalText`, `risk`를 정리한다.
+- `tool_done` 결과가 문자열이 아닌 객체여도 reducer가 깨지지 않도록 근거 요약 전에 문자열화한다.
+- `done`/`error` 상태에서 현재 도구, 타이머, 승인 상태가 남지 않도록 정리한다.
+- `window.workflowPanel.getSupervisorState()`를 노출해 dependency 추가 없이 reducer 상태를 확인할 수 있게 했다.
+
+검증 결과:
+
+- `cmd /c node --check electron\renderer\workflow.js`: 통과
+- `cmd /c node --check electron\renderer\chat.js`: 통과
+- Node VM 기반 reducer fixture: `SUPERVISOR_REDUCER_OK`
+- `C:\Users\1600X\anaconda3\envs\mes-agent\python.exe -m pytest tests/integration/test_server_workflow.py tests/integration/test_workflow_events.py tests/unit/test_workflow_tools.py tests/unit/test_workflow_model.py -q --tb=short`: 80 passed
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`: `CODEX_EXEC_OK`, `CLAUDE_EXEC_OK`
+- Computer Use 접근성 확인: Electron `MES Agent` 창에서 `감독`, `워크플로우`, `실행 로그`, `현재 실행`, `현재 단계`, `현재 도구`, `승인/위험`, `risk: none`, `근거 요약` 노출 확인
+
+남은 확인:
+
+- 실제 SSE 실행 중 `workflow_update`, `tool_start`, `tool_wait`, `tool_done`, `confirm`, `done`이 들어올 때 표시가 갱신되는지 확인한다.
+- Computer Use 스크린샷 캡처는 현재 PC에서 `SetIsBorderRequired failed: 해당 인터페이스를 지원하지 않습니다. (0x80004002)`로 실패한다. 따라서 이 PC의 자동 UI 검증은 접근성 트리 기반으로 수행한다.
 
 수동 확인 방법:
 

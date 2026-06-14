@@ -98,6 +98,11 @@ const SUPERVISOR_INITIAL = {
 let _supervisorState = { ...SUPERVISOR_INITIAL }
 let _supervisorTimer = null
 
+function _resetSupervisorState(requestId = '') {
+  _stopSupervisorTimer()
+  _supervisorState = { ...SUPERVISOR_INITIAL, requestId }
+}
+
 function _summarizeWorkflow(wf) {
   const steps = wf?.steps || []
   const current = steps.find(s => ['running', 'waiting', 'error'].includes(s.status)) ||
@@ -138,7 +143,7 @@ function _stopSupervisorTimer() {
 function _reduceSupervisor(event) {
   if (!event) return
   if (event.request_id && !event.type) {
-    _supervisorState.requestId = event.request_id
+    _resetSupervisorState(event.request_id)
     renderSupervisor()
     return
   }
@@ -151,6 +156,9 @@ function _reduceSupervisor(event) {
         _supervisorState.currentToolLabel = ''
         _supervisorState.toolStartedAt = 0
         _supervisorState.elapsedMs = 0
+        _supervisorState.waitingApproval = false
+        _supervisorState.approvalText = '대기 없음'
+        _supervisorState.risk = 'none'
         _stopSupervisorTimer()
       }
       break
@@ -163,6 +171,8 @@ function _reduceSupervisor(event) {
       _supervisorState.elapsedMs = 0
       _supervisorState.waitingApproval = false
       _supervisorState.approvalText = '대기 없음'
+      _supervisorState.risk = 'none'
+      _supervisorState.lastError = ''
       _startSupervisorTimer()
       break
 
@@ -179,7 +189,12 @@ function _reduceSupervisor(event) {
         _supervisorState.elapsedMs = 0
         _stopSupervisorTimer()
       }
-      _appendEvidence(event.tool || 'tool', (event.result || '').slice(0, 80))
+      if (!_supervisorState.waitingApproval) {
+        _supervisorState.agentState = 'running'
+        _supervisorState.approvalText = '대기 없음'
+        _supervisorState.risk = 'none'
+      }
+      _appendEvidence(event.tool || 'tool', String(event.result || '').slice(0, 80))
       break
 
     case 'confirm':
@@ -214,11 +229,17 @@ function _reduceSupervisor(event) {
       _supervisorState.waitingApproval = false
       _supervisorState.approvalText = '대기 없음'
       _supervisorState.risk = 'none'
+      _supervisorState.lastError = ''
       _stopSupervisorTimer()
       break
 
     case 'error':
       _supervisorState.agentState = 'error'
+      _supervisorState.currentTool = ''
+      _supervisorState.currentToolLabel = ''
+      _supervisorState.toolStartedAt = 0
+      _supervisorState.elapsedMs = 0
+      _supervisorState.waitingApproval = false
       _supervisorState.lastError = event.message || '알 수 없는 오류'
       _stopSupervisorTimer()
       break
@@ -1332,6 +1353,7 @@ window.workflowPanel = {
   load: loadWorkflowForThread,
   handleUpdate: handleWorkflowUpdate,
   handleEvent: _reduceSupervisor,
+  getSupervisorState: () => ({ ..._supervisorState, evidence: [..._supervisorState.evidence] }),
   appendLog,
   recordToolLog,
   clearLog,
