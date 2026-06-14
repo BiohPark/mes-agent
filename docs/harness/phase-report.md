@@ -191,4 +191,6 @@ Gate:
 5. Task T는 `task-T-backend-config-tools` → `task-T-frontend-sidebar` → `task-T-docs-and-regression` 순서로 구현 완료했다. 신규 `task_type_create/remove`와 동적 `/task-config`, 동적 사이드바 렌더링이 적용됐고 targeted unit/integration/smoke 및 `node --check`가 통과했다.
 6. Claude Code 외부 실행 정책은 L0 smoke, L1 generic critic, L2 sanitized summary, L3 repo context/code로 분리됐다. `run-plan-critics.ps1`의 기본 critic은 `-ClaudeMode None`이며, `-ClaudeMode Repo`는 스크립트에서 차단한다.
 7. 2026-06-14 추가 정책: Claude Code smoke/critic은 `cmd /c claude.cmd ...` 표준 호출로 통일한다. Claude 실행이 막히면 Codex가 우회 구현하지 않고 Claude Code 원인분석/셋업 정상화로 계획을 전환한다.
-8. 다음 우선순위는 `supervisor-hud-fit-to-view` 카드와 제품 내부 하네스 계약(`RunSnapshot`, `RunLedger`)이다.
+8. `supervisor-hud-fit-to-view` 카드는 2026-06-14에 구현 완료했다. 기본 busy mode는 `hud`이며, 기존 공용 HUD가 실행 감독 모드에서 목표/단계/도구/위험 상태를 표시한다.
+9. 제품 내부 하네스 계약은 `product-harness-contract-alignment` 카드로 정리했다. phase/role enum은 `RunSnapshot`, `RunLedger`, `product-agent-harness.md`에서 같은 기준을 쓴다.
+10. 다음 우선순위는 `adaptive-timeout-v2-liveness-spike` 카드다. V-2 전체가 아니라 `run_command` 계열 liveness 분류 spike부터 닫는다.

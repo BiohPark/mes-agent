@@ -44,6 +44,7 @@ let _nodeLogs = {}                   // { [nodeId]: [{tool, summary, ok}] } — 
 let _collapsedGroups = new Set()     // 접힌 그룹 라벨 (스레드 단위 유지)
 let _lodRafPending = false
 let _savedView = null                // 재렌더 간 팬/줌 위치 보존 (스레드 전환 시 초기화)
+let _lastFocusedStepId = ''
 
 const wfZoomControls = document.getElementById('wf-zoom-controls')
 
@@ -59,6 +60,15 @@ function _fitToViewport(pz, viewport, canvasW, canvasH) {
   const x = (vw - canvasW * scale) / 2
   const y = Math.max(8, (vh - canvasH * scale) / 2)
   pz.zoomAbs(0, 0, scale)
+  pz.moveTo(x, y)
+}
+
+function _focusGraphNode(pz, viewport, pos, nodeW, nodeH) {
+  if (!pz || !viewport || !pos) return
+  const t = pz.getTransform()
+  const scale = t.scale || 1
+  const x = viewport.clientWidth / 2 - (pos.x + nodeW / 2) * scale
+  const y = Math.max(8, viewport.clientHeight / 2 - (pos.y + nodeH / 2) * scale)
   pz.moveTo(x, y)
 }
 
@@ -586,6 +596,8 @@ function _renderGraph(wf, steps, connectionsRaw) {
   const steps0 = displaySteps
   const connections = displayConns
   const { positions, canvasW, canvasH } = _computeLayout(steps0, connections, groupOf)
+  const currentStep = steps0.find(s => ['running', 'waiting'].includes(s.status))
+  const currentStepId = currentStep?.id || ''
 
   // 팬/줌 뷰포트(고정 크기, overflow 숨김) + 캔버스(변환 대상)
   const viewport = document.createElement('div')
@@ -736,10 +748,14 @@ function _renderGraph(wf, steps, connectionsRaw) {
       // 재렌더: 사용자가 보던 위치 복원 (anvaka엔 setTransform이 없어 zoomAbs+moveTo)
       _panzoom.zoomAbs(0, 0, _savedView.scale)
       _panzoom.moveTo(_savedView.x, _savedView.y)
+      if (currentStepId && currentStepId !== _lastFocusedStepId) {
+        _focusGraphNode(_panzoom, viewport, positions[currentStepId], NODE_W, NODE_H)
+      }
     } else {
       // 최초 렌더: 그래프 전체가 보이도록 뷰포트에 맞춰 축소·중앙정렬
       _fitToViewport(_panzoom, viewport, canvasW, canvasH)
     }
+    _lastFocusedStepId = currentStepId
     _onPanzoomTransform(_panzoom)
   }
 }
@@ -957,6 +973,7 @@ function clearWorkflow() {
   _stopFileWatcher()
   _disposePanzoom()
   _savedView = null
+  _lastFocusedStepId = ''
   _nodeLogs = {}
   _collapsedGroups = new Set()
   _currentWorkflow = null
@@ -1258,6 +1275,7 @@ async function loadWorkflowForThread(taskType, threadId) {
   _nodeLogs = {}
   _collapsedGroups = new Set()
   _savedView = null
+  _lastFocusedStepId = ''
   if (!taskType || !threadId) { clearWorkflow(); return }
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`

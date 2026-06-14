@@ -157,7 +157,8 @@ function Invoke-ClaudeCmd {
         "CLAUDE_TIMEOUT`nClaude Code command exceeded $TimeoutMs ms and was stopped." | Set-Content -Encoding UTF8 -Path $ErrorPath
         return 124
     }
-    return $proc.ExitCode
+    $proc.Refresh()
+    return [int]$proc.ExitCode
 }
 
 function Invoke-ClaudeSmoke {

@@ -14,8 +14,8 @@
 | `thread_id` | 연결된 대화/업무 스레드 |
 | `task_type` | MES, Office, deploy 등 업무 타입 |
 | `agent_mode` | `auto` 또는 `plan` |
-| `phase` | `planning`, `executing`, `reviewing`, `waiting`, `done`, `error` |
-| `role` | `orchestrator`, `planner`, `executor`, `reviewer`, `safety`, `reporter` 중 현재 주 역할 |
+| `phase` | `planning`, `executing`, `observing`, `verifying`, `waiting`, `reporting`, `done`, `error` |
+| `role` | `orchestrator`, `planner`, `executor`, `observer`, `verifier`, `safety`, `memory`, `reporter` 중 현재 주 역할 |
 | `goal` | 사용자가 요청한 현재 목표 요약 |
 | `current_step` | 현재 워크플로우 단계 제목/번호 |
 | `current_tool` | 실행 중인 도구명과 사용자용 label |
@@ -37,3 +37,18 @@
 - `confirm` 이벤트가 있으면 `phase=waiting`과 `approval`이 채워져야 한다.
 - `done`/`error` 이후 현재 도구와 승인 대기는 비워야 한다.
 - 서버 영속화는 별도 카드에서 구현한다.
+
+## Enum 기준
+
+초기 구현은 별도 multi-agent 호출을 만들지 않고 기존 루프 이벤트를 아래처럼 매핑한다.
+
+| 입력 신호 | phase | role |
+|----------|-------|------|
+| plan 생성/승인 전 | `planning` | `planner` |
+| tool 실행 중 | `executing` | `executor` |
+| 화면/문서/로그 근거 수집 | `observing` | `observer` |
+| 결과 확인 단계 | `verifying` | `verifier` |
+| confirm/사용자 입력 대기 | `waiting` | `safety` |
+| 최종 요약 작성 | `reporting` | `reporter` |
+| 종료 | `done` | `orchestrator` |
+| 오류 | `error` | `orchestrator` |

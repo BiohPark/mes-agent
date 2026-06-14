@@ -76,6 +76,9 @@ cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --too
 | `docs/contracts/product-harness-run-state.md` | 제품 하네스 `RunSnapshot` 초안 계약 |
 | `docs/contracts/run-ledger.md` | 제품 하네스 `RunLedger` 초안 계약 |
 | `docs/harness/cards/supervisor-phase1-reducer.md` | 첫 추천 작업 카드 |
+| `docs/harness/cards/supervisor-hud-fit-to-view.md` | 감독 HUD/워크플로우 fit-to-view 후속 카드 |
+| `docs/harness/cards/product-harness-contract-alignment.md` | 제품 하네스 계약 정렬 카드 |
+| `docs/harness/cards/adaptive-timeout-v2-liveness-spike.md` | V-2 타임아웃 liveness spike 카드 |
 
 ## 다음 운영 순서
 

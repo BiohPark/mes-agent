@@ -255,16 +255,18 @@
   "task_type": "syncade",
   "thread_id": "20260613-001",
   "goal": "MES 명세서 대비 검증",
-  "mode": "auto|plan",
-  "phase": "planning|waiting_approval|executing|verifying|reporting|done|error",
-  "current_role": "Planner|Executor|Verifier",
+  "agent_mode": "auto|plan",
+  "phase": "planning|executing|observing|verifying|waiting|reporting|done|error",
+  "role": "orchestrator|planner|executor|observer|verifier|safety|memory|reporter",
   "current_step_id": "step-2",
   "current_tool": "read_word",
   "elapsed_ms": 12000,
-  "risk": "safe|mutate|destructive",
-  "needs_user": false
+  "risk": "none|write|destructive|credential|unknown",
+  "approval": null
 }
 ```
+
+정식 필드 계약은 `docs/contracts/product-harness-run-state.md`를 기준으로 하며, 이 스펙의 예시는 같은 enum을 따른다.
 
 ### RunLedger
 
@@ -318,9 +320,9 @@ RunLedger는 감사추적과 완료 보고의 원천이 된다.
 
 ### Phase 1 — 역할 라벨과 스냅샷
 
-- 기존 `generate()` 루프에 내부 phase/role 라벨을 도입한다.
+- 기존 `generate()` 루프에 내부 `phase`/`role` 라벨을 도입한다.
 - SSE 이벤트를 RunSnapshot 형태로 프론트엔드에서 합성한다.
-- 감독 콘솔은 현재 role, phase, step, tool, risk를 표시한다.
+- 감독 콘솔은 현재 `role`, `phase`, `step`, `tool`, `risk`를 표시한다.
 - 별도 LLM 호출 분리는 하지 않는다.
 
 ### Phase 2 — Verifier 분리
@@ -363,7 +365,7 @@ RunLedger는 감사추적과 완료 보고의 원천이 된다.
 |-----------------|----------------|
 | goal | 현재 목표 |
 | phase | 상단 상태 배지 |
-| current_role | 현재 담당 역할 |
+| role | 현재 담당 역할 |
 | current_step_id | 워크플로우 현재 노드 |
 | current_tool | 실행 중 도구와 경과 시간 |
 | risk | 위험/승인 카드 |

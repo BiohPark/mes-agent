@@ -26,6 +26,7 @@ const SERVER_PORT = parseInt(_envFromFile.AGENT_PORT || process.env.AGENT_PORT |
 let mainWindow
 let hudWindow
 let pythonProcess
+let _lastHudPayload = null
 
 function startPythonServer() {
   pythonProcess = spawn('python', ['-m', 'agent.server'], {
@@ -101,13 +102,23 @@ function createHudWindow() {
   })
   hudWindow.setAlwaysOnTop(true, 'screen-saver')
   hudWindow.loadFile(path.join(__dirname, 'renderer', 'hud.html'))
+  hudWindow.webContents.on('did-finish-load', () => {
+    if (_lastHudPayload && hudWindow && !hudWindow.isDestroyed()) {
+      hudWindow.webContents.send('hud-update', _lastHudPayload)
+    }
+  })
   hudWindow.on('closed', () => { hudWindow = null })
 }
 
 // 메인 렌더러가 HUD 표시/숨김·갱신을 제어하고, HUD의 사용자 동작은 메인으로 중계한다.
-ipcMain.on('collab-show-hud', () => createHudWindow())
-ipcMain.on('collab-hide-hud', () => { if (hudWindow && !hudWindow.isDestroyed()) hudWindow.close() })
+let _hudOwner = null
+ipcMain.on('collab-show-hud', () => { _hudOwner = 'collab'; _lastHudPayload = null; createHudWindow() })
+ipcMain.on('collab-hide-hud', () => {
+  if (_hudOwner === 'collab') _hudOwner = null
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.close()
+})
 ipcMain.on('hud-update-fwd', (_e, payload) => {
+  _lastHudPayload = payload
   if (hudWindow && !hudWindow.isDestroyed()) hudWindow.webContents.send('hud-update', payload)
 })
 ipcMain.on('hud-event', (_e, payload) => {
@@ -116,14 +127,24 @@ ipcMain.on('hud-event', (_e, payload) => {
 
 // ── 실행 중 창 가림 회피 (개선 아이디어 C) ──────────────────────
 // 렌더러가 agentState=running 일 때 'agent-busy', idle 일 때 'agent-idle' 를 보낸다.
-// mode: 'minimize'(자동 최소화) | 'translucent'(반투명) | 'off'(끄기)
-let _busyMode = 'minimize'
+// mode: 'hud'(작게 비켜 보기) | 'minimize'(자동 최소화) | 'translucent'(반투명) | 'off'(끄기)
+let _busyMode = 'hud'
 let _wasMinimizedByAgent = false
 
 ipcMain.on('agent-busy', (_e, mode) => {
-  _busyMode = mode || 'minimize'
+  _busyMode = mode || 'hud'
   if (!mainWindow || _busyMode === 'off') return
-  if (_busyMode === 'minimize') {
+  if (_busyMode === 'hud') {
+    if (_hudOwner !== 'collab') {
+      _hudOwner = 'agent'
+      _lastHudPayload = null
+      createHudWindow()
+    }
+    if (!mainWindow.isMinimized()) {
+      _wasMinimizedByAgent = true
+      mainWindow.minimize()
+    }
+  } else if (_busyMode === 'minimize') {
     if (!mainWindow.isMinimized()) {
       _wasMinimizedByAgent = true
       mainWindow.minimize()
@@ -143,6 +164,10 @@ ipcMain.on('agent-idle', () => {
   }
   mainWindow.setOpacity(1)
   mainWindow.setIgnoreMouseEvents(false)
+  if (_hudOwner === 'agent') {
+    _hudOwner = null
+    if (hudWindow && !hudWindow.isDestroyed()) hudWindow.close()
+  }
 })
 
 app.whenReady().then(async () => {

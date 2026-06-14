@@ -1,6 +1,6 @@
 # 스펙 — 작업 감독 콘솔 UX
 
-> 상태: 설계 확정 대상 · 범위: UX/정보구조/이벤트 표시 · 제품 코드 구현 전
+> 상태: Phase 1 구현 진행 · 범위: UX/정보구조/이벤트 표시
 > 목적: 자동화 봇이 조용히 사라지는 것이 아니라, 사용자가 현재 목표·근거·위험·다음 행동을 계속 감독할 수 있게 한다.
 
 ## 해결하는 문제
@@ -33,7 +33,7 @@
 | SSE 이벤트 | `agent/core/events.py`, `agent/server.py` | 실행 이벤트 스트림 |
 | 워크플로우 패널 | `electron/renderer/workflow.js` | 단계, 그래프, 로그 |
 | 실행 로그 탭 | `electron/renderer/workflow.js` | 도구 실행 결과 |
-| 협업 HUD | `electron/renderer/hud.*`, `agent/collaborate.py` | 작게 떠 있는 코치 창 |
+| 공용 HUD | `electron/main.js`, `electron/renderer/hud.*` | 협업 코치와 실행 감독을 함께 표시하는 작은 비탈취 창 |
 | plan mode | `agent/server.py` | 계획 후 승인 실행 |
 | safety gate | `agent/tools/_safety.py`, `agent/server.py` | 위험 작업 승인 |
 
@@ -171,7 +171,7 @@ HUD는 다음만 보여준다.
 | OpenHands | Agent Canvas | 감독 탭 + 워크플로우 + 근거를 하나의 작업 캔버스로 통합 |
 | OpenHands | event stream / observability | SSE 이벤트를 실행 타임라인으로 시각화 |
 | OpenHands | condenser | 긴 실행 이력을 요약해 현재 목표/근거만 상단에 유지 |
-| OpenHands | delegation | 후속 제품 내부 planner/executor/reviewer 역할 분리 |
+| OpenHands | delegation | 후속 제품 내부 planner/executor/verifier 역할 분리 |
 | OpenClaw | live canvas | HUD와 우측 패널을 실시간 작업 관찰 화면으로 사용 |
 | OpenClaw | local-first/session routing | 폐쇄망 PC에서 세션별 작업 상태 유지 |
 | ECC/Claude Code | hooks/subagents | 개발 하네스에서 리뷰·테스트·완료 게이트 자동화 |
@@ -182,11 +182,12 @@ HUD는 다음만 보여준다.
 
 ### Phase 1 — 프론트엔드 재배치
 
-- 우측 패널에 `감독` 탭 추가
-- 기존 SSE 이벤트를 프론트엔드 상태 reducer로 모아 표시
-- 현재 단계, 현재 도구, 경과 시간, 승인 대기, 근거 요약 표시
-- 기본 busy mode를 “작게 비켜 보기”로 변경
-- 그래프 최초 렌더 fit-to-view 보장
+- [x] 우측 패널에 `감독` 탭 추가
+- [x] 기존 SSE 이벤트를 프론트엔드 상태 reducer로 모아 표시
+- [x] 현재 단계, 현재 도구, 경과 시간, 승인 대기, 근거 요약 표시
+- [x] 기본 busy mode를 “작게 비켜 보기”로 변경
+- [x] 그래프 최초 렌더 fit-to-view 보장
+- [x] 실행 노드가 바뀌면 그래프 뷰를 현재 노드 쪽으로 보정
 
 ### Phase 2 — 실행 상태 영속화
 
@@ -202,11 +203,11 @@ HUD는 다음만 보여준다.
 
 ## 수용 기준
 
-- [ ] 자동화 실행 중 현재 목표와 현재 단계가 항상 보인다.
-- [ ] 창이 최소화되어도 HUD에서 현재 단계/도구/위험 상태를 볼 수 있다.
-- [ ] 승인 대기 상태는 일반 로그가 아니라 별도 카드로 표시된다.
-- [ ] 워크플로우 그래프는 최초 표시 시 화면 밖으로 나가지 않는다.
-- [ ] 현재 실행 노드가 그래프/목록에서 명확히 강조된다.
-- [ ] 도구 실행이 오래 걸리면 경과 시간과 중단 버튼이 눈에 띈다.
+- [x] 자동화 실행 중 현재 목표와 현재 단계가 항상 보인다.
+- [x] 창이 최소화되어도 HUD에서 현재 단계/도구/위험 상태를 볼 수 있다.
+- [x] 승인 대기 상태는 일반 로그가 아니라 별도 카드로 표시된다.
+- [x] 워크플로우 그래프는 최초 표시 시 화면 밖으로 나가지 않는다.
+- [x] 현재 실행 노드가 그래프/목록에서 명확히 강조된다.
+- [x] 도구 실행이 오래 걸리면 경과 시간과 중단 버튼이 눈에 띈다.
 - [ ] MES/Office/배포 업무별 초기 워크플로우가 일반 템플릿보다 구체적이다.
 - [ ] 구현 전 Playwright 또는 DOM 단위 테스트 기준이 정의된다.

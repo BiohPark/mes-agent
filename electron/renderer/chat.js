@@ -162,6 +162,7 @@ function setAgentState(state) {
     // 화면 제어가 시작되는 running 상태에서만 창을 비킨다
     if (state === 'running') {
       window.electronAPI?.agentBusy?.(busyMode)
+      updateAgentHud()
     } else if (state === 'waiting') {
       // 사용자 확인 팝업이 보이도록 창을 원복 (응답 후 다시 running 되면 재최소화)
       window.electronAPI?.agentIdle?.()
@@ -171,13 +172,14 @@ function setAgentState(state) {
 }
 
 // ── 실행 중 창 모드 (개선 아이디어 C) ─────────────────────────
-let busyMode = localStorage.getItem('busyMode') || 'minimize'
-const BUSYMODE_LABELS = { minimize: '🪟 최소화', translucent: '👻 반투명', off: '🚫 끄기' }
+let busyMode = localStorage.getItem('busyMode') || 'hud'
+if (busyMode === 'minimize' && !localStorage.getItem('busyMode')) busyMode = 'hud'
+const BUSYMODE_LABELS = { hud: '📌 작게 보기', minimize: '🪟 최소화', translucent: '👻 반투명', off: '🚫 끄기' }
 const busymodeBtn = document.getElementById('busymode-btn')
 const busymodeMenu = document.getElementById('busymode-menu')
 
 function renderBusyMode() {
-  if (busymodeBtn) busymodeBtn.textContent = BUSYMODE_LABELS[busyMode] || '🪟 최소화'
+  if (busymodeBtn) busymodeBtn.textContent = BUSYMODE_LABELS[busyMode] || BUSYMODE_LABELS.hud
   busymodeMenu?.querySelectorAll('.hdr-menu-item').forEach(it =>
     it.classList.toggle('active', it.dataset.mode === busyMode))
 }
@@ -195,6 +197,23 @@ busymodeMenu?.querySelectorAll('.hdr-menu-item').forEach(item => {
 })
 document.addEventListener('click', () => busymodeMenu?.classList.add('hidden'))
 renderBusyMode()
+
+function updateAgentHud(extra = {}) {
+  if (busyMode !== 'hud') return
+  const state = window.workflowPanel?.getSupervisorState?.()
+  const goal = state?.goal && state.goal !== '대기 중' ? state.goal : '작업 실행 중'
+  const step = state?.step && state.step !== '-' ? state.step : '단계 확인 중'
+  const tool = _currentTool?.label || state?.currentToolLabel || '도구 준비 중'
+  const elapsed = state?.elapsedMs ? ` · ${(state.elapsedMs / 1000).toFixed(0)}초` : ''
+  const risk = state?.waitingApproval ? ` · 승인 필요(${state.risk || 'confirm'})` : ''
+  window.electronAPI?.collabUpdateHud?.({
+    mode: 'agent',
+    title: '📌 작업 감독',
+    hint: `${goal}\n${step}\n${tool}${elapsed}${risk}`,
+    actionLabel: '자세히 보기',
+    ...extra,
+  })
+}
 
 // ── 실행 모드 토글 (G4): 자동 ↔ 계획 후 승인 ──────────────────
 let currentAgentMode = localStorage.getItem('agentMode') || 'auto'
@@ -442,6 +461,7 @@ function _updateRunningStatebar(secs) {
   if (!agentStateText || !_currentTool) return
   const lbl = _currentTool.label || '도구 실행'
   agentStateText.textContent = secs >= 1 ? `${lbl} — ${secs}초` : `${lbl}…`
+  updateAgentHud()
 }
 
 function _startToolTimer(tool) {
@@ -539,6 +559,7 @@ function handleEvent(event, agentEl, bubble) {
       _currentTool = { tool: event.tool, label: event.label }
       _updateRunningStatebar(0)
       _startToolTimer(event.tool)
+      updateAgentHud()
       scrollToBottom()
       break
     }
@@ -557,6 +578,7 @@ function handleEvent(event, agentEl, bubble) {
         hint.textContent = ` ⏳ 예상보다 길어 더 기다리는 중… (~${event.next}s, 필요하면 중단)`
       }
       if (stopBtn) stopBtn.classList.add('pulse')
+      updateAgentHud()
       scrollToBottom()
       break
     }
@@ -587,10 +609,12 @@ function handleEvent(event, agentEl, bubble) {
         window.workflowPanel.appendLog(event.tool, event.result || '', duration)
         window.workflowPanel.recordToolLog(event.tool, event.result || '')
       }
+      updateAgentHud()
       break
     }
 
     case 'confirm':
+      updateAgentHud()
       showConfirmDialog(event).catch(console.error)
       break
 
@@ -605,6 +629,7 @@ function handleEvent(event, agentEl, bubble) {
 
     case 'workflow_update':
       if (window.workflowPanel) window.workflowPanel.handleUpdate(event.workflow)
+      updateAgentHud()
       break
 
     case 'context_trim': {
@@ -1593,7 +1618,12 @@ collabCancelBtn?.addEventListener('click', () => {
 })
 
 // HUD에서 올라온 사용자 동작 처리
-window.electronAPI?.onCollabCommand?.(({ type }) => {
+window.electronAPI?.onCollabCommand?.(({ type, mode }) => {
+  if (mode === 'agent') {
+    if (type === 'manual') window.electronAPI?.agentIdle?.()
+    else if (type === 'stop') stopBtn?.click()
+    return
+  }
   if (type === 'manual') collabTick(true)
   else if (type === 'stop') collabStop()
 })

@@ -12,7 +12,7 @@
 |--------|-----------|
 | `run_started` | 사용자 목표, thread, task type 시작점 |
 | `phase_changed` | planning/executing/reviewing/waiting/done/error 전이 |
-| `role_changed` | planner/executor/reviewer 등 현재 책임 전이 |
+| `role_changed` | planner/executor/verifier 등 현재 책임 전이 |
 | `tool_started` | 도구명, label, 핵심 인자 요약 |
 | `tool_waited` | 장시간 작업 가시성, timeout escalation |
 | `tool_finished` | 성공/실패, 결과 요약, 실패 분류 |
@@ -30,8 +30,8 @@
 | `thread_id` | 업무 스레드 |
 | `timestamp` | 이벤트 발생 시각 |
 | `event_type` | 위 이벤트 범위 중 하나 |
-| `phase` | 이벤트 당시 phase |
-| `role` | 이벤트 당시 role |
+| `phase` | 이벤트 당시 phase: `planning`, `executing`, `observing`, `verifying`, `waiting`, `reporting`, `done`, `error` |
+| `role` | 이벤트 당시 role: `orchestrator`, `planner`, `executor`, `observer`, `verifier`, `safety`, `memory`, `reporter` |
 | `summary` | 사용자에게 보여줄 한 줄 요약 |
 | `details` | 구조화 세부 정보 |
 | `provenance` | 사용자 입력, 도구 결과, 시스템 판단 등 출처 |
@@ -48,3 +48,9 @@
 - 초기 구현은 append-only JSONL 또는 Vault markdown 중 하나를 선택할 수 있다.
 - 저장소 선택 전에는 이 계약과 테스트 fixture를 먼저 고정한다.
 - Supervisor UI는 최신 상태를 `RunSnapshot`으로 읽고, 상세 로그/증적 탭에서 `RunLedger`를 참조한다.
+
+## 저장 전 기본 정책
+
+- phase/role enum은 `RunSnapshot`과 동일하게 유지한다.
+- 원문 tool result는 길이 제한 요약만 저장하고, 전체 원문은 기존 대화/로그 출처를 참조한다.
+- `approval_requested`와 `approval_resolved`는 같은 `confirm_id`를 details에 남겨 감사추적에서 짝을 찾을 수 있게 한다.
