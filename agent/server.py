@@ -3,6 +3,7 @@ import json
 import asyncio
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
@@ -38,7 +39,7 @@ from agent.core.overflow import is_context_overflow, is_recoverable
 from agent.memory import MemoryStore
 from agent.obsidian_session import get_session_manager, get_task_configs
 from agent.workflow import storage as wf_storage
-from agent.workflow.model import WorkflowRunState
+from agent.workflow.model import WorkflowRunState, LedgerEntry
 from agent.core import events as ev
 
 app = FastAPI()
@@ -467,6 +468,9 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             # 중단 플래그 확인
             if _stop_flags.get(request_id):
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                if thread_id and task_type:
+                    await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
+                        LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="stopped", phase="done"))
                 break
 
             # 백로그 Q: 끼어들기 드레인. 이 지점은 직전 반복이 tool 묶음과 캡처 이미지를
@@ -893,10 +897,20 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 "\n\n[알림] 최대 실행 단계에 도달해 잠시 멈췄습니다. "
                 "계속 진행하려면 '계속'이라고 입력해 주세요."})
             yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+            if thread_id and task_type:
+                await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
+                    LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="max_steps", phase="done"))
 
     except Exception as e:
         yield sse({"type": ev.ERROR, "message": str(e)})
         yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+        if thread_id and task_type:
+            try:
+                await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
+                    LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="error",
+                                detail=str(e)[:200], phase="error"))
+            except Exception:
+                pass
         yield sse({"type": ev.DONE})
         return
     finally:
@@ -932,6 +946,12 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         except Exception:
             pass
 
+    if thread_id and task_type:
+        try:
+            await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
+                LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="done", phase="done"))
+        except Exception:
+            pass
     yield sse({"type": ev.DONE})
 
 
@@ -1408,6 +1428,14 @@ async def delete_workflow_endpoint(task_type: str, thread_id: str):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, wf_storage.delete_workflow, task_type, thread_id)
     return {"ok": True}
+
+
+@app.get("/threads/{task_type}/{thread_id}/ledger")
+async def get_thread_ledger(task_type: str, thread_id: str):
+    """스레드의 RunLedger 감사 추적을 반환한다."""
+    loop = asyncio.get_event_loop()
+    entries = await loop.run_in_executor(None, wf_storage.load_ledger, task_type, thread_id)
+    return {"entries": entries}
 
 
 # ── 기본 템플릿 엔드포인트 ─────────────────────────────────────

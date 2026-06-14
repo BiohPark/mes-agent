@@ -113,6 +113,46 @@ function _stopSupervisorTimer() {
   _supervisorTimer = null
 }
 
+// ── RunSnapshot: localStorage 기반 새로고침 후 Supervisor 패널 복원 ──
+
+const _SNAPSHOT_FIELDS = ['goal', 'step', 'phase', 'role', 'agentState', 'evidence', 'lastError', 'contextText']
+
+function _snapshotKey(taskType, threadId) {
+  return `sv_snap_${taskType}_${threadId}`
+}
+
+function _saveSnapshot() {
+  const taskType = _currentTaskType
+  const threadId = _currentWorkflow?.thread_id
+  if (!taskType || !threadId) return
+  try {
+    const snap = { savedAt: new Date().toISOString() }
+    for (const f of _SNAPSHOT_FIELDS) snap[f] = _supervisorState[f]
+    localStorage.setItem(_snapshotKey(taskType, threadId), JSON.stringify(snap))
+  } catch {}
+}
+
+function _restoreSnapshot(taskType, threadId) {
+  if (!taskType || !threadId) return
+  try {
+    const raw = localStorage.getItem(_snapshotKey(taskType, threadId))
+    if (!raw) return
+    const snap = JSON.parse(raw)
+    for (const f of _SNAPSHOT_FIELDS) {
+      if (snap[f] !== undefined) _supervisorState[f] = snap[f]
+    }
+    // 실시간(ephemeral) 필드는 복원하지 않음
+    _supervisorState.currentTool = ''
+    _supervisorState.currentToolLabel = ''
+    _supervisorState.toolStartedAt = 0
+    _supervisorState.elapsedMs = 0
+    _supervisorState.waitingApproval = false
+    _supervisorState.approvalText = '대기 없음'
+    _supervisorState.risk = 'none'
+    renderSupervisor()
+  } catch {}
+}
+
 function _reduceSupervisor(event) {
   if (!event) return
   if (event.request_id && !event.type) {
@@ -127,6 +167,12 @@ function _reduceSupervisor(event) {
   if (!hadTimer && hasTimer) _startSupervisorTimer()
   if (hadTimer && !hasTimer) _stopSupervisorTimer()
   renderSupervisor()
+
+  // 핵심 상태 변화(done/error/agent_state/workflow_update) 후 스냅샷 저장
+  if (event.type === 'done' || event.type === 'error' ||
+      event.type === 'agent_state' || event.type === 'workflow_update') {
+    _saveSnapshot()
+  }
 }
 
 function _summarizeWorkflow(wf) {
@@ -1165,6 +1211,7 @@ async function loadWorkflowForThread(taskType, threadId) {
     const wf = await res.json()
     if (wf && wf.steps) {
       renderWorkflow(wf)
+      _restoreSnapshot(taskType, threadId)  // 새로고침 후 Supervisor 패널 복원
       _startFileWatcher(taskType, threadId)
     } else {
       clearWorkflow()

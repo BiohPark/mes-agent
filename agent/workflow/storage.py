@@ -9,6 +9,7 @@ from .model import (
     WorkflowStep,
     WorkflowDefinition,
     WorkflowRunState,
+    LedgerEntry,
     migrate_linear_to_graph,
 )
 
@@ -155,6 +156,11 @@ def _state_path(task_type: str, thread_id: str) -> Path | None:
     return (d / task_type / f"{thread_id}_state.json") if d else None
 
 
+def _ledger_path(task_type: str, thread_id: str) -> Path | None:
+    d = _workflow_dir()
+    return (d / task_type / f"{thread_id}_ledger.jsonl") if d else None
+
+
 # ── 기존 선형 모델 스토리지 (하위 호환 유지) ───────────────────────
 
 def load_workflow(task_type: str, thread_id: str) -> Workflow:
@@ -226,6 +232,7 @@ def delete_workflow(task_type: str, thread_id: str) -> None:
         _wf_path(task_type, thread_id),    # 구 .json
         _def_path(task_type, thread_id),   # 새 .md
         _state_path(task_type, thread_id), # RunState
+        _ledger_path(task_type, thread_id), # RunLedger
     ):
         if path and path.exists():
             path.unlink()
@@ -322,3 +329,35 @@ def save_run_state(task_type: str, thread_id: str, rs: WorkflowRunState) -> None
         json.dumps(rs.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+# ── RunLedger: 감사 추적 (append-only JSONL) ──────────────────
+
+def append_ledger(task_type: str, thread_id: str, entry: LedgerEntry) -> None:
+    """감사 추적 엔트리를 JSONL 파일에 추가한다. Vault 없으면 무시."""
+    path = _ledger_path(task_type, thread_id)
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+
+
+def load_ledger(task_type: str, thread_id: str) -> list[dict]:
+    """JSONL RunLedger를 로드한다. 파일 없으면 빈 리스트, 손상 줄은 건너뛴다."""
+    path = _ledger_path(task_type, thread_id)
+    if not path or not path.exists():
+        return []
+    entries = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    except Exception:
+        pass
+    return entries
