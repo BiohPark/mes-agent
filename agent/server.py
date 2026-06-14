@@ -238,6 +238,7 @@ class ChatRequest(BaseModel):
     thread_id: str = ""
     task_type: str = ""
     agent_mode: str = "auto"  # "auto" | "plan"
+    harness_mode: bool = False  # 백로그 N PoC: Executor→Reviewer 하네스 활성화
 
 
 def sse(data: dict) -> str:
@@ -311,6 +312,13 @@ _PLAN_APPROVED_MESSAGE = "[시스템] 계획이 승인되었다. 이제 계획�
 
 # 대화 간 장기기억: 과거 대화에서 사실·선호·결정을 추출/주입 (끄려면 MEMORY_ENABLED=false)
 MEMORY_ENABLED = os.environ.get("MEMORY_ENABLED", "true").lower() != "false"
+
+# 백로그 N PoC: Executor→Reviewer 2역할 하네스 (HARNESS_ENABLED=true로 활성화, 기본 off)
+HARNESS_ENABLED = os.environ.get("HARNESS_ENABLED", "false").lower() == "true"
+try:
+    _HARNESS_MAX_ROUNDS = int(os.environ.get("HARNESS_MAX_ROUNDS", "2"))
+except (TypeError, ValueError):
+    _HARNESS_MAX_ROUNDS = 2
 # 추출 타이밍: close(스레드 종료 시 1회 일괄, 비용↓) | turn(매 턴) | off(자동 추출 안 함)
 MEMORY_EXTRACT_MODE = os.environ.get("MEMORY_EXTRACT_MODE", "close").lower()
 
@@ -397,6 +405,68 @@ def _summarize_history(history: list) -> str:
         ],
     )
     return (resp.choices[0].message.content or "").strip()
+
+
+async def _reviewer_call(history: list[dict]) -> "ReviewVerdict":  # type: ignore[name-defined]
+    """Reviewer 단발 비스트리밍 LLM 호출 (I2: tools 배열 미전송)."""
+    from agent.harness.orchestrator import ReviewVerdict, parse_verdict
+    from agent.harness.roles import REVIEWER
+    client = get_client()
+    model = get_model()
+    loop = asyncio.get_event_loop()
+    recent = [
+        m for m in history[-12:]
+        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+    ]
+    try:
+        resp = await loop.run_in_executor(None, lambda: client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": REVIEWER.system_suffix}] + recent,
+            temperature=0,
+            max_tokens=300,
+        ))
+        return parse_verdict(resp.choices[0].message.content or "")
+    except Exception:
+        from agent.harness.orchestrator import ReviewVerdict
+        return ReviewVerdict(passed=True)
+
+
+async def _harness_generate(message: str, thread_id: str, task_type: str, agent_mode: str):
+    """Executor→Reviewer 하네스 래퍼. generate()를 호출해 기존 루프 재사용 (I5).
+
+    max_rounds=1이면 Reviewer 없이 단순 pass-through.
+    """
+    loop = asyncio.get_event_loop()
+    session_mgr = get_session_manager()
+
+    for round_n in range(_HARNESS_MAX_ROUNDS):
+        is_last = (round_n == _HARNESS_MAX_ROUNDS - 1)
+        exec_msg = message if round_n == 0 else f"[하네스 재시도 {round_n}: 위 검증자 피드백을 반영해 재수행하라]"
+
+        async for raw in generate(exec_msg, thread_id, task_type, agent_mode):
+            try:
+                data = json.loads(raw.removeprefix("data: ").strip())
+                if data.get("type") == ev.DONE and not is_last:
+                    break  # 중간 DONE 억제 — generate() 종료 신호, client엔 미전달
+            except Exception:
+                pass
+            yield raw
+
+        if is_last:
+            break
+
+        yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "reviewing"})
+        history = await loop.run_in_executor(None, session_mgr.get_thread_messages, task_type, thread_id)
+        verdict = await _reviewer_call(history)
+
+        if verdict.passed:
+            yield sse({"type": ev.DONE})
+            return
+
+        feedback_content = f"[검증자 피드백 라운드 {round_n + 1}]: {verdict.feedback}"
+        updated = history + [{"role": "user", "content": feedback_content}]
+        await loop.run_in_executor(None, session_mgr.save_thread_messages, task_type, thread_id, updated)
+        yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "retrying", "feedback": verdict.feedback})
 
 
 async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto",
@@ -991,8 +1061,12 @@ async def switch_model(name: str):
 
 @app.post("/chat")
 async def chat(body: ChatRequest):
+    if body.harness_mode and HARNESS_ENABLED and body.thread_id and body.task_type:
+        gen = _harness_generate(body.message, body.thread_id, body.task_type, body.agent_mode)
+    else:
+        gen = generate(body.message, body.thread_id, body.task_type, body.agent_mode)
     return StreamingResponse(
-        generate(body.message, body.thread_id, body.task_type, body.agent_mode),
+        gen,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
