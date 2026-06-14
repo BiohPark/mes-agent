@@ -50,14 +50,14 @@ files:
     - agent/workflow/model.py
     - package.json
 gates:
-  - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/harness/run-plan-critics.ps1 -Smoke
+  - powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
   - git diff --check
   - 수동 DOM/reducer 검증 기준을 작업 결과에 명시
 test_dod:
   unit: []
   integration: []
   smoke:
-    - scripts/harness/run-plan-critics.ps1 -Smoke
+    - powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
   invariant:
     - 새 backend message history 조작 없음
     - tool-pair invariant 영향 없음

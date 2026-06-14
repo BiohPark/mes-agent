@@ -24,20 +24,26 @@
 - `cmd /c codex --version` → `codex-cli 0.139.0`
 - `cmd /c codex doctor` → 실패 없음
 - `cmd /c claude auth status --text` → Claude Pro 로그인 확인
-- 승인된 샌드박스 외부 실행에서 `.\scripts\harness\run-plan-critics.ps1 -Smoke` →
+- `claude --version` → `2.1.168`
+- Claude Code 전역 플러그인 `ecc@ecc`, `ralph-loop@claude-plugins-official` 활성화 확인
+- ECC project-local rules `.claude/rules/ecc/{common,python,typescript,web}` 표준화
+- 승인된 샌드박스 외부 실행에서 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke` →
   - `CODEX_EXEC_OK`
-  - `CLAUDE_EXEC_OK`
+  - `CLAUDE_EXEC_OK` (`--safe-mode` 제거 후)
 - `docs/harness/2026-06-13-plan-critic-readiness.md`
+- `docs/harness/2026-06-14-ecc-rules-readiness.md`
 
 남은 일:
 
 - Codex Desktop 관리 셸 안에서는 Claude/Codex CLI agent 호출이 네트워크/파일 제한에 걸릴 수 있으므로, 실제 critic/worker 실행은 승인된 샌드박스 외부 실행으로 수행
+- 이 PC에서는 PowerShell 실행 정책 때문에 `*.ps1` 직접 실행이 막힐 수 있으므로 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`로 실행
 - Claude Code 긴 Read critic은 타임아웃될 수 있으므로 짧은 Risk/Test Critic prompt 또는 Claude worker 작업에 우선 사용
+- ECC full/manual installer는 사용하지 않고 plugin path + project-local rules만 유지
 
 Gate:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -Smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
 ```
 
 ## Phase 1 — 계획 품질 루프 운영화
@@ -176,8 +182,9 @@ Gate:
 
 ## 현재 최우선 Next Actions
 
-1. `.\scripts\harness\run-plan-critics.ps1 -Smoke`는 계속 통과 상태로 유지한다.
-2. Claude Code는 `--bare` 없이 승인된 샌드박스 외부 실행으로 호출한다.
-3. `docs/harness/cards/supervisor-phase1-reducer.md` 구현 결과를 Electron에서 수동 확인한다.
-4. Supervisor Console Phase 1의 DOM/reducer 자동 테스트 도입 여부를 결정한다.
-5. Claude Code를 우선 사용해 다음 worker/critic 단계를 수행한다.
+1. P0 하네스 정합화 변경(`run-plan-critics.ps1`, ECC rules, 관련 문서)을 하나의 커밋으로 닫는다.
+2. `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`는 계속 통과 상태로 유지한다.
+3. Claude Code는 `--bare`와 `--safe-mode` 없이 승인된 샌드박스 외부 실행으로 호출한다.
+4. `docs/harness/cards/supervisor-phase1-reducer.md` 구현 결과를 Electron에서 수동 확인한다.
+5. Supervisor Console Phase 1의 DOM/reducer 자동 테스트 도입 여부를 결정한다.
+6. Claude Code/Ralph-loop는 Task T처럼 반복 테스트가 명확한 worker 카드부터 사용한다.

@@ -14,6 +14,9 @@ Usage:
   .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
   .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
 
+  If PowerShell execution policy blocks direct script execution:
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
+
 Purpose:
   Runs local Codex CLI and Claude Code as read-only critics for the mes-agent
   development harness plans.
@@ -53,7 +56,7 @@ if ($Smoke) {
 
     if (-not $SkipClaude) {
         Write-Host "[harness] Running Claude Code smoke check..."
-        $claudeSmoke = (claude -p "Reply exactly CLAUDE_EXEC_OK" --safe-mode --permission-mode plan --tools "" --no-session-persistence)
+        $claudeSmoke = (claude -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence)
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Claude Code smoke command failed with exit code $LASTEXITCODE"
             exit $LASTEXITCODE
@@ -127,7 +130,6 @@ if (-not $SkipClaude) {
     $claudeErr = Join-Path $OutputDir "$stamp-claude-risk-test-critic.err.txt"
     $claudeArgs = @(
         "-p", $claudePromptArg,
-        "--safe-mode",
         "--permission-mode", "plan",
         "--no-session-persistence",
         "--max-budget-usd", "0.50"

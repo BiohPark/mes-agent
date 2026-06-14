@@ -35,3 +35,4 @@
 - root의 `REFACTOR_BRIEF.md`는 호환용 pointer만 유지한다.
 - 하네스 관련 기록과 작업 카드는 `docs/harness/` 아래로 모았다.
 - 실행 스크립트는 코드성 자산이므로 `scripts/harness/`에 둔다.
+- ECC plugin/rules 정합성 기록은 `docs/harness/2026-06-14-ecc-rules-readiness.md`에 둔다.

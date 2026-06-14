@@ -57,6 +57,8 @@ Claude Code가 맡기 좋은 일:
 - `.claude/skills`, `.claude/agents`, hooks 기반 완료 게이트
 - ECC 패턴을 적용한 개발 루프 강화
 
+현재 표준은 Claude Code 전역 `ecc@ecc` 플러그인 + 프로젝트 로컬 `.claude/rules/ecc/{common,python,typescript,web}` 룰셋이다. Claude Code 플러그인은 rules를 자동 배포하지 않으므로, 이 repo의 `.claude/rules/ecc`를 표준 개발환경 일부로 유지한다.
+
 ### 보조 구현/검토 엔진: Codex worktree thread
 
 Codex Desktop 안에서도 별도 thread와 worktree를 만들 수 있다.
@@ -75,7 +77,7 @@ Codex CLI는 Codex Desktop 안에서 **중첩 read-only critic** 또는 **격리
 검증된 기본 명령:
 
 ```powershell
-cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "Do not edit files. Reply with exactly: CODEX_EXEC_OK"
+cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "Do not edit files. Reply with exactly: CODEX_EXEC_OK"
 ```
 
 용도별 기본값:
@@ -92,6 +94,7 @@ cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --eph
 - 따라서 민감한 계획/사내 문서 기반 critic 실행은 사용자 명시 승인 후에만 한다.
 - 기본 config를 그대로 로드하면 플러그인/MCP/훅 경고가 많으므로, critic 용도는 `--ignore-user-config --ignore-rules --ephemeral`을 기본으로 한다.
 - Claude Code critic은 `claude -p ... --permission-mode plan --tools "Read" --add-dir <repo>` 형태를 쓴다. Claude Pro/OAuth 로그인 환경에서는 `--bare`를 쓰지 않는다.
+- Claude Code 2.1.168 기준 `--safe-mode`는 없으므로 쓰지 않는다. 안전한 smoke는 `claude -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence` 형태다.
 - Codex Desktop 관리 셸의 네트워크/파일 샌드박스에서 CLI agent 호출이 실패하면, 승인된 샌드박스 외부 실행으로 smoke/critic을 수행한다.
 
 ### 조사/리뷰 엔진: sub-agent
@@ -140,19 +143,22 @@ Everything Claude Code v2 같은 ECC 계열 도구는 추천한다. 다만 **Cod
 
 적용 원칙:
 
-1. ECC를 통째로 반입하지 않는다.
-2. 기능을 분류한다.
-3. Claude Code 전용인 것은 `.claude/`에 둔다.
-4. Codex에도 유용한 개념은 `.codex/`, sub-agent, thread/worktree 운영법으로 미러링한다.
-5. 공통 계약은 `AGENTS.md`, `CLAUDE.md`, `docs/specs/`, `docs/TRANSFORMATION_PLAN.md`, `docs/REFACTOR_BRIEF.md`에 둔다.
+1. Claude Code에서는 전역 `ecc@ecc` 플러그인과 project-local ECC rules를 함께 쓴다.
+2. ECC full/manual installer는 실행하지 않는다. plugin path 위에 full installer를 겹치면 skills/hooks/runtime 동작이 중복될 수 있다.
+3. Claude Code plugins는 rules를 자동 배포하지 않으므로 `.claude/rules/ecc/{common,python,typescript,web}`를 repo 표준으로 추적한다.
+4. 기능을 분류한다.
+5. Claude Code 전용인 것은 `.claude/`에 둔다.
+6. Codex에도 유용한 개념은 `.codex/`, sub-agent, thread/worktree 운영법으로 미러링한다.
+7. 공통 계약은 `AGENTS.md`, `CLAUDE.md`, `docs/specs/`, `docs/TRANSFORMATION_PLAN.md`, `docs/REFACTOR_BRIEF.md`에 둔다.
 
 분류 기준:
 
 | ECC 요소 | 적용 위치 | 판단 |
 |----------|-----------|------|
-| hooks | `.claude/settings.json`, 가능하면 Codex hooks 대응 | 테스트/리뷰 자동화에 유용 |
-| skills | `.claude/skills`, `.agents/skills`, Codex skill 대응 | 반복 작업 절차화에 유용 |
+| hooks | Claude Code plugin/hook 경로 + `.claude/settings.json`, 가능하면 Codex hooks 대응 | 테스트/리뷰 자동화에 유용 |
+| skills | `ecc@ecc` plugin + `.claude/skills`, `.agents/skills`, Codex skill 대응 | 반복 작업 절차화에 유용 |
 | subagents | `.claude/agents`, Codex sub-agent 역할 정의 | 리뷰/조사/도메인 분리에 유용 |
+| rules | `.claude/rules/ecc/{common,python,typescript,web}` | Claude Code가 항상 참고할 프로젝트 표준 규칙 |
 | slash commands | Claude Code/Ralph 지시 템플릿 | 작업 카드 실행에 유용 |
 | prompt packs | 스펙/가이드로 재작성 | 원문 직접 복사 금지 |
 | 외부 의존 도구 | 별도 검토 | 폐쇄망 반입 비용 확인 필요 |

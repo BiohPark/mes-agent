@@ -25,13 +25,14 @@
 - [x] `.claude/settings.json` 생성 — 권한 기본값(test/git), Stop·PostToolUse 훅
 - [x] `.claude/agents/code-reviewer.md` — CLAUDE.md 규칙·L1 불변식·보안·툴 스키마 검토 서브에이전트
 - [x] `.claude/skills/` — tdd·add-tool·loop-audit 3종
+- [x] `.claude/rules/ecc/{common,python,typescript,web}` — Claude Code `ecc@ecc` 플러그인용 project-local rules. 플러그인은 rules를 자동 배포하지 않으므로 repo 표준으로 추적
 - [x] `AGENTS.md` 루트 — 이미 존재 확인 (기존 파일 유지)
-- 참고: ECC(everything-claude-code)는 전체 설치 대신 **선별 차용**
+- 참고: ECC(everything-claude-code)는 전역 plugin path + project-local rules 방식으로 **선별 차용**한다. full/manual installer는 중복 skills/hooks 위험 때문에 사용하지 않는다.
 
 ### 1.5단계: Codex CLI critic 표면 정상화 ✅ 2026-06-13 확인
 - [x] `cmd /c codex --version` → `codex-cli 0.139.0`
 - [x] `cmd /c codex doctor` → 설치·인증·상태 DB·네트워크 정상, 경고는 `git --version` 탐지와 mixed auth 신호
-- [x] read-only exec 기본형 확인: `cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "..."`
+- [x] read-only exec 기본형 확인: `cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "..."`
 - [x] critic 실행 스크립트 추가: `scripts/harness/run-plan-critics.ps1`
 - [x] 하네스 운영 인덱스와 작업 카드 템플릿 추가: `docs/harness/README.md`, `docs/harness/task-card-template.md`
 - [x] 우선순위 기반 Phase 보고서 추가: `docs/harness/phase-report.md`

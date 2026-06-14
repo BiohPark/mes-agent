@@ -31,6 +31,7 @@
 - 이번 스펙은 제품 내부 multi-agent 런타임을 구현하지 않는다.
 - 제품 내부 역할 기반 실행 루프는 `docs/specs/product-agent-harness.md`에서 별도로 다룬다.
 - ECC, OpenHands, OpenClaw를 통째로 설치하거나 소스코드를 반입하지 않는다.
+- ECC는 Claude Code 전역 `ecc@ecc` plugin path를 쓰고, rules만 project-local `.claude/rules/ecc`에 둔다. full/manual installer는 중복 skills/hooks 위험 때문에 쓰지 않는다.
 - CI/CD, GitHub PR 자동화 전체를 한 번에 완성하지 않는다.
 - 회사 폐쇄망 PC에 새 개발 도구 설치를 전제로 하지 않는다.
 
@@ -42,7 +43,7 @@
 | Codex | 설계 정리, 백로그 분해, 리뷰, 작업 흐름 복구, 보조 구현 |
 | Codex CLI | read-only critic, 격리 worktree worker, CLI 실행성 진단 |
 | Claude Code | worktree 안에서 주 구현, 테스트 작성, 로컬 검증 |
-| Ralph loop | Claude Code 반복 실행, 종료 조건까지 자동 재시도 |
+| Ralph loop | Claude Code 반복 실행, 종료 조건까지 자동 재시도. P0 정리에는 쓰지 않고 Task T 같은 반복 구현 카드부터 사용 |
 | Implementation Critic | 구현 가능성, 파일 범위, 단계 분해, 의존성 위험 검토 |
 | Risk/Test Critic | L1 루프 불변식, 보안 게이트, 테스트, 문서 갱신, 폐쇄망 제약 검토 |
 | code-reviewer | L1 루프 불변식, 보안 게이트, 툴 스키마, 문서 갱신 누락 검토 |
@@ -168,10 +169,10 @@ docs/specs/task-types-dynamic.md 명세대로 구현하라.
 Codex CLI worker를 쓸 때는 별도 worktree에서만 `workspace-write`를 허용한다. 계획 비평이나 조사에는 다음 read-only 형식을 기본으로 한다.
 
 ```powershell
-cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "비평 프롬프트"
+cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "비평 프롬프트"
 ```
 
-PowerShell에서 `codex` 직접 호출이 실행 정책에 막히면 `cmd /c codex`를 사용한다.
+PowerShell에서 `codex` 직접 호출이 실행 정책에 막히면 `cmd /c codex`를 사용한다. 이 PC에서 `.ps1` 실행이 정책에 막히면 `powershell -NoProfile -ExecutionPolicy Bypass -File ...` 형태로 하네스 스크립트를 실행한다.
 
 ### 5. 리뷰
 
@@ -205,6 +206,8 @@ ECC, OpenHands, OpenClaw 등은 다음 순서로만 반영한다.
 4. `docs/specs/`에 mes-agent용 스펙을 작성한다.
 5. 테스트를 먼저 정의한다.
 6. 우리 코드 스타일과 폐쇄망 제약에 맞춰 구현한다.
+
+ECC 운영 경로는 예외적으로 이미 정한다: Claude Code 전역 plugin `ecc@ecc` + repo-local `.claude/rules/ecc/{common,python,typescript,web}`. Plugin이 rules를 자동 배포하지 않기 때문에 rules는 repo에 추적한다. `install.ps1 --profile full` 또는 `npx ecc-install --profile full` 같은 full/manual install은 사용하지 않는다.
 
 ### 1차 차용 후보
 

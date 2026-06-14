@@ -6,9 +6,14 @@
 
 - Codex CLI는 로컬에서 정상 실행된다.
 - Windows에서는 `codex` 직접 호출보다 `cmd /c codex ...`가 안정적이다.
+- 이 PC에서는 PowerShell 실행 정책 때문에 `*.ps1` 직접 실행이 막힐 수 있으므로 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`를 표준 실행형으로 쓴다.
 - 계획 critic은 read-only로, 구현 worker는 별도 worktree에서 workspace-write로만 실행한다.
 - repo 문서 기반 critic 실행은 외부 모델 제공자에게 내용이 전송될 수 있으므로 `-AllowExternalSend` 승인 게이트를 둔다.
 - Claude Code CLI 인증은 정상이며, 이 Codex 관리 셸에서는 네트워크 제한 때문에 승인된 샌드박스 외부 실행으로 smoke/critic을 수행한다.
+- Claude Code 2.1.168에서는 `--safe-mode`가 없으므로 `--permission-mode plan --tools "" --no-session-persistence` 조합을 smoke 기본형으로 쓴다.
+- Claude Code 전역 설정에서 `ecc@ecc`와 `ralph-loop@claude-plugins-official`이 활성화되어 있다.
+- ECC rules는 플러그인이 자동 배포하지 않으므로 이 repo의 `.claude/rules/ecc/{common,python,typescript,web}`를 project-local 표준으로 추적한다.
+- ECC full/manual installer는 실행하지 않는다. plugin path에 full install을 겹치면 skills/hooks가 중복될 수 있다.
 - Codex 토큰이 낮고 Claude 토큰이 상대적으로 여유 있으면 Claude Code를 critic/worker 우선 표면으로 쓰고, Codex CLI는 smoke 또는 보조 critic으로 제한한다.
 - Claude 긴 파일 Read critic은 타임아웃될 수 있으므로 짧은 Risk/Test Critic prompt 또는 worker 작업에 우선 사용한다.
 
@@ -17,19 +22,19 @@
 Codex CLI 최소 실행 확인:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -Smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
 ```
 
 외부 전송이 승인된 경우 실제 critic 라운드:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
 ```
 
 Claude Code 없이 Codex CLI critic만 먼저 실행:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
 ```
 
 ## 문서 지도
@@ -44,6 +49,7 @@ Claude Code 없이 Codex CLI critic만 먼저 실행:
 | `docs/specs/supervisor-console.md` | 제품 내부 하네스 감독 UX |
 | `docs/TRANSFORMATION_PLAN.md` | 트랙별 마스터 플랜 |
 | `docs/harness/2026-06-13-plan-critic-readiness.md` | Codex CLI/Claude Code critic 준비 점검 |
+| `docs/harness/2026-06-14-ecc-rules-readiness.md` | ECC plugin/rules 정합성 점검 |
 | `docs/harness/2026-06-13-existing-plan-review.md` | 기존 계획 수동 critic 리뷰 |
 | `docs/harness/2026-06-13-critic-round-1.md` | 첫 외부 critic 라운드 통합 결과 |
 | `docs/harness/phase-report.md` | 우선순위 기반 Phase 보고서 |

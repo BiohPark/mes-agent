@@ -6,19 +6,22 @@
   - `cmd /c codex --version` → `codex-cli 0.139.0`
   - `cmd /c codex doctor` → 설치, 인증, 상태 DB, 네트워크, sandbox 진단은 실패 없음
   - read-only exec smoke:
-    `cmd /c codex -a never exec -C D:\GithubRepositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "Do not edit files. Reply with exactly: CODEX_EXEC_OK"`
+    `cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemeral --ignore-user-config --ignore-rules "Do not edit files. Reply with exactly: CODEX_EXEC_OK"`
 - PowerShell에서 `codex` 직접 호출은 `codex.ps1` 실행 정책이나 WindowsApps shim에 걸릴 수 있으므로 `cmd /c codex ...`를 표준형으로 쓴다.
+- 이 PC에서는 `.\scripts\harness\run-plan-critics.ps1 -Smoke` 직접 실행이 PowerShell 실행 정책에 막히므로 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`를 표준형으로 쓴다.
 - 기본 Codex config를 로드하면 플러그인, MCP, 훅 경고가 많다. critic 용도는 `--ignore-user-config --ignore-rules --ephemeral`이 더 적합하다.
 - `scripts/harness/run-plan-critics.ps1`를 추가했다.
   - `-Help`는 안전하게 도움말만 출력한다.
   - `-Smoke`는 repo 파일을 읽지 않고 Codex CLI/Claude Code 최소 동작만 확인한다.
   - 승인된 샌드박스 외부 실행에서 `-Smoke` 검증 결과:
     - `[harness] Codex CLI smoke: CODEX_EXEC_OK`
-    - `[harness] Claude Code smoke: CLAUDE_EXEC_OK`
+    - `[harness] Claude Code smoke: CLAUDE_EXEC_OK` (`--safe-mode` 제거 후)
   - `-AllowExternalSend`가 없으면 repo 문서 전송을 거부한다.
 - Claude Code CLI 인증은 정상이다.
   - `cmd /c claude auth status --text` → Claude Pro 계정 로그인 확인
+  - `claude --version` → `2.1.168`
   - `--bare`는 OAuth/keychain을 읽지 않으므로 이 환경에서는 쓰지 않는다.
+  - Claude Code 2.1.168에서는 `--safe-mode`가 제거되어, smoke/critic은 `--permission-mode plan --tools "" --no-session-persistence` 조합을 쓴다.
   - Claude Code 모델 호출은 현재 Codex 작업 셸의 네트워크 샌드박스 밖에서 실행해야 한다.
 
 ## 차단/주의
@@ -27,6 +30,7 @@
 - Codex CLI Implementation Critic 결과는 정상 생성됐다.
 - Claude Code Risk/Test Critic은 긴 파일 Read 방식에서 타임아웃되어, 짧은 승인된 repo 계약 요약 프롬프트로 fallback 실행했다.
 - `scripts/harness/run-plan-critics.ps1`는 Claude critic이 120초를 넘기면 timeout note를 결과 파일에 남기고 종료하도록 보호한다.
+- Codex Desktop sandbox 내부 smoke는 Codex 네트워크 단계에서 실패할 수 있다. 같은 명령은 승인된 샌드박스 외부 실행에서 통과한다.
 
 ## 기존 계획 문서에 반영한 개선
 
@@ -51,7 +55,7 @@
 승인된 샌드박스 외부 실행으로 critic 라운드를 수행한다.
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend
 ```
 
 Claude Code 토큰이 더 여유 있을 때는 Claude를 우선 critic/worker로 쓰고, Codex CLI는 smoke 또는 Implementation Critic 보조로 제한한다.
@@ -59,13 +63,13 @@ Claude Code 토큰이 더 여유 있을 때는 Claude를 우선 critic/worker로
 Codex CLI 최소 동작만 확인하려면:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -Smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke
 ```
 
 Claude Code 없이 먼저 Codex CLI만 검증하려면:
 
 ```powershell
-.\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -AllowExternalSend -SkipClaude
 ```
 
 결과는 `C:\tmp\mes-agent-harness-reviews`에 저장한다.

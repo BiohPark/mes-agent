@@ -35,6 +35,7 @@
 
 | 항목 | 파일 | 비고 |
 |------|------|------|
+| 개발 하네스(ECC/Claude/Ralph) ✅ | `.claude/` + `.agents/` + `.codex/` + `docs/harness/` | Claude Code 전역 `ecc@ecc` plugin + repo-local `.claude/rules/ecc/{common,python,typescript,web}`를 표준으로 사용. ECC full/manual installer는 중복 skills/hooks 위험 때문에 금지. `ralph-loop` plugin은 Task T처럼 반복 테스트가 명확한 worker 카드부터 사용. 상세: `docs/harness/2026-06-14-ecc-rules-readiness.md` |
 | 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 268개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |

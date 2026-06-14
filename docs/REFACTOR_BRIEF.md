@@ -70,7 +70,7 @@
 
 ## 5. 현재 우선순위 (상세는 `docs/TRANSFORMATION_PLAN.md`)
 
-- **트랙 1 — 개발 하네스**: `.claude/`(설정·훅·`code-reviewer` 서브에이전트·`tdd`/`add-tool`/`loop-audit` 스킬) 도입 ✅. Ralph 반복은 설치된 `ralph-loop` 플러그인(세션 내) 우선, 헤드리스 `scripts/ralph/`는 무인 자동 필요 시.
+- **트랙 1 — 개발 하네스**: `.claude/`(설정·훅·`code-reviewer` 서브에이전트·`tdd`/`add-tool`/`loop-audit` 스킬) 도입 ✅. Claude Code 전역 `ecc@ecc` plugin + repo-local `.claude/rules/ecc/{common,python,typescript,web}`를 표준으로 사용한다. Ralph 반복은 설치된 `ralph-loop` 플러그인(세션 내) 우선, 헤드리스 `scripts/ralph/`는 무인 자동 필요 시.
 - **트랙 2 — 상용급 역설계**: 기능을 `docs/specs/<기능>.md`로 명세(문제/매핑/수용 기준) → 작은 단위로 분해 → TDD 루프가 구현.
 - **트랙 3 — 단기 과제**: Tesseract 제거(접근성 트리·멀티모달 전환), Knox 메신저 챗봇(설계만).
 
