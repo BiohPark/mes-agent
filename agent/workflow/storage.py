@@ -10,6 +10,7 @@ from .model import (
     WorkflowDefinition,
     WorkflowRunState,
     LedgerEntry,
+    RunLedgerEvent,
     migrate_linear_to_graph,
 )
 
@@ -159,6 +160,18 @@ def _state_path(task_type: str, thread_id: str) -> Path | None:
 def _ledger_path(task_type: str, thread_id: str) -> Path | None:
     d = _workflow_dir()
     return (d / task_type / f"{thread_id}_ledger.jsonl") if d else None
+
+
+def _run_ledger_dir() -> Path | None:
+    vault = os.environ.get("OBSIDIAN_VAULT_PATH", "").strip()
+    if not vault:
+        return None
+    return Path(vault) / "agent" / "run-ledgers"
+
+
+def _run_ledger_path(task_type: str, thread_id: str, request_id: str) -> Path | None:
+    d = _run_ledger_dir()
+    return (d / task_type / thread_id / f"{request_id}.jsonl") if d else None
 
 
 # ── 기존 선형 모델 스토리지 (하위 호환 유지) ───────────────────────
@@ -358,6 +371,103 @@ def load_ledger(task_type: str, thread_id: str) -> list[dict]:
                 entries.append(json.loads(line))
             except json.JSONDecodeError:
                 pass
+    except Exception:
+        pass
+    return entries
+
+
+# ── Structured RunLedger: request-scoped append-only JSONL ───────────────────
+
+_SENSITIVE_KEYS = {
+    "api_key", "apikey", "authorization", "cookie", "password", "secret", "token",
+    "access_token", "refresh_token", "client_secret",
+}
+
+
+def _redact_value(value):
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if str(key).lower() in _SENSITIVE_KEYS:
+                out[key] = "[redacted]"
+            else:
+                out[key] = _redact_value(item)
+        return out
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, str):
+        lower = value.lower()
+        if "base64," in lower or len(value) > 1200:
+            return "[omitted]"
+    return value
+
+
+def summarize_for_ledger(value, limit: int = 500) -> str:
+    """Return a short, redacted text summary safe for RunLedger storage."""
+    redacted = _redact_value(value)
+    if isinstance(redacted, str):
+        text = redacted
+    else:
+        try:
+            text = json.dumps(redacted, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            text = str(redacted)
+    text = text.replace("\r", " ").replace("\n", " ")
+    if "base64," in text.lower():
+        text = "[omitted]"
+    if len(text) > limit:
+        return text[: max(0, limit - 1)] + "…"
+    return text
+
+
+def append_run_ledger(event: RunLedgerEvent) -> None:
+    """Append a structured RunLedger event. Storage failure must not break runs."""
+    path = _run_ledger_path(event.task_type, event.thread_id, event.request_id)
+    if not path:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+    except Exception:
+        return
+
+
+def _load_run_ledger_file(path: Path) -> list[dict]:
+    entries = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    except Exception:
+        pass
+    return entries
+
+
+def load_run_ledger(task_type: str, thread_id: str, request_id: str | None = None) -> list[dict]:
+    """Load structured RunLedger entries for one request or an entire thread."""
+    if request_id:
+        path = _run_ledger_path(task_type, thread_id, request_id)
+        if not path or not path.exists():
+            return []
+        return _load_run_ledger_file(path)
+
+    root = _run_ledger_dir()
+    if not root:
+        return []
+    thread_dir = root / task_type / thread_id
+    if not thread_dir.exists():
+        return []
+
+    entries = []
+    try:
+        for path in sorted(thread_dir.glob("*.jsonl")):
+            entries.extend(_load_run_ledger_file(path))
     except Exception:
         pass
     return entries

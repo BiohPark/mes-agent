@@ -3,8 +3,16 @@
 import json
 import pytest
 from pathlib import Path
-from agent.workflow.model import LedgerEntry
-from agent.workflow.storage import append_ledger, load_ledger, _ledger_path
+from agent.workflow.model import LedgerEntry, RunLedgerEvent
+from agent.workflow.storage import (
+    append_ledger,
+    append_run_ledger,
+    load_ledger,
+    load_run_ledger,
+    summarize_for_ledger,
+    _ledger_path,
+    _run_ledger_path,
+)
 
 
 # ── 픽스처 ──────────────────────────────────────────────────
@@ -90,3 +98,77 @@ class TestLedger:
         assert len(entries) == 2
         assert entries[0]["event"] == "ok"
         assert entries[1]["event"] == "ok2"
+
+
+class TestRunLedgerEvent:
+    def test_structured_event_round_trip_defaults(self):
+        event = RunLedgerEvent(
+            request_id="req1",
+            thread_id="thread1",
+            task_type="general",
+            event_type="run_started",
+            phase="planning",
+            role="planner",
+            summary="started",
+        )
+
+        data = event.to_dict()
+        restored = RunLedgerEvent.from_dict(data)
+
+        assert data["event_id"]
+        assert data["timestamp"]
+        assert restored.event_type == "run_started"
+        assert restored.details == {}
+        assert restored.provenance == {}
+
+    def test_append_structured_events_request_path(self, vault):
+        first = RunLedgerEvent(
+            request_id="req2", thread_id="thread2", task_type="general",
+            event_type="run_started", phase="planning", role="planner",
+        )
+        second = RunLedgerEvent(
+            request_id="req2", thread_id="thread2", task_type="general",
+            event_type="run_finished", phase="done", role="orchestrator",
+        )
+
+        append_run_ledger(first)
+        append_run_ledger(second)
+
+        path = _run_ledger_path("general", "thread2", "req2")
+        assert path and path.exists()
+        entries = load_run_ledger("general", "thread2", "req2")
+        assert [e["event_type"] for e in entries] == ["run_started", "run_finished"]
+
+    def test_load_thread_structured_events_skips_corrupt_lines(self, vault):
+        path = _run_ledger_path("general", "thread3", "req3")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            '{"event_type":"run_started","request_id":"req3"}\nBAD\n'
+            '{"event_type":"run_finished","request_id":"req3"}\n',
+            encoding="utf-8",
+        )
+
+        entries = load_run_ledger("general", "thread3")
+
+        assert [e["event_type"] for e in entries] == ["run_started", "run_finished"]
+
+    def test_structured_writer_no_vault_is_noop(self, monkeypatch):
+        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", "")
+        append_run_ledger(RunLedgerEvent(
+            request_id="req4", thread_id="thread4", task_type="general",
+            event_type="run_started", phase="planning", role="planner",
+        ))
+
+    def test_summarize_for_ledger_redacts_sensitive_and_large_payloads(self):
+        text = summarize_for_ledger({
+            "token": "secret-token",
+            "password": "secret-password",
+            "image": "data:image/png;base64," + ("A" * 300),
+            "nested": {"api_key": "secret-key"},
+        }, limit=160)
+
+        assert "secret-token" not in text
+        assert "secret-password" not in text
+        assert "secret-key" not in text
+        assert "base64" not in text
+        assert len(text) <= 160

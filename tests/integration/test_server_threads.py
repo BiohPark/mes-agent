@@ -51,6 +51,26 @@ class TestThreadMessages:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
+    async def test_legacy_control_messages_hidden_from_display(self, client):
+        from agent.obsidian_session import get_session_manager
+
+        create = await client.post(f"/threads/{TASK}", json={})
+        tid = create.json()["thread_id"]
+        get_session_manager().save_thread_messages(TASK, tid, [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "[시스템] 계획이 승인되었다."},
+            {"role": "user", "content": "[사용자 끼어들기] 내부 큐"},
+            {"role": "user", "content": "실제 질문"},
+            {"role": "assistant", "content": "실제 답"},
+        ])
+
+        resp = await client.get(f"/threads/{TASK}/{tid}/messages")
+        assert resp.status_code == 200
+        assert resp.json() == [
+            {"role": "user", "content": "실제 질문"},
+            {"role": "assistant", "content": "실제 답"},
+        ]
+
 
 class TestArchiveAndRestore:
     async def test_archive_thread(self, client):

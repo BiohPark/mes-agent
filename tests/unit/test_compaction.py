@@ -65,14 +65,24 @@ def test_no_compaction_when_body_small():
 def test_preserves_leading_system_and_recent():
     msgs = [_sys("S")] + [_user(f"u{i}") for i in range(10)]
     out = compact_messages(msgs, keep_recent=3, summarize_fn=_fake_summary)
-    # 선두 system 보존
-    assert out[0] == _sys("S")
-    # 요약 메시지 1개 삽입
-    assert out[1]["role"] == "system" and out[1]["content"].startswith(SUMMARY_PREFIX)
+    # 선두 system에 요약을 병합하고, 중간 system 메시지를 만들지 않는다.
+    assert out[0]["role"] == "system"
+    assert out[0]["content"].startswith("S")
+    assert SUMMARY_PREFIX in out[0]["content"]
+    assert all(m.get("role") != "system" for m in out[1:])
     # 마지막 3개 보존
     assert out[-3:] == [_user("u7"), _user("u8"), _user("u9")]
     # 전체 길이 감소
     assert len(out) < len(msgs)
+
+
+def test_compaction_without_leading_system_does_not_insert_late_system():
+    msgs = [_user(f"u{i}") for i in range(6)]
+    out = compact_messages(msgs, keep_recent=2, summarize_fn=_fake_summary)
+    assert out[0]["role"] == "system"
+    assert out[0]["content"].startswith(SUMMARY_PREFIX)
+    assert all(m.get("role") != "system" for m in out[1:])
+    assert out[-2:] == [_user("u4"), _user("u5")]
 
 
 def test_summarize_receives_middle_only():

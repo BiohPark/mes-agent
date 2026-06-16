@@ -33,13 +33,14 @@ from agent.config import get_context_window
 from agent.tools import TOOLS, TOOL_LABELS, run_tool, select_tools, tool_risk_hint
 from agent.tools._safety import classify_risk, risk_confirm_message, command_excerpt
 from agent.tools.vision import parse_capture_envelope, build_capture_message
-from agent.core.compaction import compact_messages, prune_images
+from agent.core.compaction import SUMMARY_PREFIX, compact_messages, prune_images
+from agent.core.transcript import ephemeral_user_message, strip_ephemeral_metadata
 from agent.core.tokens import estimate_message_tokens
 from agent.core.overflow import is_context_overflow, is_recoverable
 from agent.memory import MemoryStore
 from agent.obsidian_session import get_session_manager, get_task_configs
 from agent.workflow import storage as wf_storage
-from agent.workflow.model import WorkflowRunState, LedgerEntry
+from agent.workflow.model import WorkflowRunState, LedgerEntry, RunLedgerEvent
 from agent.core import events as ev
 
 app = FastAPI()
@@ -275,10 +276,13 @@ _AUTONOMOUS_INSTRUCTION = (
 )
 
 _MAX_STEPS = 40
-_CONTEXT_MAX_TOKENS = 128_000
+_CONTEXT_MAX_TOKENS = 100_000
 
 # G1 컨텍스트 compaction: 임계 비율·보존 메시지 수·최대 압축 횟수
-COMPACT_RATIO = 0.8
+try:
+    COMPACT_RATIO = float(os.environ.get("COMPACT_RATIO", "0.7"))
+except (TypeError, ValueError):
+    COMPACT_RATIO = 0.7
 COMPACT_KEEP_RECENT = 8
 MAX_COMPACT = 3
 
@@ -388,6 +392,23 @@ def _history_to_text(history: list) -> str:
     return "\n".join(lines)
 
 
+def _latest_compaction_summary(before: list, after: list) -> str:
+    if not after:
+        return ""
+    first = after[0]
+    if not isinstance(first, dict) or first.get("role") != "system":
+        return ""
+    after_content = str(first.get("content", ""))
+    if SUMMARY_PREFIX not in after_content:
+        return ""
+    before_content = ""
+    if before and isinstance(before[0], dict) and before[0].get("role") == "system":
+        before_content = str(before[0].get("content", ""))
+    if after_content == before_content:
+        return ""
+    return after_content[after_content.find(SUMMARY_PREFIX):].strip()
+
+
 def _summarize_history(history: list) -> str:
     """오래된 대화 구간을 진행/결정/미해결 중심으로 요약한다(비스트리밍 1회 호출).
 
@@ -483,13 +504,52 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
     _stop_flags[request_id] = False
     _pending_messages[request_id] = []  # 백로그 Q: 끼어들기 큐 활성화
     yield sse({ev.REQUEST_ID: request_id})
+    ledger_phase = "planning"
+    ledger_role = "planner"
+    ledger_finished = False
+
+    async def _audit(
+        event_type: str,
+        phase: str | None = None,
+        role: str | None = None,
+        summary: str = "",
+        details: dict | None = None,
+        provenance: dict | None = None,
+    ) -> None:
+        if not (thread_id and task_type):
+            return
+        event = RunLedgerEvent(
+            request_id=request_id,
+            thread_id=thread_id,
+            task_type=task_type,
+            event_type=event_type,
+            phase=phase or ledger_phase,
+            role=role or ledger_role,
+            summary=wf_storage.summarize_for_ledger(summary, 500),
+            details=details or {},
+            provenance=provenance or {},
+        )
+        await loop.run_in_executor(None, wf_storage.append_run_ledger, event)
+
+    async def _set_phase_role(phase: str, role: str, summary: str = "") -> None:
+        nonlocal ledger_phase, ledger_role
+        if phase != ledger_phase:
+            ledger_phase = phase
+            await _audit("phase_changed", phase, role, summary or phase)
+        if role != ledger_role:
+            ledger_role = role
+            await _audit("role_changed", phase, role, summary or role)
 
     # 메시지 초기화
     if thread_id and task_type:
         messages = await loop.run_in_executor(
             None, session_mgr.get_thread_messages, task_type, thread_id
         )
-        messages.append({"role": "user", "content": message})
+        user_message = {"role": "user", "content": message}
+        messages.append(user_message)
+        await loop.run_in_executor(
+            None, session_mgr.append_thread_transcript_message, task_type, thread_id, user_message
+        )
         session_id = None
 
         # task_type·thread_id를 항상 최신 시스템 프롬프트에 주입 (LLM이 workflow 툴 호출 시 사용)
@@ -509,6 +569,15 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             {"role": "user", "content": message},
         ]
         session_id = await loop.run_in_executor(None, session_mgr.new_session, message)
+
+    await _audit(
+        "run_started",
+        "planning",
+        "planner",
+        "Run started",
+        details={"agent_mode": agent_mode, "model": model},
+        provenance={"user_message": wf_storage.summarize_for_ledger(message, 300)},
+    )
 
     # G4 plan 모드: 계획 단계 동안 실행 도구 차단 + 계획만 세우도록 시스템 프롬프트 보강
     plan_phase = (agent_mode == "plan")
@@ -538,6 +607,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             # 중단 플래그 확인
             if _stop_flags.get(request_id):
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                await _set_phase_role("done", "orchestrator", "Run stopped")
+                await _audit(
+                    "run_finished",
+                    "done",
+                    "orchestrator",
+                    "Run stopped",
+                    details={"status": "stopped"},
+                    provenance={"source": "stop_flag"},
+                )
+                ledger_finished = True
                 if thread_id and task_type:
                     await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
                         LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="stopped", phase="done"))
@@ -551,7 +630,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             if _injected:
                 _pending_messages[request_id] = []
                 for _msg in _injected:
-                    messages.append({"role": "user", "content": f"[사용자 끼어들기] {_msg}"})
+                    messages.append(ephemeral_user_message(f"[사용자 끼어들기] {_msg}", "interjection"))
                     yield sse({"type": ev.INJECTED, "content": _msg})
 
             # M2 이미지 eviction: 최신 N개 화면 이미지만 남기고 과거는 텍스트 자리표시자로 치환
@@ -574,6 +653,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 and _estimate_tokens(messages) > context_max * COMPACT_RATIO
             ):
                 _before = len(messages)
+                _before_messages = list(messages)
                 messages = await loop.run_in_executor(
                     None,
                     lambda: compact_messages(
@@ -584,6 +664,15 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 )
                 if len(messages) < _before:
                     compaction_count += 1
+                    _summary = _latest_compaction_summary(_before_messages, messages)
+                    if _summary and thread_id and task_type:
+                        await loop.run_in_executor(
+                            None,
+                            session_mgr.append_thread_compaction_summary,
+                            task_type,
+                            thread_id,
+                            _summary,
+                        )
                     yield sse({
                         "type": ev.COMPACTION,
                         "removed": _before - len(messages),
@@ -612,7 +701,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 try:
                     stream = client.chat.completions.create(
                         model=model,
-                        messages=messages,
+                        messages=strip_ephemeral_metadata(messages),
                         tools=active_tools,
                         stream=True,
                     )
@@ -626,6 +715,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                                  "요청이 거부되었습니다(400). 입력을 줄이거나 대화를 새로 시작해 주세요.")
                         yield sse({"type": ev.ERROR, "message": f"{_hint}\n(원본: {str(_ce)[:300]})"})
                         yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+                        await _set_phase_role("error", "orchestrator", "Run failed")
+                        await _audit(
+                            "run_finished",
+                            "error",
+                            "orchestrator",
+                            "Run failed",
+                            details={"status": "error", "error": str(_ce)[:300]},
+                            provenance={"source": "context_recovery"},
+                        )
+                        ledger_finished = True
                         yield sse({"type": ev.DONE})
                         return
                     _overflow_retries += 1
@@ -634,6 +733,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                         messages = prune_images(messages, keep_last_images=1)
                         _action = "오래된 화면 이미지를 정리했습니다."
                     else:
+                        _before_messages = list(messages)
                         messages = await loop.run_in_executor(
                             None,
                             lambda: compact_messages(
@@ -642,6 +742,15 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                                 summarize_fn=lambda h: _summarize_history(h),
                             ),
                         )
+                        _summary = _latest_compaction_summary(_before_messages, messages)
+                        if _summary and thread_id and task_type:
+                            await loop.run_in_executor(
+                                None,
+                                session_mgr.append_thread_compaction_summary,
+                                task_type,
+                                thread_id,
+                                _summary,
+                            )
                         _action = "이전 대화를 요약해 압축했습니다."
                     yield sse({
                         "type": ev.CONTEXT_TRIM,
@@ -676,7 +785,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                             tool_calls_raw[idx]["arguments"] += tc.function.arguments
 
             if text_chunks:
-                messages.append({"role": "assistant", "content": "".join(text_chunks)})
+                assistant_message = {"role": "assistant", "content": "".join(text_chunks)}
+                messages.append(assistant_message)
+                if thread_id and task_type:
+                    await loop.run_in_executor(
+                        None,
+                        session_mgr.append_thread_transcript_message,
+                        task_type,
+                        thread_id,
+                        assistant_message,
+                    )
 
             # 중단 또는 종료
             if _stop_flags.get(request_id) or finish_reason != "tool_calls" or not tool_calls_raw:
@@ -687,6 +805,15 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 # G4 plan 모드: 계획이 끝나고 텍스트로 멈추면 실행 전 승인 게이트
                 if plan_phase and _text_only_stop:
                     _cid = uuid.uuid4().hex[:8]
+                    await _set_phase_role("waiting", "safety", "Plan approval requested")
+                    await _audit(
+                        "approval_requested",
+                        "waiting",
+                        "safety",
+                        "Plan approval requested",
+                        details={"confirm_id": _cid, "kind": "plan_approval"},
+                        provenance={"source": "plan_mode"},
+                    )
                     yield sse({
                         "type": ev.CONFIRM,
                         "confirm_id": _cid,
@@ -696,17 +823,27 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     })
                     yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
                     _cr = await _resolve_confirm(_cid)
+                    await _audit(
+                        "approval_resolved",
+                        "waiting",
+                        "safety",
+                        "Plan approval resolved",
+                        details={"confirm_id": _cid, "choice": _cr.get("choice", "")},
+                        provenance={"source": "user_confirm"},
+                    )
                     yield sse({"type": ev.AGENT_STATE, "state": "running"})
                     _ch = _cr.get("choice", "")
                     _custom = _cr.get("custom_text", "")
                     if "승인" in _ch:
                         plan_phase = False
                         yield sse({"type": ev.PLAN, "phase": "approved"})
-                        messages.append({"role": "user", "content": _PLAN_APPROVED_MESSAGE})
+                        messages.append(ephemeral_user_message(_PLAN_APPROVED_MESSAGE, "plan_approved"))
                         continue
                     if "수정" in _ch:
-                        messages.append({"role": "user", "content":
-                                         f"[시스템] 계획 수정 요청: {_custom or '재검토 필요'}. 계획을 갱신하라."})
+                        messages.append(ephemeral_user_message(
+                            f"[시스템] 계획 수정 요청: {_custom or '재검토 필요'}. 계획을 갱신하라.",
+                            "plan_revision",
+                        ))
                         continue
                     # 취소
                     yield sse({"type": ev.AGENT_STATE, "state": "idle"})
@@ -721,7 +858,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     and not _last_text.endswith("?")
                 ):
                     nudge_count += 1
-                    messages.append({"role": "user", "content": _NUDGE_MESSAGE})
+                    messages.append(ephemeral_user_message(_NUDGE_MESSAGE, "nudge"))
                     continue
                 yield sse({"type": ev.AGENT_STATE, "state": "idle"})
                 break
@@ -743,12 +880,40 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             # 여기 모았다가 tool 루프가 끝난 뒤 user 메시지로 주입한다.
             pending_images: list[dict] = []
 
+            async def _audit_tool_finished(tc: dict, result, *, success: bool = True) -> None:
+                await _set_phase_role("observing", "observer", "Tool result observed")
+                await _audit(
+                    "tool_finished",
+                    "observing",
+                    "observer",
+                    wf_storage.summarize_for_ledger(result, 500),
+                    details={
+                        "tool": tc["name"],
+                        "success": success,
+                        "result_summary": wf_storage.summarize_for_ledger(result, 500),
+                    },
+                    provenance={"source": "tool_result"},
+                )
+
             for tc in tool_calls_raw.values():
                 if _stop_flags.get(request_id):
                     break
 
                 label = _intent_label(tc["name"], tc["arguments"])
                 yield sse({"type": ev.TOOL_START, "tool": tc["name"], "label": label})
+                await _set_phase_role("executing", "executor", label)
+                await _audit(
+                    "tool_started",
+                    "executing",
+                    "executor",
+                    label,
+                    details={
+                        "tool": tc["name"],
+                        "label": label,
+                        "arguments": wf_storage.summarize_for_ledger(tc["arguments"], 500),
+                    },
+                    provenance={"source": "assistant_tool_call"},
+                )
 
                 await asyncio.sleep(0)
 
@@ -757,6 +922,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 if plan_phase and not (tc["name"].startswith("workflow_") or tc["name"] == "ask_user"):
                     result = "[계획 모드] 승인 전에는 실행할 수 없습니다. workflow_* 도구로 계획만 세우세요."
                     yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result})
+                    await _audit_tool_finished(tc, result, success=False)
                     if session_id:
                         await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
@@ -782,6 +948,20 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                             _gate_denied = True
                     else:
                         _cid = uuid.uuid4().hex[:8]
+                        await _set_phase_role("waiting", "safety", "Tool approval requested")
+                        await _audit(
+                            "approval_requested",
+                            "waiting",
+                            "safety",
+                            "Tool approval requested",
+                            details={
+                                "confirm_id": _cid,
+                                "tool": tc["name"],
+                                "risk": _risk,
+                                "command": command_excerpt(tc["arguments"]),
+                            },
+                            provenance={"source": "safety_gate"},
+                        )
                         yield sse({
                             "type": ev.CONFIRM,
                             "confirm_id": _cid,
@@ -792,6 +972,19 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                         })
                         yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
                         _cr = await _resolve_confirm(_cid)
+                        await _audit(
+                            "approval_resolved",
+                            "waiting",
+                            "safety",
+                            "Tool approval resolved",
+                            details={
+                                "confirm_id": _cid,
+                                "tool": tc["name"],
+                                "choice": _cr.get("choice", ""),
+                            },
+                            provenance={"source": "user_confirm"},
+                        )
+                        await _set_phase_role("executing", "executor", label)
                         yield sse({"type": ev.AGENT_STATE, "state": "running"})
                         _gate_choice = _cr.get("choice", "")
                         if "항상" in _gate_choice:
@@ -809,6 +1002,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                         "다른 방법을 제안하거나 작업을 중단하라."
                     )
                     yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result[:1000]})
+                    await _audit_tool_finished(tc, result, success=False)
                     if session_id:
                         await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
@@ -820,6 +1014,14 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     async for _wk, _wd in _run_tool_watched(loop, tc["name"], tc["arguments"], label):
                         if _wk == "wait":
                             yield sse({"type": ev.TOOL_WAIT, **_wd})
+                            await _audit(
+                                "tool_waited",
+                                "executing",
+                                "executor",
+                                f"Waiting for {tc['name']}",
+                                details={"tool": tc["name"], **_wd},
+                                provenance={"source": "tool_watchdog"},
+                            )
                         else:
                             result = _wd
                     # 캡/Office 내부 타임아웃은 '툴 실행 오류' 문자열로 돌아온다 → 실패로 처리
@@ -848,6 +1050,14 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                                 ):
                                     if _wk == "wait":
                                         yield sse({"type": ev.TOOL_WAIT, **_wd})
+                                        await _audit(
+                                            "tool_waited",
+                                            "executing",
+                                            "executor",
+                                            f"Waiting for {tc['name']}",
+                                            details={"tool": tc["name"], **_wd},
+                                            provenance={"source": "tool_watchdog_retry"},
+                                        )
                                     else:
                                         result = _wd
                                 if isinstance(result, str) and result.startswith("툴 실행 오류"):
@@ -893,6 +1103,15 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     robj = json.loads(result)
                     if isinstance(robj, dict) and robj.get("__confirm__"):
                         cid = robj["confirm_id"]
+                        await _set_phase_role("waiting", "safety", "User confirmation requested")
+                        await _audit(
+                            "approval_requested",
+                            "waiting",
+                            "safety",
+                            "User confirmation requested",
+                            details={"confirm_id": cid, "tool": tc["name"], "kind": "ask_user"},
+                            provenance={"source": "ask_user"},
+                        )
                         yield sse({
                             "type": ev.CONFIRM,
                             "confirm_id": cid,
@@ -901,10 +1120,19 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                         })
                         yield sse({"type": ev.AGENT_STATE, "state": "waiting"})
                         cr = await _resolve_confirm(cid)
+                        await _audit(
+                            "approval_resolved",
+                            "waiting",
+                            "safety",
+                            "User confirmation resolved",
+                            details={"confirm_id": cid, "tool": tc["name"], "choice": cr.get("choice", "")},
+                            provenance={"source": "user_confirm"},
+                        )
                         choice = cr["choice"]
                         custom = cr.get("custom_text", "")
                         result = f"[사용자 응답] 선택: {choice}" + (f"\n추가 의견: {custom}" if custom else "")
                         yield sse({"type": ev.AGENT_STATE, "state": "running"})
+                        await _set_phase_role("executing", "executor", label)
                 except (json.JSONDecodeError, AttributeError, KeyError):
                     pass
 
@@ -941,7 +1169,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 if _cap is not None:
                     _note = _cap.get("note", "화면을 캡처했습니다.")
                     yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": _note})
+                    await _audit_tool_finished(tc, _note, success=not _tool_failed)
                     yield sse({"type": ev.VISION_CAPTURE, "image_b64": _cap["image_b64"]})
+                    await _audit(
+                        "evidence_added",
+                        "observing",
+                        "observer",
+                        "Screen capture collected",
+                        details={"tool": tc["name"], "kind": "vision_capture"},
+                        provenance={"source": "vision_capture"},
+                    )
                     if session_id:
                         await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], _note)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": _note})
@@ -949,6 +1186,7 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                     continue
 
                 yield sse({"type": ev.TOOL_DONE, "tool": tc["name"], "result": result[:1000]})
+                await _audit_tool_finished(tc, result, success=not _tool_failed)
 
                 if session_id:
                     await loop.run_in_executor(None, session_mgr.log_tool, session_id, tc["name"], result)
@@ -967,6 +1205,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 "\n\n[알림] 최대 실행 단계에 도달해 잠시 멈췄습니다. "
                 "계속 진행하려면 '계속'이라고 입력해 주세요."})
             yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+            await _set_phase_role("done", "orchestrator", "Max steps reached")
+            await _audit(
+                "run_finished",
+                "done",
+                "orchestrator",
+                "Max steps reached",
+                details={"status": "max_steps"},
+                provenance={"source": "loop_guard"},
+            )
+            ledger_finished = True
             if thread_id and task_type:
                 await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
                     LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="max_steps", phase="done"))
@@ -974,6 +1222,16 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
     except Exception as e:
         yield sse({"type": ev.ERROR, "message": str(e)})
         yield sse({"type": ev.AGENT_STATE, "state": "idle"})
+        await _set_phase_role("error", "orchestrator", "Run failed")
+        await _audit(
+            "run_finished",
+            "error",
+            "orchestrator",
+            "Run failed",
+            details={"status": "error", "error": str(e)[:300]},
+            provenance={"source": "exception"},
+        )
+        ledger_finished = True
         if thread_id and task_type:
             try:
                 await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
@@ -1017,6 +1275,17 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
             pass
 
     if thread_id and task_type:
+        if not ledger_finished:
+            await _set_phase_role("done", "orchestrator", "Run finished")
+            await _audit(
+                "run_finished",
+                "done",
+                "orchestrator",
+                "Run finished",
+                details={"status": "done"},
+                provenance={"source": "generate"},
+            )
+            ledger_finished = True
         try:
             await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
                 LedgerEntry(ts=datetime.now(timezone.utc).isoformat(), event="done", phase="done"))
@@ -1508,7 +1777,9 @@ async def delete_workflow_endpoint(task_type: str, thread_id: str):
 async def get_thread_ledger(task_type: str, thread_id: str):
     """스레드의 RunLedger 감사 추적을 반환한다."""
     loop = asyncio.get_event_loop()
-    entries = await loop.run_in_executor(None, wf_storage.load_ledger, task_type, thread_id)
+    structured = await loop.run_in_executor(None, wf_storage.load_run_ledger, task_type, thread_id)
+    legacy = await loop.run_in_executor(None, wf_storage.load_ledger, task_type, thread_id)
+    entries = structured + legacy
     return {"entries": entries}
 
 

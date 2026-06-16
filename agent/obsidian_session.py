@@ -14,6 +14,15 @@ import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
+from agent.core.transcript import (
+    compaction_summary_event,
+    display_messages_from_events,
+    filter_display_messages,
+    filter_persisted_messages,
+    transcript_event_from_message,
+    transcript_events_from_messages,
+)
+
 # ── 업무 타입 설정 ────────────────────────────────────────────
 
 # 모든 에이전트에 공통으로 붙는 자율 실행 지시
@@ -408,23 +417,50 @@ tags: []
         try:
             existing = self._read(rel_path)
             meta = self._parse_thread_meta(existing)
-            content = self._build_thread_content(meta, messages)
+            content = self._build_thread_content(meta, filter_persisted_messages(messages))
             self._write(rel_path, content)
         except Exception as e:
             print(f"[obsidian] 스레드 저장 실패: {e}")
 
     def get_thread_display_messages(self, task_type: str, thread_id: str) -> list:
         """채팅창 표시용 메시지만 반환 (system/tool 제외)."""
+        transcript = self.get_thread_transcript_messages(task_type, thread_id)
+        if transcript:
+            return transcript
         messages = self.get_thread_messages(task_type, thread_id)
-        result = []
-        for m in messages:
-            role = m.get("role", "")
-            content = m.get("content", "")
-            if role == "user" and content:
-                result.append({"role": "user", "content": content})
-            elif role == "assistant" and content:
-                result.append({"role": "assistant", "content": content})
-        return result
+        return filter_display_messages(messages)
+
+    def append_thread_transcript_event(self, task_type: str, thread_id: str, event: dict | None) -> None:
+        """Append one user-facing transcript event to the per-thread JSONL log."""
+        if not event:
+            return
+        rel_path = self._thread_transcript_rel_path(task_type, thread_id)
+        try:
+            self._seed_thread_transcript(task_type, thread_id)
+            self._append_jsonl(rel_path, event)
+        except Exception as e:
+            print(f"[obsidian] transcript event 저장 실패: {e}")
+
+    def append_thread_transcript_message(self, task_type: str, thread_id: str, message: dict) -> None:
+        self.append_thread_transcript_event(
+            task_type,
+            thread_id,
+            transcript_event_from_message(message),
+        )
+
+    def append_thread_compaction_summary(self, task_type: str, thread_id: str, summary: str) -> None:
+        self.append_thread_transcript_event(
+            task_type,
+            thread_id,
+            compaction_summary_event(summary),
+        )
+
+    def get_thread_transcript_events(self, task_type: str, thread_id: str) -> list:
+        rel_path = self._thread_transcript_rel_path(task_type, thread_id)
+        return self._read_jsonl(rel_path)
+
+    def get_thread_transcript_messages(self, task_type: str, thread_id: str) -> list:
+        return display_messages_from_events(self.get_thread_transcript_events(task_type, thread_id))
 
     def list_threads(self, task_type: str) -> list:
         """특정 업무 타입의 스레드 목록을 반환한다."""
@@ -440,8 +476,7 @@ tags: []
                 try:
                     content = self._read(rel_path)
                     meta = self._parse_thread_meta(content)
-                    msgs = self._parse_thread_messages(content)
-                    msg_count = sum(1 for m in msgs if m.get("role") in ("user", "assistant"))
+                    msg_count = len(self._display_messages_for_content(task_type, meta["thread_id"], content))
                     meta["message_count"] = msg_count
                     threads.append(meta)
                 except Exception:
@@ -502,8 +537,7 @@ tags: []
                     meta = self._parse_thread_meta(content)
                     m = re.search(r"^archived_at: (.+)$", content, re.MULTILINE)
                     meta["archived_at"] = m.group(1).strip() if m else ""
-                    msgs = self._parse_thread_messages(content)
-                    msg_count = sum(1 for msg in msgs if msg.get("role") in ("user", "assistant"))
+                    msg_count = len(self._display_messages_for_content(task_type, meta["thread_id"], content))
                     meta["message_count"] = msg_count
                     threads.append(meta)
                 except Exception:
@@ -585,6 +619,7 @@ tags: []
         else:
             rel_path = f"agent/threads/{task_type}/{thread_id}.md"
         self._delete(rel_path)
+        self._delete(self._thread_transcript_rel_path(task_type, thread_id))
 
     def restore_thread(self, task_type: str, thread_id: str) -> None:
         """완료된 스레드를 진행 중 상태로 복원한다."""
@@ -618,19 +653,14 @@ tags: []
 
     def get_thread_display_messages_archived(self, task_type: str, thread_id: str) -> list:
         """보관된 스레드의 채팅창 표시용 메시지를 반환한다."""
+        transcript = self.get_thread_transcript_messages(task_type, thread_id)
+        if transcript:
+            return transcript
         rel_path = f"agent/threads/_archive/{task_type}/{thread_id}.md"
         try:
             content = self._read(rel_path)
             messages = self._parse_thread_messages(content)
-            result = []
-            for msg in messages:
-                role = msg.get("role", "")
-                text = msg.get("content", "")
-                if role == "user" and text:
-                    result.append({"role": "user", "content": text})
-                elif role == "assistant" and text:
-                    result.append({"role": "assistant", "content": text})
-            return result
+            return filter_display_messages(messages)
         except Exception as e:
             print(f"[obsidian] 보관 스레드 메시지 로드 실패: {e}")
             return []
@@ -678,6 +708,47 @@ tags: []
         if match:
             return json.loads(match.group(1))
         return []
+
+    def _thread_transcript_rel_path(self, task_type: str, thread_id: str) -> str:
+        return f"agent/transcripts/{task_type}/{thread_id}.jsonl"
+
+    def _display_messages_for_content(self, task_type: str, thread_id: str, content: str) -> list:
+        transcript = self.get_thread_transcript_messages(task_type, thread_id)
+        if transcript:
+            return transcript
+        return filter_display_messages(self._parse_thread_messages(content))
+
+    def _seed_thread_transcript(self, task_type: str, thread_id: str) -> None:
+        rel_path = self._thread_transcript_rel_path(task_type, thread_id)
+        if self._read_jsonl(rel_path):
+            return
+        content = self._read(f"agent/threads/{task_type}/{thread_id}.md")
+        events = transcript_events_from_messages(self._parse_thread_messages(content))
+        if not events:
+            return
+        for event in events:
+            self._append_jsonl(rel_path, event)
+
+    def _append_jsonl(self, vault_rel: str, obj: dict) -> None:
+        existing = self._read(vault_rel)
+        line = json.dumps(obj, ensure_ascii=False)
+        content = (existing.rstrip("\n") + "\n" if existing else "") + line + "\n"
+        self._write(vault_rel, content)
+
+    def _read_jsonl(self, vault_rel: str) -> list:
+        raw = self._read(vault_rel)
+        if not raw:
+            return []
+        entries = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        return entries
 
     def _parse_thread_meta(self, content: str) -> dict:
         meta = {}

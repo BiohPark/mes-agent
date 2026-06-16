@@ -25,7 +25,7 @@ def test_longest_key_wins_over_substring():
 
 def test_unknown_model_uses_default():
     assert get_context_window("totally-unknown-model") == DEFAULT_CONTEXT_TOKENS
-    assert get_context_window("gpt-5.4-nano") == DEFAULT_CONTEXT_TOKENS  # 미지 → 폴백
+    assert get_context_window("gpt-5.4-nano") == 100_000  # 미지 → 보수적 폴백
 
 
 def test_env_exact_override_wins(monkeypatch):

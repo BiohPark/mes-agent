@@ -22,24 +22,30 @@
 
 | # | 항목 | 파일·위치 | 규모 | 상태 |
 |---|------|-----------|------|------|
-| 1 | **P2 compaction replace-or-append** — 요약을 head 마지막 system content에 합쳐 단일-system 불변 보장 | `agent/core/compaction.py:77-79` | S | 🔲 |
-| 2 | **P1 저장필터** — 제어 메시지(넛지·계획승인·끼어들기) 영속화 차단 | 신규 `agent/core/transcript.py` + `server.py:912` | S~M | 🔲 |
-| 3 | **P1 표시측 과거호환필터** — 기존 오염 스레드도 표시에서 제외 | `agent/obsidian_session.py:390-401` | S | 🔲 |
-| 4 | **P3 설정 점검 + source 표시** — 모델 리스트 출처 UI 노출 | `.env.example` + `electron/renderer/chat.js` | S | 🔲 |
-| 5 | **P2부가: 윈도우/ratio 보수화** — `LLM_*_CONTEXT_TOKENS≈100k`, `COMPACT_RATIO 0.8→0.7` | `.env`·설정 | S | 🔲 |
-| 6 | **I1 .env 그룹핑·기본값·전문가섹션** | `.env.example` + `SETUP.md` | S | 🔲 |
+| 1 | **P2 compaction replace-or-append** — 요약을 head 마지막 system content에 합쳐 단일-system 불변 보장 | `agent/core/compaction.py:77-79` | S | ✅ |
+| 2 | **P1 저장필터** — 제어 메시지(넛지·계획승인·끼어들기) 영속화 차단 | `agent/core/transcript.py` + `server.py` | S~M | ✅ |
+| 3 | **P1 표시측 과거호환필터** — 기존 오염 스레드도 표시에서 제외 | `agent/obsidian_session.py` | S | ✅ |
+| 4 | **P3 설정 점검 + source 표시** — 모델 리스트 출처 UI 노출 | `.env.example` + `electron/renderer/chat.js` | S | ✅ |
+| 5 | **P2부가: 윈도우/ratio 보수화** — `LLM_*_CONTEXT_TOKENS≈100k`, `COMPACT_RATIO 0.8→0.7` | `.env.example`·설정 | S | ✅ |
+| 6 | **I1 .env 그룹핑·기본값·전문가섹션** | `.env.example` + `SETUP.md` | S | ✅ |
 
 **근본 원인(확정):**
 - **P2 (400 "System Message must be at the beginning")**: `compact_messages`가 `head + [system 요약] + tail`로 **두 번째 system 메시지** 생성 → 사내 vLLM 거부. `overflow.py` 2차 재시도도 동일 호출이라 동일 결함 반복. **수정 = 요약을 head 마지막 system content에 replace-or-append**(별도 system 안 만듦, 진입가드 불필요, overflow 자동 해소, tool 짝 I1 무영향).
 - **P1 (대화 오염)**: `generate()`가 제어 메시지를 `role="user"`+`"[시스템]…"`로 주입 → `save_thread_messages`가 작업버퍼 전체 영속화 → 재진입 시 `get_thread_display_messages`가 system 요약은 걸러내고 남은 `[시스템]` user 라인만 표시. **근본 결함: 작업버퍼=영속기록=표시소스 동일 배열.** 수정 = **저장측+표시측 한 쌍 필수**(저장측만 고치면 이미 오염된 과거 Vault 스레드 미복구). 미래=마킹(`_ephemeral`), 과거=프리픽스 매칭.
 - **P3 (모델 리스트)**: 버그 아님. `agent/llm.py list_available_models()`가 이미 `/v1/models`→`.env LLM_{PROFILE}_MODELS` 폴백을 양 프로파일 동일 처리 + `source` 반환. 폐쇄망 프리셋 미설정/오타 + UI 출처 미표시 체감 문제.
 
-### Known limitation (침묵 폴백 금지 — 메모리 규칙 `no-superficial-fixes`)
-> P1 저장필터는 compaction이 이미 지운 중간 원본 user/assistant 턴을 **복원하지 못한다**.
-> 무손실 보존은 작업버퍼/transcript 분리(트랙 1C)에서만 가능 → 코드 주석 + 본 카드에 명시.
+**구현 결과(2026-06-16):**
+- `compact_messages()`는 요약을 첫 system 메시지에 병합해 사내 vLLM의 "system must be at beginning" 거부를 피한다.
+- `agent/core/transcript.py`가 런타임 제어 메시지를 `_ephemeral`로 표시하고 저장/표시에서는 제거한다. 과거 `[시스템]`, `[사용자 끼어들기]` 오염 메시지도 표시/재저장 시 필터링한다.
+- 미지 모델 기본 컨텍스트는 100k, `COMPACT_RATIO` 기본값은 0.7로 보수화했다. 모델 목록 source 표시는 기존 `chat.js` 구현을 유지한다.
+
+### Track 1C follow-up status (2026-06-16)
+> L2 seed 구현으로 작업버퍼(`agent-messages`)와 표시 transcript(`agent/transcripts/...jsonl`)를 분리했다.
+> compaction 이후에도 새로 기록된 user/assistant 표시 대화와 compaction summary는 active/archive display·count·search에서 복원된다.
+> RunLedger writer seed 구현으로 request_id 단위 JSONL 감사추적과 phase/role 이벤트 기록을 추가했다.
 
 ### 후속(선행조건 아님, 분리 트랙)
-- **transcript 3계층 + 원문 무손실 + RunLedger** → 트랙 **1C** seed로 흡수, 계약 `docs/contracts/L2_message_invariants.md`.
+- **transcript 3계층 + 원문 무손실 + RunLedger** → 트랙 **1C** seed 구현, 계약 `docs/contracts/L2_message_invariants.md`.
 - **I2 창 UX**(반투명 기본·비켜보기 확대·Codex식 테두리·ESC중지) → CLAUDE.md 백로그 **X**. 순수함수 검증 불가(Electron 수동확인). **작업권 회수·전역 ESC는 입력 가로채기 리스크 → 보안 검토 후.**
 - **I3 Office365** → CLAUDE.md 백로그 **Y** + "Office 백엔드 확정" 대기. **회사 PC 선검증 필수**, 폐쇄망 폴백(로컬 다운로드→`office_com` 편집)을 1순위. **평문 자격증명 .env 저장은 GxP/보안 리스크 → DPAPI/자격증명관리자 검토 전 보류.**
 
@@ -110,10 +116,10 @@
 
 **활성 스펙**: `docs/specs/product-agent-harness.md`
 
-- [ ] 기존 `generate()` 루프에 phase/role 라벨을 도입
+- [x] 기존 `generate()` 루프에 phase/role 라벨을 도입
 - [ ] RunSnapshot을 프론트엔드 감독 콘솔 상태와 연결
 - [ ] Verifier 단계를 명시해 도구 실행 성공과 업무 검증 성공을 분리
-- [ ] RunLedger 영속화로 실행 증적과 감사추적 기반 마련
+- [x] RunLedger 영속화로 실행 증적과 감사추적 기반 마련
 - [ ] MES 검증·Office 작성·배포 자동화 도메인 하네스 팩으로 확장
 
 **우선순위**: 감독 콘솔 Phase 1과 함께 1단계(role/phase 라벨)부터 점진 도입.

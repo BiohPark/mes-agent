@@ -75,8 +75,16 @@ def compact_messages(
         return messages
 
     summary = summarize_fn(middle)
-    summary_msg = {"role": "system", "content": SUMMARY_PREFIX + (summary or "")}
-    return head + [summary_msg] + tail
+    summary_content = SUMMARY_PREFIX + (summary or "")
+    if head:
+        merged_head = [dict(m) for m in head]
+        last = dict(merged_head[-1])
+        existing = last.get("content", "")
+        last["content"] = f"{existing}\n\n{summary_content}" if existing else summary_content
+        merged_head[-1] = last
+        return merged_head + tail
+
+    return [{"role": "system", "content": summary_content}] + tail
 
 
 def prune_images(messages: list, *, keep_last_images: int) -> list:

@@ -168,8 +168,8 @@ class TestInjectEndpoint:
 
 
 class TestInjectionDrain:
-    async def test_injected_message_appended_as_user(self, client_inj):
-        """실행 중 주입한 메시지가 [사용자 끼어들기] user 메시지로 대화에 들어간다."""
+    async def test_injected_message_not_persisted_as_user(self, client_inj):
+        """실행 중 주입한 메시지는 런타임에만 쓰고 영속 대화에는 저장하지 않는다."""
         create = await client_inj.post("/threads/general", json={})
         tid = create.json()["thread_id"]
         # 여러 도구 단계 → 루프가 여러 번 돌며 드레인 기회 제공
@@ -186,7 +186,7 @@ class TestInjectionDrain:
             if m.get("role") == "user" and isinstance(m.get("content"), str)
             and "[사용자 끼어들기]" in m["content"] and "방향을 바꿔줘" in m["content"]
         ]
-        assert injected, "주입한 메시지가 대화에 들어가지 않음"
+        assert not injected, "끼어들기 제어 메시지가 영속 대화에 저장되면 안 됨"
 
     async def test_injected_event_emitted(self, client_inj):
         """주입이 반영되면 INJECTED SSE 이벤트를 발행한다."""

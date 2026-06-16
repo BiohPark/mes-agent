@@ -78,7 +78,7 @@ def env_model_presets() -> list[str]:
 # 우선순위: .env LLM_{PROFILE}_CONTEXT_TOKENS(정확값 직접 지정) > 내장 맵(known 모델) > 폴백.
 # 미지의 모델(예: gpt-5.4-nano 등 사내/신규)은 .env 로 정확값을 잡는 것을 권장한다 — 추정 오차는
 # 런타임 400 점진적 복구(M4)가 최종 보증한다.
-DEFAULT_CONTEXT_TOKENS = 128_000
+DEFAULT_CONTEXT_TOKENS = 100_000
 
 # 키는 부분문자열로 매칭하며, 더 구체적인(긴) 키가 우선한다(예: 'gpt-4o'가 'gpt-4'보다 우선).
 MODEL_CONTEXT_WINDOWS = {

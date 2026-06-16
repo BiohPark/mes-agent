@@ -1,6 +1,6 @@
 # 제품 하네스 계약 — RunLedger
 
-> 상태: 초안 · 구현 전 계약 · 관련 스펙: `docs/specs/product-agent-harness.md`, `docs/specs/supervisor-console.md`
+> 상태: writer seed 구현 완료 · 관련 스펙: `docs/specs/product-agent-harness.md`, `docs/specs/supervisor-console.md`
 
 ## 목적
 
@@ -48,6 +48,13 @@
 - 초기 구현은 **append-only JSONL**을 사용한다.
 - Vault markdown은 사람이 읽는 export/리포트 후속 경로로 분리한다.
 - Supervisor UI는 최신 상태를 `RunSnapshot`으로 읽고, 상세 로그/증적 탭에서 `RunLedger`를 참조한다.
+
+## 구현 결과 (2026-06-16)
+
+- request_id 단위 구조화 RunLedger writer를 추가했다.
+- 저장 경로는 `agent/run-ledgers/<task_type>/<thread_id>/<request_id>.jsonl`이다.
+- `/threads/{task_type}/{thread_id}/ledger`는 구조화 RunLedger를 우선 반환하고 legacy workflow ledger를 하위 호환으로 함께 반환한다.
+- `generate()`는 run/tool/approval/evidence/finish 이벤트를 phase/role과 함께 기록한다.
 
 ## 저장 전 기본 정책
 

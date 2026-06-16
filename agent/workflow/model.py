@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Literal
+import uuid
 
 StepType = Literal["auto", "semi_auto", "manual"]
 NodeType = Literal["auto", "semi_auto", "manual", "condition"]
@@ -261,6 +263,53 @@ class LedgerEntry:
             event=data.get("event", ""),
             detail=data.get("detail", ""),
             phase=data.get("phase", ""),
+        )
+
+
+@dataclass
+class RunLedgerEvent:
+    """Structured request-scoped RunLedger JSONL entry."""
+    request_id: str
+    thread_id: str
+    task_type: str
+    event_type: str
+    phase: str
+    role: str
+    summary: str = ""
+    details: dict = field(default_factory=dict)
+    provenance: dict = field(default_factory=dict)
+    event_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict:
+        return {
+            "event_id": self.event_id,
+            "request_id": self.request_id,
+            "thread_id": self.thread_id,
+            "task_type": self.task_type,
+            "timestamp": self.timestamp,
+            "event_type": self.event_type,
+            "phase": self.phase,
+            "role": self.role,
+            "summary": self.summary,
+            "details": dict(self.details or {}),
+            "provenance": dict(self.provenance or {}),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RunLedgerEvent":
+        return cls(
+            event_id=data.get("event_id") or uuid.uuid4().hex,
+            request_id=data.get("request_id", ""),
+            thread_id=data.get("thread_id", ""),
+            task_type=data.get("task_type", ""),
+            timestamp=data.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+            event_type=data.get("event_type", ""),
+            phase=data.get("phase", ""),
+            role=data.get("role", ""),
+            summary=data.get("summary", ""),
+            details=data.get("details") if isinstance(data.get("details"), dict) else {},
+            provenance=data.get("provenance") if isinstance(data.get("provenance"), dict) else {},
         )
 
 

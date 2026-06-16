@@ -94,6 +94,10 @@ LLM_OPENAI_MODEL=gpt-4o
 LLM_INTERNAL_BASE_URL=http://사내LLM주소/v1
 LLM_INTERNAL_MODEL=사내모델명
 
+# 미지/사내 모델의 보수적 컨텍스트 기본값과 압축 시작 비율
+LLM_DEFAULT_CONTEXT_TOKENS=100000
+COMPACT_RATIO=0.7
+
 # ── API 키 ────────────────────────────────────────────
 OPENAI_API_KEY=sk-...
 # INTERNAL_API_KEY=...

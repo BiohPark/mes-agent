@@ -632,8 +632,8 @@ class TestContinuationNudge:
             and "[시스템]" in m["content"]
         )
 
-    async def test_nudge_injected_after_tool_then_text(self, client_gate):
-        """도구 사용 후 텍스트로 멈추면 nudge가 주입돼 한 번 더 진행한다."""
+    async def test_nudge_injected_but_not_persisted_after_tool_then_text(self, client_gate):
+        """도구 사용 후 텍스트로 멈추면 nudge로 한 번 더 진행하되 저장하지 않는다."""
         tid = await self._new_thread(client_gate)
         _ScriptedStream.reset([
             ("tool", "read_file", '{"path":"a.txt"}'),
@@ -643,20 +643,20 @@ class TestContinuationNudge:
         events = await _stream_answering(
             client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
         saved = self._saved(tid)
-        assert self._nudge_count(saved) >= 1, "nudge가 주입되지 않음"
+        assert self._nudge_count(saved) == 0, "nudge 제어 메시지가 저장되면 안 됨"
         assert client_gate._tool_calls and client_gate._tool_calls[0][0] == "read_file"
         types = [e.get("type") for e in events]
         assert ev.DONE in types and ev.ERROR not in types
 
     async def test_nudge_capped_at_max(self, client_gate):
-        """텍스트로 계속 멈춰도 nudge는 MAX_NUDGES(2) 이하, 결국 정상 종료(I3·I4)."""
+        """텍스트로 계속 멈춰도 nudge는 저장되지 않고, 결국 정상 종료(I3·I4)."""
         tid = await self._new_thread(client_gate)
         _ScriptedStream.reset(
             [("tool", "read_file", '{"path":"a.txt"}')] + [("text", "계속")] * 8)
         events = await _stream_answering(
             client_gate, {"message": "작업", "thread_id": tid, "task_type": "general"}, [])
         saved = self._saved(tid)
-        assert self._nudge_count(saved) <= 2, "nudge가 상한을 초과함"
+        assert self._nudge_count(saved) == 0, "nudge 제어 메시지가 저장되면 안 됨"
         assert ev.DONE in [e.get("type") for e in events]
 
     async def test_no_nudge_for_pure_chat(self, client_gate):
