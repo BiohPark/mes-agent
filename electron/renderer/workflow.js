@@ -28,6 +28,7 @@ const svContext = document.getElementById('sv-context')
 const svEvidence = document.getElementById('sv-evidence')
 const svError = document.getElementById('sv-error')
 const svPhaseRole = document.getElementById('sv-phase-role')
+const svLedger = document.getElementById('sv-ledger')
 
 let _currentWorkflow = null
 let _panelCollapsed = false
@@ -1193,6 +1194,26 @@ function _cancelEdit() {
   else if (wasTemplate) { workflowContent.classList.add('hidden'); workflowEmpty.classList.remove('hidden') }
 }
 
+// ── RunLedger 히스토리 표시 ───────────────────────────────────
+
+const _TERMINAL_EVENTS = new Set(['done', 'error', 'stopped', 'max_steps'])
+
+async function _loadLedgerHistory(taskType, threadId) {
+  if (!svLedger || !taskType || !threadId) return
+  try {
+    const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
+    const res = await fetch(`${base}/threads/${taskType}/${threadId}/ledger`)
+    if (!res.ok) return
+    const data = await res.json()
+    const entries = (data.legacy || []).filter(e => _TERMINAL_EVENTS.has(e.event)).slice(-3).reverse()
+    if (!entries.length) { svLedger.textContent = '-'; return }
+    svLedger.innerHTML = entries.map(e => {
+      const ts = (e.ts || '').slice(0, 16).replace('T', ' ')
+      return `<div class="sv-run-entry sv-run-${e.event}"><span class="sv-run-ts">${ts}</span><span class="sv-run-ev">${e.event}</span></div>`
+    }).join('')
+  } catch {}
+}
+
 // ── 워크플로우 로드 (스레드 선택 시) ──────────────────────────
 
 async function loadWorkflowForThread(taskType, threadId) {
@@ -1207,7 +1228,7 @@ async function loadWorkflowForThread(taskType, threadId) {
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
     const res = await fetch(`${base}/threads/${taskType}/${threadId}/workflow`)
-    if (!res.ok) { clearWorkflow(); return }
+    if (!res.ok) { clearWorkflow(); _loadLedgerHistory(taskType, threadId); return }
     const wf = await res.json()
     if (wf && wf.steps) {
       renderWorkflow(wf)
@@ -1219,6 +1240,7 @@ async function loadWorkflowForThread(taskType, threadId) {
   } catch {
     clearWorkflow()
   }
+  _loadLedgerHistory(taskType, threadId)
 }
 
 // SSE로부터 워크플로우 업데이트 수신 (chat.js에서 호출)
