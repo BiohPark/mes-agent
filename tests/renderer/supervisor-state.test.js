@@ -97,4 +97,64 @@ function apply(events) {
   assert.ok(state.evidence.length >= 2, `evidence length ${state.evidence.length} should be >= 2`)
 }
 
+{
+  // verifying 상태에서 confirm 발생 → waiting/safety가 우선(승인 차단은 검증보다 우선)
+  const state = apply([
+    { request_id: 'req-8' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+    { type: 'tool_start', tool: 'tool_b' },
+    { type: 'tool_done', tool: 'tool_b', result: 'ok_b' },
+    { type: 'confirm', question: '파일을 덮어쓸까요?', risk: 'write' },
+  ])
+  assert.equal(state.phase, 'waiting')
+  assert.equal(state.role, 'safety')
+  assert.equal(state.waitingApproval, true)
+}
+
+{
+  // verifying 상태에서 error 발생 → error/orchestrator로 즉시 전이
+  const state = apply([
+    { request_id: 'req-9' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+    { type: 'tool_start', tool: 'tool_b' },
+    { type: 'tool_done', tool: 'tool_b', result: 'ok_b' },
+    { type: 'error', message: 'verification failed' },
+  ])
+  assert.equal(state.phase, 'error')
+  assert.equal(state.role, 'orchestrator')
+  assert.equal(state.lastError, 'verification failed')
+}
+
+{
+  // verifying 도달 후 다음 tool_start → executing/executor로 복귀 (휴리스틱은 매 도구 호출마다 재평가됨)
+  const state = apply([
+    { request_id: 'req-10' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+    { type: 'tool_start', tool: 'tool_b' },
+    { type: 'tool_done', tool: 'tool_b', result: 'ok_b' },
+    { type: 'tool_start', tool: 'tool_c' },
+  ])
+  assert.equal(state.phase, 'executing')
+  assert.equal(state.role, 'executor')
+}
+
+{
+  // 알려진 한계: evidence는 세션 내에서 줄어들지 않으므로 3번째 tool_done에서도 verifying 유지
+  const state = apply([
+    { request_id: 'req-11' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+    { type: 'tool_start', tool: 'tool_b' },
+    { type: 'tool_done', tool: 'tool_b', result: 'ok_b' },
+    { type: 'tool_start', tool: 'tool_c' },
+    { type: 'tool_done', tool: 'tool_c', result: 'ok_c' },
+  ])
+  assert.equal(state.phase, 'verifying')
+  assert.equal(state.role, 'verifier')
+  assert.ok(state.evidence.length >= 2, `evidence length ${state.evidence.length} should stay >= 2`)
+}
+
 console.log('supervisor-state fixtures passed')
