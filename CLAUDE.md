@@ -397,7 +397,9 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
 
-### W. 설정 정리·모델 출처 표기 (트랙0 P3·I1) 🔲
+### W. 설정 정리·모델 출처 표기 (트랙0 P3·I1) ✅
+
+> **완료 (2026-06-16)**: `.env.example` LLM/Office/Vision 블록 분리, COMPACT_RATIO 0.7, 모델 드롭다운 `loadModels()`에 `source` title 표시 (`chat.js`). 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0 P3·P2·I1.
 
 `.env` 그룹핑(LLM/Office/외부SaaS 블록 분리) + 기본값으로 슬림화 + 전문가 섹션 분리. 모델 드롭다운에 출처(`/v1/models` 동적 vs `.env` 프리셋) 표시. 저비용·같은 표면. 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0.
 
