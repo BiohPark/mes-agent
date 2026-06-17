@@ -63,3 +63,9 @@ completion_promise: DONE
 - 기존 SSE 이벤트를 `planning/executing/observing/waiting/done/error` phase와 `planner/executor/observer/safety/orchestrator` role로 1차 매핑한다.
 - 감독 탭은 현재 `phase · role`을 표시하고, HUD는 현재 단계 줄에 `phase/role`을 함께 보여준다.
 - confirm, tool 실행, done, error 상태 전환을 `tests/renderer/supervisor-state.test.js`와 pytest wrapper로 검증한다.
+
+## 후속 — Track 1C Verifier 전이 (2026-06-17~18)
+
+- `tool_done` 처리에서 evidence 누적 ≥2이면 `phase=verifying`, `role=verifier`로 전이하는 로직을 `electron/renderer/supervisor-state.js`에 추가했다(이 카드가 owned로 선언한 파일 범위 내).
+- 엣지 케이스(confirm/error 우선, 다음 tool_start로 복귀, 3회 이상 tool_done 시 verifying 유지라는 알려진 한계)를 `tests/renderer/supervisor-state.test.js` req-8~11로 고정했다.
+- 계약 세부사항은 `docs/contracts/product-harness-run-state.md`의 "Verifier 조건 (Track 1C)" 절을 따른다.
