@@ -142,8 +142,14 @@
         }
         if (!current.waitingApproval) {
           next.agentState = 'running'
-          next.phase = 'observing'
-          next.role = 'observer'
+          // evidence >= 2이면 결과 확인 단계(verifying)로 전이
+          if (next.evidence.length >= 2) {
+            next.phase = 'verifying'
+            next.role = 'verifier'
+          } else {
+            next.phase = 'observing'
+            next.role = 'observer'
+          }
           next.approvalText = '대기 없음'
           next.risk = 'none'
         }

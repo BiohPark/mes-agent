@@ -72,4 +72,29 @@ function apply(events) {
   assert.equal(state.lastError, 'boom')
 }
 
+{
+  // tool이 1회만 완료된 경우 → observing
+  const state = apply([
+    { request_id: 'req-6' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+  ])
+  assert.equal(state.phase, 'observing')
+  assert.equal(state.role, 'observer')
+}
+
+{
+  // tool이 2회 이상 완료된 경우 → verifying (evidence >= 2)
+  const state = apply([
+    { request_id: 'req-7' },
+    { type: 'tool_start', tool: 'tool_a' },
+    { type: 'tool_done', tool: 'tool_a', result: 'ok_a' },
+    { type: 'tool_start', tool: 'tool_b' },
+    { type: 'tool_done', tool: 'tool_b', result: 'ok_b' },
+  ])
+  assert.equal(state.phase, 'verifying')
+  assert.equal(state.role, 'verifier')
+  assert.ok(state.evidence.length >= 2, `evidence length ${state.evidence.length} should be >= 2`)
+}
+
 console.log('supervisor-state fixtures passed')
