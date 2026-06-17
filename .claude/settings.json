@@ -23,16 +23,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "git status --short 2>/dev/null | head -20 || true"
-          }
-        ]
-      }
     ]
   }
 }
