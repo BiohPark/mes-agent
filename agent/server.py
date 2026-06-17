@@ -111,12 +111,15 @@ async def _run_tool_watched(loop, name, arguments, label):
     """run_tool을 단계적(escalating) wait_for로 감싸 **무한 행을 방지**한다(긴급수정 A1).
 
     - 도구별 작은 baseline에서 시작 → 안 끝나면 누적 한계를 늘려가며 **같은 in-flight 작업을 계속 대기**.
+    - 캡은 도구가 명시적으로 요청한 timeout을 존중한다(`effective_cap`, V-2 Phase 2 보완) — 절대
+      상한(`TOOL_TIMEOUT_HARD_CEILING`)으로 무한 행 방지 원칙은 유지.
     - 가시 임계(>1.5s)를 넘겨 연장할 때마다 ('wait', payload)를 yield → 호출부가 TOOL_WAIT SSE로 내레이션.
     - 끝나면 ('result', 결과)를 yield. 캡 도달 시 구조화 타임아웃 오류('툴 실행 오류' 접두)를 결과로.
     - run_tool 자체 예외는 전파(호출부 except가 처리).
     """
     from agent.core import timeouts as _to
-    schedule = _to.escalation_schedule(_to.tool_baseline(name), _to.timeout_cap())
+    cap = _to.effective_cap(name, arguments)
+    schedule = _to.escalation_schedule(_to.tool_baseline(name), cap)
     fut = loop.run_in_executor(None, run_tool, name, arguments)
     prev = 0.0
     for i, limit in enumerate(schedule):
@@ -136,7 +139,7 @@ async def _run_tool_watched(loop, name, arguments, label):
             continue
     # 캡 도달 → SSE 해방(스레드는 남되, office 등은 자체 워치독으로 실제 정리됨)
     fut.cancel()
-    yield ("result", _to.timeout_error_text(name, _to.timeout_cap(), progressed=False))
+    yield ("result", _to.timeout_error_text(name, cap, progressed=False))
 
 
 async def _resolve_confirm(cid: str) -> dict:

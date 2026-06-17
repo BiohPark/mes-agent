@@ -211,6 +211,34 @@ def office_com_timeout() -> float:
         return 45.0
 
 
+def timeout_hard_ceiling() -> float:
+    """어떤 도구도 이 절대 상한(초)을 넘겨 대기하지 않는다 — 도구 자체 timeout이 아무리 커도 무시."""
+    raw = os.getenv("TOOL_TIMEOUT_HARD_CEILING", "")
+    try:
+        return float(raw) if raw else 300.0
+    except ValueError:
+        return 300.0
+
+
+def effective_cap(name: str, arguments: dict | None = None) -> float:
+    """디스패치 캡을 계산한다 — 도구가 명시적으로 요청한 timeout을 존중하되 절대 상한은 유지.
+
+    run_command/run_powershell처럼 자체 timeout 인자를 받는 도구가 회복 조치(timeout 늘려
+    재시도)를 따라도, 디스패치 레벨 캡(기본 90s)이 그보다 먼저 끝내버려 무의미해지는 문제를 막는다.
+    arguments에 숫자형 timeout이 없으면 기존 timeout_cap()만 사용한다.
+    """
+    base = timeout_cap()
+    requested = None
+    if arguments:
+        raw_timeout = arguments.get("timeout")
+        if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool):
+            requested = float(raw_timeout)
+    if requested is None:
+        return base
+    buffer = 5.0
+    return min(timeout_hard_ceiling(), max(base, requested + buffer))
+
+
 def escalation_schedule(baseline: float, cap: float, factor: float = 4.0) -> list[float]:
     """'시작부터의 누적 대기 한계(초)' 리스트(단조 증가, 마지막=cap).
     예: baseline=1, cap=90, factor=4 → [1, 4, 16, 64, 90].

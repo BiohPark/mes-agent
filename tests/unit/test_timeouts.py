@@ -125,3 +125,39 @@ def test_timeout_error_text_accepts_liveness_observation():
     assert txt.startswith("툴 실행 오류")
     assert "run_command" in txt
     assert "slow" in txt
+
+
+# ── effective_cap / timeout_hard_ceiling (V-2 Phase 2 보완) ───────
+def test_effective_cap_without_requested_timeout_uses_default():
+    assert T.effective_cap("run_command", {}) == T.timeout_cap()
+    assert T.effective_cap("run_command", None) == T.timeout_cap()
+
+
+def test_effective_cap_respects_larger_requested_timeout():
+    # LLM이 권장 회복조치를 따라 timeout=120으로 재시도 → 디스패치 캡도 그만큼 늘어나야 함
+    cap = T.effective_cap("run_command", {"timeout": 120})
+    assert cap >= 120.0
+    assert cap > T.timeout_cap()
+
+
+def test_effective_cap_ignores_smaller_requested_timeout():
+    # 도구 자체 timeout이 디스패치 캡보다 작으면 기존 캡 유지(굳이 줄이지 않음)
+    cap = T.effective_cap("run_command", {"timeout": 5})
+    assert cap == T.timeout_cap()
+
+
+def test_effective_cap_clamped_by_hard_ceiling(monkeypatch):
+    monkeypatch.setenv("TOOL_TIMEOUT_HARD_CEILING", "200")
+    cap = T.effective_cap("run_command", {"timeout": 999})
+    assert cap == 200.0
+
+
+def test_effective_cap_ignores_non_numeric_timeout():
+    assert T.effective_cap("run_command", {"timeout": "soon"}) == T.timeout_cap()
+    assert T.effective_cap("run_command", {"timeout": True}) == T.timeout_cap()
+
+
+def test_timeout_hard_ceiling_default_and_override(monkeypatch):
+    assert T.timeout_hard_ceiling() == 300.0
+    monkeypatch.setenv("TOOL_TIMEOUT_HARD_CEILING", "120")
+    assert T.timeout_hard_ceiling() == 120.0
