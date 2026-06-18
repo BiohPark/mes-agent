@@ -18,10 +18,12 @@ async def test_run_tool_watched_uses_effective_cap(monkeypatch):
 
     loop = asyncio.get_running_loop()
     results = []
-    async for kind, payload in server._run_tool_watched(loop, "run_command", {"timeout": 120}, "테스트"):
+    # generate() 루프가 실제로 넘기는 형태 — LLM 스트리밍 누적 JSON 문자열(파싱 전)
+    raw_arguments = '{"timeout": 120}'
+    async for kind, payload in server._run_tool_watched(loop, "run_command", raw_arguments, "테스트"):
         results.append((kind, payload))
 
     assert seen["name"] == "run_command"
-    assert seen["arguments"] == {"timeout": 120}
+    assert seen["arguments"] == raw_arguments
     assert results[-1][0] == "result"
     assert results[-1][1] == "ok"

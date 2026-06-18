@@ -157,6 +157,21 @@ def test_effective_cap_ignores_non_numeric_timeout():
     assert T.effective_cap("run_command", {"timeout": True}) == T.timeout_cap()
 
 
+def test_effective_cap_parses_json_string_arguments():
+    # generate() 루프는 LLM이 스트리밍으로 누적한 JSON 문자열(파싱 전)을 그대로 넘긴다 —
+    # run_tool()과 동일한 입력 형태. dict가 아니라 문자열로도 동작해야 한다.
+    cap = T.effective_cap("run_command", '{"timeout": 120, "shell": "powershell"}')
+    assert cap >= 120.0
+    assert cap > T.timeout_cap()
+
+
+def test_effective_cap_handles_empty_or_malformed_json_string():
+    assert T.effective_cap("run_command", "") == T.timeout_cap()
+    assert T.effective_cap("run_command", "{") == T.timeout_cap()
+    assert T.effective_cap("run_command", "not json") == T.timeout_cap()
+    assert T.effective_cap("run_command", None) == T.timeout_cap()
+
+
 def test_timeout_hard_ceiling_default_and_override(monkeypatch):
     assert T.timeout_hard_ceiling() == 300.0
     monkeypatch.setenv("TOOL_TIMEOUT_HARD_CEILING", "120")

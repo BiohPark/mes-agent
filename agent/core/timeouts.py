@@ -220,23 +220,32 @@ def timeout_hard_ceiling() -> float:
         return 300.0
 
 
-def effective_cap(name: str, arguments: dict | None = None) -> float:
+def effective_cap(name: str, arguments) -> float:
     """디스패치 캡을 계산한다 — 도구가 명시적으로 요청한 timeout을 존중하되 절대 상한은 유지.
 
     run_command/run_powershell처럼 자체 timeout 인자를 받는 도구가 회복 조치(timeout 늘려
     재시도)를 따라도, 디스패치 레벨 캡(기본 90s)이 그보다 먼저 끝내버려 무의미해지는 문제를 막는다.
-    arguments에 숫자형 timeout이 없으면 기존 timeout_cap()만 사용한다.
+
+    arguments는 run_tool()과 동일한 형태 — generate() 루프에서는 LLM이 스트리밍으로 누적한
+    **JSON 문자열**(아직 파싱 전)이고, 직접 호출/테스트에서는 dict일 수도 있다. 파싱 실패·
+    timeout 필드 없음·숫자가 아니면 기존 timeout_cap()만 사용한다(절대 예외를 던지지 않음).
     """
     base = timeout_cap()
-    requested = None
-    if arguments:
-        raw_timeout = arguments.get("timeout")
-        if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool):
-            requested = float(raw_timeout)
-    if requested is None:
+    parsed: dict = {}
+    if isinstance(arguments, dict):
+        parsed = arguments
+    elif isinstance(arguments, str) and arguments.strip():
+        try:
+            loaded = json.loads(arguments)
+        except (TypeError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict):
+            parsed = loaded
+    raw_timeout = parsed.get("timeout")
+    if not isinstance(raw_timeout, (int, float)) or isinstance(raw_timeout, bool):
         return base
     buffer = 5.0
-    return min(timeout_hard_ceiling(), max(base, requested + buffer))
+    return min(timeout_hard_ceiling(), max(base, float(raw_timeout) + buffer))
 
 
 def escalation_schedule(baseline: float, cap: float, factor: float = 4.0) -> list[float]:
