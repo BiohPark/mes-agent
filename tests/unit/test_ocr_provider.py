@@ -9,20 +9,20 @@ import pytest
 
 
 # ── get_ocr_provider / 폴백 ──────────────────────────────────────
-def test_default_provider_is_tesseract(monkeypatch):
+def test_default_provider_is_uia(monkeypatch):
     monkeypatch.delenv("OCR_PROVIDER", raising=False)
     from agent.core import ocr_provider as op
     if hasattr(op, "reset_ocr_provider"):
         op.reset_ocr_provider()
-    assert isinstance(op.get_ocr_provider(), op.TesseractProvider)
+    assert isinstance(op.get_ocr_provider(), op.UIAutomationProvider)
 
 
-def test_unknown_provider_falls_back_to_tesseract(monkeypatch):
+def test_unknown_provider_falls_back_to_uia(monkeypatch):
     monkeypatch.setenv("OCR_PROVIDER", "does-not-exist-xyz")
     from agent.core import ocr_provider as op
     if hasattr(op, "reset_ocr_provider"):
         op.reset_ocr_provider()
-    assert isinstance(op.get_ocr_provider(), op.TesseractProvider)  # 예외 없이 폴백
+    assert isinstance(op.get_ocr_provider(), op.UIAutomationProvider)  # 예외 없이 폴백
 
 
 # ── TesseractProvider 래핑 ───────────────────────────────────────

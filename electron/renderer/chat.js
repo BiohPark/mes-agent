@@ -545,7 +545,10 @@ function handleEvent(event, agentEl, bubble) {
 
   switch (event.type) {
     case 'text':
-      bubble.textContent += event.content
+      if (!bubble.dataset.rawText) bubble.dataset.rawText = '';
+      bubble.dataset.rawText += event.content;
+      bubble.innerHTML = renderMarkdown(bubble.dataset.rawText);
+      if (agentStateText) agentStateText.textContent = '✍️ 답변 작성 중...'
       scrollToBottom()
       break
 
@@ -579,6 +582,7 @@ function handleEvent(event, agentEl, bubble) {
         hint.textContent = ` ⏳ 예상보다 길어 더 기다리는 중… (~${event.next}s, 필요하면 중단)`
       }
       if (stopBtn) stopBtn.classList.add('pulse')
+      if (agentStateText) agentStateText.textContent = '⏳ 도구 대기 중 (시간 연장)...'
       updateAgentHud()
       scrollToBottom()
       break
@@ -639,6 +643,7 @@ function handleEvent(event, agentEl, bubble) {
       note.className = 'context-trim-note'
       note.textContent = `🧹 ${event.action || '컨텍스트를 정리해 재시도했습니다.'}`
       agentEl.querySelector('.msg-bubble').before(note)
+      if (agentStateText) agentStateText.textContent = '🧹 컨텍스트 정리하여 재시도 중...'
       scrollToBottom()
       break
     }
@@ -649,6 +654,7 @@ function handleEvent(event, agentEl, bubble) {
       note.className = 'context-trim-note'
       note.textContent = '↩ 끼어든 메시지를 반영합니다.'
       agentEl.querySelector('.msg-bubble').before(note)
+      if (agentStateText) agentStateText.textContent = '↩ 피드백 반영 중...'
       scrollToBottom()
       break
     }
@@ -659,8 +665,10 @@ function handleEvent(event, agentEl, bubble) {
       badge.className = 'context-trim-note'
       if (event.phase === 'reviewing') {
         badge.textContent = `🔍 검증 중 (라운드 ${event.round})…`
+        if (agentStateText) agentStateText.textContent = `🔍 결과 검증 중 (라운드 ${event.round})`
       } else if (event.phase === 'retrying') {
         badge.textContent = `↺ 재시도 중 (라운드 ${event.round + 1}): ${event.feedback || ''}`
+        if (agentStateText) agentStateText.textContent = `↺ 검증 실패하여 재시도 중 (라운드 ${event.round + 1})`
       }
       agentEl.querySelector('.msg-bubble').before(badge)
       scrollToBottom()
@@ -798,7 +806,7 @@ async function showConfirmDialog({ confirm_id, question, options, risk, command 
 function appendUserMessage(text) {
   const el = document.createElement('div')
   el.className = 'message user'
-  el.innerHTML = `<div class="msg-role">나</div><div class="msg-bubble">${escapeHtml(text)}</div>`
+  el.innerHTML = `<div class="msg-role">나</div><div class="msg-bubble">${renderMarkdown(text)}</div>`
   messagesEl.appendChild(el)
   scrollToBottom()
 }
@@ -818,6 +826,106 @@ function scrollToBottom() {
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = escapeHtml(text);
+
+  // 1. 코드 블록 치환 (```lang\ncode```)
+  const codeBlocks = [];
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  html = html.replace(codeBlockRegex, (match, lang, code) => {
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push({ lang, code });
+    return placeholder;
+  });
+
+  // 2. 인라인 코드: `code`
+  html = html.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+
+  // 3. 굵게: **text**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // 4. 기울임: *text*
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // 5. 링크: [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="markdown-link">$1</a>');
+
+  // 6. 목록 처리 (- item 또는 * item)
+  const lines = html.split('\n');
+  let inList = false;
+  const processedLines = lines.map(line => {
+    const match = line.match(/^\s*[-*]\s+(.*)$/);
+    if (match) {
+      const content = match[1];
+      if (!inList) {
+        inList = true;
+        return '<ul><li>' + content + '</li>';
+      }
+      return '<li>' + content + '</li>';
+    } else {
+      if (inList) {
+        inList = false;
+        return '</ul>' + line;
+      }
+      return line;
+    }
+  });
+  if (inList) {
+    processedLines.push('</ul>');
+  }
+  html = processedLines.join('\n');
+
+  // 7. 일반 개행 -> <br>
+  html = html.replace(/\n/g, '<br>');
+
+  // 8. 코드 블록 복원 (Copy 버튼 포함)
+  codeBlocks.forEach((block, idx) => {
+    const placeholder = `__CODE_BLOCK_${idx}__`;
+    const cleanCode = block.code.trim();
+    const codeBlockHtml = `
+<div class="code-block-wrapper" data-code="${encodeURIComponent(cleanCode)}">
+  <div class="code-block-header">
+    <span class="code-block-lang">${block.lang || 'code'}</span>
+    <button class="code-block-copy-btn" onclick="copyCodeBlock(this)">Copy</button>
+  </div>
+  <pre><code class="language-${block.lang}">${cleanCode}</code></pre>
+</div>`.trim();
+    html = html.replace(placeholder, codeBlockHtml);
+  });
+
+  return html;
+}
+
+window.copyCodeBlock = function(btn) {
+  const wrapper = btn.closest('.code-block-wrapper');
+  if (!wrapper) return;
+  const code = decodeURIComponent(wrapper.dataset.code);
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {
+    const textarea = document.createElement('textarea');
+    textarea.value = code;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    } catch (e) {}
+    document.body.removeChild(textarea);
+  });
 }
 
 function showWelcome(taskType) {
@@ -1122,7 +1230,9 @@ async function selectArchivedThread(taskType, threadId) {
       if (m.role === 'user') appendUserMessage(m.content)
       else if (m.role === 'assistant') {
         const el = appendAgentMessage()
-        el.querySelector('.msg-bubble').textContent = m.content
+        const bubble = el.querySelector('.msg-bubble')
+        bubble.dataset.rawText = m.content
+        bubble.innerHTML = renderMarkdown(m.content)
       }
     })
   } catch {}
@@ -1287,7 +1397,9 @@ async function selectThread(taskType, threadId, status) {
         if (m.role === 'user') appendUserMessage(m.content)
         else if (m.role === 'assistant') {
           const el = appendAgentMessage()
-          el.querySelector('.msg-bubble').textContent = m.content
+          const bubble = el.querySelector('.msg-bubble')
+          bubble.dataset.rawText = m.content
+          bubble.innerHTML = renderMarkdown(m.content)
         }
       })
     }
@@ -1434,7 +1546,11 @@ threadCloseCurrentBtn.addEventListener('click', closeCurrentThread)
 
 messagesEl.addEventListener('click', () => {
   const isArchived = document.querySelector('.thread-item.selected.archived')
-  if (currentTaskType && currentThreadId && !isArchived) inputEl.focus()
+  if (currentTaskType && currentThreadId && !isArchived) {
+    if (!window.getSelection().toString()) {
+      inputEl.focus()
+    }
+  }
 })
 
 openDeleteManagerBtn.addEventListener('click', openDeleteManager)

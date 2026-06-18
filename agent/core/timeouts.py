@@ -323,3 +323,14 @@ def timeout_error_text(name: str, waited: float, progressed: bool = False,
         f"회복 옵션:\n{alts_text}\n"
         f"위 옵션 중 하나를 선택해 진행하거나, 선택이 어려우면 ask_user로 사용자에게 보고하세요."
     )
+
+
+def should_background(name: str, arguments: dict | str) -> bool:
+    """도구를 백그라운드로 실행할지(디태치) 결정한다.
+    
+    정당하게 긴 작업(예: 대용량 변환, 오랜 시간이 걸리는 분석 등)은 
+    SSE를 막지 않고 백그라운드 작업으로 전환하여 무한 행을 방지하고 
+    UI 응답성을 유지한다. (ADR-0003 V-2 Phase 3)
+    """
+    # V-2 Phase 3 백그라운드 파일럿 일시 비활성화 (에이전트가 비동기 완료를 기다리지 못하는 문제 발생)
+    return False

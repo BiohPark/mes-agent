@@ -7,7 +7,7 @@
 | Windows | 10 / 11 (64비트) | |
 | Miniconda | 최신 | Python 3.11 환경 생성용 |
 | Node.js | 22.x | nvm-windows 권장 |
-| Tesseract OCR | 5.x | UB-Mannheim 설치본 |
+| Tesseract OCR | 5.x | UB-Mannheim 설치본 (선택, 기본 UIA 전환으로 생략 가능) |
 | Git | 최신 | 저장소 클론용 |
 
 ---
@@ -33,15 +33,19 @@ conda activate mes-agent
 pip install -r requirements.txt
 ```
 
-### Tesseract OCR 설치
+### OCR 및 UI Automation (UIA) 설정
 
-1. [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) 에서 `tesseract-ocr-w64-setup-*.exe` 다운로드
-2. 설치 시 **Korean** 언어 팩 체크 (Korean.traineddata)
-3. 설치 경로 확인 후 `.env`에 반영:
+mes-agent는 기본적으로 Windows UI Automation(`OCR_PROVIDER=uia`)을 사용하여 화면 내 텍스트와 좌표를 긁어옵니다. 따라서 **별도의 Tesseract OCR 엔진을 설치할 필요가 없습니다.**
 
-```ini
-OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
-```
+만약 레거시 OCR(Tesseract) 엔진을 사용해야 하는 특수 환경의 경우에만 다음 단계를 수행하세요:
+
+1. [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) 에서 `tesseract-ocr-w64-setup-*.exe` 다운로드 및 설치.
+2. 설치 시 **Korean** 언어 팩 체크 (Korean.traineddata).
+3. 설치 경로 및 환경변수를 `.env`에 반영:
+   ```ini
+   OCR_PROVIDER=tesseract
+   OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
+   ```
 
 ### Playwright 브라우저 바이너리 설치
 

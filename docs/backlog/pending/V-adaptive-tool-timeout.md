@@ -1,6 +1,6 @@
 # 백로그 V — 적응형 도구 타임아웃 (무한 행 방지 + 작업 가시성) ⏱️
 
-> 상태: 🟡 1단계 구현 완료 · 2단계 liveness spike·인루프 판단·디스패치 캡 버그수정(effective_cap) 완료 · 자동 백그라운드 디태치는 설계 확정(ADR-0003) 후 구현 대기
+> 상태: ✅ 1단계 구현 완료 · 2단계 liveness spike·인루프 판단·디스패치 캡 버그수정(effective_cap) 완료 · 자동 백그라운드 디태치 구현 완료(ADR-0003)
 > 동기: Excel 작업이 **3분+ 무한 펜딩**, 사용자는 무슨 일인지 알 수 없었다(`docs/errors/화면 캡처 2026-06-12 054918.png`).
 > 거버넌스: 클린룸. 출처 = 본인 코드 + 일반 에이전트 지식 + openclaw(MIT)/LangGraph + **claw-code(MIT, 사용자 클리어 — 패턴만, 코드 복붙 금지)**.
 
@@ -29,7 +29,7 @@
    - 캡/스턱 시 구조화 결과(`failureClass`·`provenance`·추정원인·대안)를 **LLM에 tool 결과로 환류** →
      모델이 재시도(더 큰 timeout)/대안 경로(Excel COM→openpyxl)/사용자 질의를 **스스로 선택**.
    - "이번엔 시간 늘려 해본다 / 이렇게 해본다"를 모델이 텍스트로 사용자에게 설명(L1 루프 내레이션과 조화).
-3. **자동 백그라운드 디태치**(claw-code 패턴 참고) — **설계 확정(ADR-0003), 구현 대기**
+3. **자동 백그라운드 디태치**(claw-code 패턴 참고) — **구현 완료(ADR-0003)**
    - 정당하게 긴 작업(대용량 빌드·변환)은 SSE를 막지 않고 **백그라운드 작업으로 전환** → 진행 폴링/완료 알림.
    - `start_process`/`run_command`의 GUI·장기 프로세스를 "성공적으로 시작됨(미종료)"으로 분류해 행으로 오인하지 않음.
    - 설계: 도구가 즉시 "시작됨" placeholder로 I1을 충족(tool_calls 짝 보존, 절대 안 깨짐) → 실제 결과는
@@ -55,9 +55,9 @@
 - 테스트: `tests/unit/test_timeouts.py`(6건 추가), `tests/unit/test_run_tool_watched.py`(신규).
 
 ## 핵심 파일
-- 구현됨: `agent/core/timeouts.py`, `agent/server.py`(`_run_tool_watched`), `agent/tools/office_com.py`, `agent/core/events.py`(`TOOL_WAIT`), `electron/renderer/chat.js`·`style.css`.
+- 구현됨: `agent/core/timeouts.py`(`should_background` 등), `agent/server.py`(`_run_tool_watched`, `_background_watchdog`), `agent/tools/office_com.py`, `agent/core/events.py`(`TOOL_WAIT`), `electron/renderer/chat.js`·`style.css`.
 - 2단계 일부 완료: `agent/core/timeouts.py`(run_command용 liveness·분류 확장 + `effective_cap` 디스패치 캡 버그수정), `agent/tools/process.py`(partial stdout/stderr 기반 timeout 구조화), `agent/server.py`(`_run_tool_watched`가 `effective_cap` 사용).
-- 2단계 후속 예정: `agent/server.py`(디태치·인루프 환류), 백그라운드 작업 레지스트리, Office/COM 외부 관측.
+- 2단계 후속 예정: `agent/server.py`(인루프 환류), Office/COM 외부 관측.
 
 ## 확인 필요 (2단계)
 1. 진행도 신호의 OS별 신뢰성(특히 COM STA 스레드가 막혔을 때 외부 관측만 가능).

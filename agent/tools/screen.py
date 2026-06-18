@@ -58,6 +58,7 @@ def capture_region_ocr(x: int, y: int, width: int, height: int) -> str:
     전체 화면 OCR보다 빠르고 정확합니다."""
     img = _capture_region(x, y, width, height)
     pil = _bgr_to_pil(img)
+    pil.region = (x, y, width, height)
     text = get_ocr_provider().image_to_string(pil)
     return text.strip() or "(인식된 텍스트 없음)"
 

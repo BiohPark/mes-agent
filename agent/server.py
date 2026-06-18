@@ -53,6 +53,10 @@ _stop_flags: dict[str, bool] = {}
 # generate() 루프가 단계 경계(I1 도구 짝 보존)에서 드레인한다. 백로그 O가 재사용.
 _pending_messages: dict[str, list[str]] = {}
 
+# V-2 Phase 3: 자동 백그라운드 디태치 상태 테이블
+_active_threads: set[str] = set()
+_background_tasks: dict[str, dict] = {}
+
 # G3 안전 게이트: 사용자 확인 대기 타임아웃(초). 타임아웃=거부(무인 자동승인 금지).
 _CONFIRM_TIMEOUT = 300
 # "항상 허용" 선택을 세션 동안 기억하는 허용목록(키=thread_id 또는 request_id).
@@ -582,6 +586,9 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         provenance={"user_message": wf_storage.summarize_for_ledger(message, 300)},
     )
 
+    if thread_id and task_type:
+        _active_threads.add(f"{task_type}:{thread_id}")
+
     # G4 plan 모드: 계획 단계 동안 실행 도구 차단 + 계획만 세우도록 시스템 프롬프트 보강
     plan_phase = (agent_mode == "plan")
     if plan_phase and messages and messages[0].get("role") == "system":
@@ -1014,22 +1021,39 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
                 # 무한 행 방지: escalating 타임아웃 + 길어지면 TOOL_WAIT 내레이션(A1)
                 try:
                     result = None
-                    async for _wk, _wd in _run_tool_watched(loop, tc["name"], tc["arguments"], label):
-                        if _wk == "wait":
-                            yield sse({"type": ev.TOOL_WAIT, **_wd})
-                            await _audit(
-                                "tool_waited",
-                                "executing",
-                                "executor",
-                                f"Waiting for {tc['name']}",
-                                details={"tool": tc["name"], **_wd},
-                                provenance={"source": "tool_watchdog"},
-                            )
-                        else:
-                            result = _wd
-                    # 캡/Office 내부 타임아웃은 '툴 실행 오류' 문자열로 돌아온다 → 실패로 처리
-                    if isinstance(result, str) and result.startswith("툴 실행 오류"):
-                        _tool_failed = True
+                    from agent.core.timeouts import should_background
+                    if should_background(tc["name"], tc["arguments"]):
+                        _task_id = uuid.uuid4().hex[:8]
+                        _future = loop.run_in_executor(None, run_tool, tc["name"], tc["arguments"])
+                        _background_tasks[_task_id] = {
+                            "future": _future,
+                            "task_type": task_type,
+                            "thread_id": thread_id,
+                            "tool": tc["name"],
+                            "started_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        result = json.dumps({
+                            "background": True, 
+                            "task_id": _task_id, 
+                            "message": "백그라운드로 시작됨, 완료되면 알려드립니다"
+                        }, ensure_ascii=False)
+                    else:
+                        async for _wk, _wd in _run_tool_watched(loop, tc["name"], tc["arguments"], label):
+                            if _wk == "wait":
+                                yield sse({"type": ev.TOOL_WAIT, **_wd})
+                                await _audit(
+                                    "tool_waited",
+                                    "executing",
+                                    "executor",
+                                    f"Waiting for {tc['name']}",
+                                    details={"tool": tc["name"], **_wd},
+                                    provenance={"source": "tool_watchdog"},
+                                )
+                            else:
+                                result = _wd
+                        # 캡/Office 내부 타임아웃은 '툴 실행 오류' 문자열로 돌아온다 → 실패로 처리
+                        if isinstance(result, str) and result.startswith("툴 실행 오류"):
+                            _tool_failed = True
                 except Exception as first_err:
                     _tool_failed = True
                     result = f"툴 실행 오류: {first_err}"
@@ -1250,6 +1274,8 @@ async def generate(message: str, thread_id: str = "", task_type: str = "", agent
         # 스레드 없는 단발 요청의 허용목록은 정리(스레드 키는 세션 유지)
         if not thread_id:
             _session_allowlists.pop(request_id, None)
+        if thread_id and task_type:
+            _active_threads.discard(f"{task_type}:{thread_id}")
 
     # 스레드 또는 세션 종료
     if thread_id and task_type:
@@ -1444,8 +1470,48 @@ async def _control_loop():
             print(f"[control] 명령함 처리 오류(무시): {e}")
 
 
+async def _background_watchdog():
+    interval = 3.0
+    while not _control_stop:
+        await asyncio.sleep(interval)
+        try:
+            done_tasks = []
+            for tid, info in list(_background_tasks.items()):
+                fut = info["future"]
+                if fut.done():
+                    task_type = info["task_type"]
+                    thread_id = info["thread_id"]
+                    if f"{task_type}:{thread_id}" in _active_threads:
+                        continue  # 활성 실행 중이면 다음 틱까지 대기
+                    
+                    try:
+                        res = fut.result()
+                    except Exception as e:
+                        res = f"툴 실행 오류(백그라운드): {e}"
+                    
+                    tool = info["tool"]
+                    msg = f"[배경 작업 완료] {tool} 결과:\n{res}"
+                    done_tasks.append((tid, msg, task_type, thread_id))
+            
+            for tid, msg, task_type, thread_id in done_tasks:
+                _background_tasks.pop(tid, None)
+                try:
+                    # 헤드리스 실행(auto_confirm="deny"로 위험 작업 자동차단)
+                    async for _ in generate(msg, thread_id, task_type, auto_confirm="deny"):
+                        pass
+                except Exception as e:
+                    print(f"[background] 배경 작업 결과 주입 오류: {e}")
+                    
+        except Exception as e:
+            print(f"[background] 백그라운드 워치독 오류(무시): {e}")
+
+
 @app.on_event("startup")
 async def startup_control():
+    # 백그라운드 워치독은 항상 시작 (V-2 Phase 3)
+    asyncio.create_task(_background_watchdog())
+    print("[background] 백그라운드 워치독 시작")
+
     if os.environ.get("CONTROL_ENABLED", "false").lower() != "true":
         return
     sm = get_session_manager()

@@ -43,6 +43,7 @@
 > L2 seed 구현으로 작업버퍼(`agent-messages`)와 표시 transcript(`agent/transcripts/...jsonl`)를 분리했다.
 > compaction 이후에도 새로 기록된 user/assistant 표시 대화와 compaction summary는 active/archive display·count·search에서 복원된다.
 > RunLedger writer seed 구현으로 request_id 단위 JSONL 감사추적과 phase/role 이벤트 기록을 추가했다.
+> **(2026-06-18)** 사용자 열린 엑셀 창과 실시간으로 호흡하는 Active COM 연동(`excel_active_set_cells`, `excel_active_get_range`)을 구현하여 실시간 Shared-State Interaction을 달성했다.
 
 ### 후속(선행조건 아님, 분리 트랙)
 - **transcript 3계층 + 원문 무손실 + RunLedger** → 트랙 **1C** seed 구현, 계약 `docs/contracts/L2_message_invariants.md`.

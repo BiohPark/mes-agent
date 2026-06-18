@@ -2527,3 +2527,91 @@ body {
   padding: 2px 6px;
 }
 .memory-del:hover { color: #e94560; }
+
+/* ── 마크다운 요소 및 코드 블록 스타일링 ─────────────────────── */
+.msg-bubble ul, .msg-bubble ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.msg-bubble li {
+  margin: 4px 0;
+}
+.msg-bubble strong {
+  font-weight: bold;
+  color: #fff;
+}
+.msg-bubble em {
+  font-style: italic;
+}
+.msg-bubble .inline-code {
+  background: #1a1a2e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Courier New', Courier, monospace;
+  font-size: 13px;
+  color: #e94560;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.msg-bubble .markdown-link {
+  color: #4e8cff;
+  text-decoration: underline;
+}
+.msg-bubble .markdown-link:hover {
+  color: #7aa5ff;
+}
+
+/* 코드 블록 Wrapper & Header */
+.code-block-wrapper {
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+  position: relative;
+  font-family: 'Consolas', 'Courier New', Courier, monospace;
+}
+.code-block-header {
+  background: #16213e;
+  padding: 6px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.code-block-lang {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+.code-block-copy-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ccc;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.code-block-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.code-block-copy-btn.copied {
+  background: #2f855a;
+  color: #fff;
+  border-color: #2f855a;
+}
+.code-block-wrapper pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f8f8f2;
+  white-space: pre;
+}
+
