@@ -1,15 +1,9 @@
-"""OCR 제공자 어댑터 — OCR을 pytesseract에 직접 결합하지 않고 교체·롤백 가능하게(트랙 3a 1단계).
-
-명세: docs/specs/ocr-provider.md. 이번 단계는 **추상화만**(tesseract 제거는 후속).
+"""화면 인식 어댑터 — 레거시 Tesseract 엔진이 완전히 제거되었고 UIA 방식으로 대체됨.
 향후 provider 후보: UIA(접근성 트리, `agent/tools/ui_automation.py`), multimodal(LLM, 사내 멀티모달 확인 전제).
 """
 import os
-
-try:
-    import pytesseract
-except ImportError:
-    pytesseract = None
-
+def _lang(lang):
+    return lang or os.environ.get("OCR_LANG", "kor+eng")
 
 class OCRProvider:
     """OCR 백엔드 추상 인터페이스. image는 PIL.Image 또는 동등 객체."""
@@ -21,35 +15,10 @@ class OCRProvider:
         raise NotImplementedError
 
 
-def _lang(lang):
-    return lang or os.environ.get("OCR_LANG", "kor+eng")
-
-
-def _tesseract_cmd():
-    return os.environ.get("OCR_TESSERACT_CMD", "tesseract")
-
-
-class TesseractProvider(OCRProvider):
-    """pytesseract 래퍼 — 기존 동작 보존. 원시 결과 반환(strip/후처리는 호출부 책임)."""
-
-    def image_to_string(self, image, lang=None) -> str:
-        if pytesseract is None:
-            return "(pytesseract 패키지가 설치되어 있지 않습니다)"
-        pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd()
-        return pytesseract.image_to_string(image, lang=_lang(lang))
-
-    def image_to_data(self, image, lang=None) -> dict:
-        if pytesseract is None:
-            return {"text": [], "left": [], "top": [], "width": [], "height": [], "conf": []}
-        pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd()
-        return pytesseract.image_to_data(
-            image, lang=_lang(lang), output_type=pytesseract.Output.DICT
-        )
-
 
 class UIAutomationProvider(OCRProvider):
     """Win32 UI Automation 기반의 대체 OCR 제공자.
-    Tesseract 엔진 설치 없이 Win32 윈도우 및 자식 컨트롤을 구조적으로 탐색하여 텍스트 및 위치를 획득합니다.
+    Win32 윈도우 및 자식 컨트롤을 구조적으로 탐색하여 텍스트 및 위치를 획득합니다.
     """
 
     def _get_win32gui(self):
@@ -159,7 +128,6 @@ class UIAutomationProvider(OCRProvider):
 
 # 제공자 레지스트리 (이름 → 클래스).
 _REGISTRY = {
-    "tesseract": TesseractProvider,
     "uia": UIAutomationProvider,
 }
 

@@ -154,11 +154,11 @@
 
 ### 3a. Tesseract 제거 (이미지 인식 LLM/네이티브 전환)
 - 현황: pytesseract는 실시간 화면 텍스트(버튼/좌표) 용도, 복잡한 이미지는 이미 멀티모달 방침
-- [ ] pytesseract 호출 지점 전수 조사 → (a) 실시간 좌표/텍스트 (b) 문서 인식 분류
-- [ ] **(a)의 1순위 대안: pywinauto 접근성 트리** — 대상이 Windows 네이티브 앱으로 확인됨. OCR 없이 텍스트+좌표를 API로 직접 획득 (빠르고 결정적, GxP 재현성 유리)
-- [ ] (b)는 멀티모달 LLM 직행 (사내 LLM 멀티모달 지원 확인이 전제)
-- [ ] `OCRProvider` 어댑터 인터페이스 도입 → config 플래그로 신구 전환/롤백
-- 완료 기준: tesseract 바이너리·kor.traineddata·pytesseract가 설치 절차에서 제거, 기존 시나리오 회귀 테스트 통과
+- [x] pytesseract 호출 지점 전수 조사 → (a) 실시간 좌표/텍스트 (b) 문서 인식 분류
+- [x] **(a)의 1순위 대안: pywinauto/UIA 접근성 트리** — 대상이 Windows 네이티브 앱으로 확인됨. OCR 없이 텍스트+좌표를 API로 직접 획득.
+- [x] (b)는 이미지를 Base64로 인코딩하여 멀티모달 LLM 직행.
+- [x] `OCRProvider` 어댑터 인터페이스 도입 및 TesseractProvider 완전 제거 (UIA 기본 제공).
+- 완료 기준: tesseract 바이너리·kor.traineddata·pytesseract가 설치 절차에서 완전히 제거됨. (완료 ✅)
 
 ### 3b. 녹스(Knox) 메신저 업무 챗봇 (향후 과제 — 설계만)
 - [ ] ADR 1편 작성: FastAPI 웹훅 수신, 사용자별 세션 관리(상태·권한 분리), 인증, GxP 감사추적

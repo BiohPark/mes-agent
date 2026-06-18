@@ -171,7 +171,7 @@ pyperclip                      — 클립보드 경유 한글 입력
 playwright (Chromium)          — 브라우저 자동화
 psutil                         — 프로세스 관리
 
-pytesseract + Tesseract 5.4    — OCR (kor+eng)
+
 opencv-python + mss            — 이미지 매칭, 고속 스크린샷
 pillow                         — 이미지 처리
 
@@ -399,7 +399,7 @@ Vault/
 - **Python**: `conda-pack`으로 환경 압축 → USB 이전
 - **Node**: `node_modules` 폴더 전체 복사
 - **Playwright**: `python -m playwright install chromium` 후 `%LOCALAPPDATA%\ms-playwright\` 전체 이전
-- **Tesseract**: UB-Mannheim 설치본 오프라인 설치
+
 
 자세한 내용 → [SETUP.md — 폐쇄망 이전](SETUP.md#폐쇄망-이전)
 

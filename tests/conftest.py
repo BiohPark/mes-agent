@@ -35,7 +35,7 @@ def pytest_runtest_setup(item):
 
     if "requires_office" in item.keywords:
         if is_ci and not is_internal_ci:
-            pytest.skip("MS Office / Tesseract 등 데스크탑 소프트웨어가 필요합니다 "
+            pytest.skip("MS Office 등 데스크탑 소프트웨어가 필요합니다 "
                         "(requires_office). 사내망 self-hosted runner에서 실행하세요.")
 
 # ── 최소 환경변수 — agent 모듈 import 전에 반드시 설정 ──────────────

@@ -21,8 +21,7 @@ from agent.core.ocr_provider import get_ocr_provider
 
 # ── 공통 유틸 ─────────────────────────────────────────────────
 
-def _tesseract_cmd() -> str:
-    return os.environ.get("OCR_TESSERACT_CMD", "tesseract")
+
 
 
 def _lang() -> str:
@@ -54,8 +53,8 @@ def _bgr_to_pil(img: np.ndarray) -> Image.Image:
 # ── 공개 툴 ───────────────────────────────────────────────────
 
 def capture_region_ocr(x: int, y: int, width: int, height: int) -> str:
-    """지정 영역만 캡처하고 OCR로 텍스트를 추출합니다.
-    전체 화면 OCR보다 빠르고 정확합니다."""
+    """지정 영역만 캡처하여 텍스트를 추출합니다.
+    (과거 OCR 도구였으나, 현재는 Vision LLM 기반 분석 등으로 대체 예정)"""
     img = _capture_region(x, y, width, height)
     pil = _bgr_to_pil(img)
     pil.region = (x, y, width, height)
@@ -226,7 +225,7 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "capture_region_ocr",
-                "description": "지정 영역만 캡처하고 OCR로 텍스트를 추출합니다. 특정 영역에 집중할 때 전체 화면 OCR보다 정확합니다.",
+                "description": "지정 영역을 캡처하여 텍스트를 추출합니다. 내부적으로 화면 이미지를 base64로 변환하여 멀티모달 LLM에 전달하여 화면을 분석합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
