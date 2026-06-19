@@ -172,4 +172,9 @@ class TestStartupGate:
         created = []
         monkeypatch.setattr("agent.server.asyncio.create_task", lambda c: created.append(c))
         await srv.startup_control()
-        assert created == []
+        # 백그라운드 워치독(V-2 Phase 3)은 CONTROL_ENABLED와 무관하게 항상 시작된다.
+        # 이 테스트가 검증하는 건 Vault 명령함 폴러(_control_loop)가 스케줄되지 않는 것뿐.
+        names = [c.cr_code.co_name for c in created]
+        assert "_control_loop" not in names
+        for c in created:
+            c.close()
