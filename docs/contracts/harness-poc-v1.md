@@ -78,10 +78,25 @@ Reviewer system suffix:
 
 ---
 
-## 6. 비활성화 조건(하네스 건너뜀)
+## 6. 활성화 조건 (도메인 하네스 팩 v1, 2026-06-19)
 
-- `HARNESS_ENABLED` 환경변수가 `"true"`가 아닌 경우
-- `/chat` 요청에 `harness_mode=false`(기본)
+`server._should_use_harness(harness_mode, task_type)`가 결정:
+
+```
+HARNESS_ENABLED(전역) AND task_type 존재
+  AND ( /chat 요청의 harness_mode 플래그 OR 업무타입 설정의 harness 옵트인 )
+```
+
+- **업무타입 단위 옵트인**: 업무 config(`_DEFAULT_TASK_CONFIGS` / Vault 오버레이)에
+  `harness: true`면 명시 플래그 없이도 하네스 경로. 첫 버티컬 = `syncade`(배포 검증).
+- **도메인 검증 프롬프트**: config의 `verify_prompt`가 있으면 Reviewer suffix에 주입
+  (`_reviewer_call(history, verify_prompt)`). 없으면 기존 기본 검증 프롬프트.
+
+### 비활성화 조건(하네스 건너뜀)
+
+- `HARNESS_ENABLED` 환경변수가 `"true"`가 아닌 경우 → 옵트인·플래그 무관하게 항상 우회(I6)
+- `harness_mode=false`(기본)이고 업무타입도 `harness` 옵트인이 아닌 경우
+- `thread_id`/`task_type`이 비어 있는 경우
 - Reviewer LLM 호출 타임아웃 → passed=True 폴백(안전)
 
 ---
@@ -90,5 +105,7 @@ Reviewer system suffix:
 
 - [ ] `test_harness_roles.py` 전체 통과
 - [ ] `test_harness_orchestrator.py` 전체 통과 (FakeLLM, 네트워크 없음)
+- [ ] `test_task_type_harness.py` 전체 통과 (업무타입 옵트인 스키마·헬퍼)
+- [ ] `test_harness_optin.py` 전체 통과 (`_should_use_harness` 라우팅)
 - [ ] 기존 단위 테스트 회귀 없음
 - [ ] `HARNESS_ENABLED=false`(기본) 시 `/chat` 경로 무영향 확인

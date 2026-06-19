@@ -38,7 +38,12 @@ from agent.core.transcript import ephemeral_user_message, strip_ephemeral_metada
 from agent.core.tokens import estimate_message_tokens
 from agent.core.overflow import is_context_overflow, is_recoverable
 from agent.memory import MemoryStore
-from agent.obsidian_session import get_session_manager, get_task_configs
+from agent.obsidian_session import (
+    get_session_manager,
+    get_task_configs,
+    task_type_harness_enabled,
+    task_type_verify_prompt,
+)
 from agent.workflow import storage as wf_storage
 from agent.workflow.model import WorkflowRunState, LedgerEntry, RunLedgerEvent
 from agent.core import events as ev
@@ -435,13 +440,19 @@ def _summarize_history(history: list) -> str:
     return (resp.choices[0].message.content or "").strip()
 
 
-async def _reviewer_call(history: list[dict]) -> "ReviewVerdict":  # type: ignore[name-defined]
-    """Reviewer 단발 비스트리밍 LLM 호출 (I2: tools 배열 미전송)."""
+async def _reviewer_call(history: list[dict], verify_prompt: str = "") -> "ReviewVerdict":  # type: ignore[name-defined]
+    """Reviewer 단발 비스트리밍 LLM 호출 (I2: tools 배열 미전송).
+
+    verify_prompt가 있으면 업무타입 도메인 검증 지침을 Reviewer suffix에 덧붙인다.
+    """
     from agent.harness.orchestrator import ReviewVerdict, parse_verdict
     from agent.harness.roles import REVIEWER
     client = get_client()
     model = get_model()
     loop = asyncio.get_event_loop()
+    reviewer_system = REVIEWER.system_suffix
+    if verify_prompt:
+        reviewer_system = reviewer_system + "\n\n[도메인 검증 지침] " + verify_prompt
     recent = [
         m for m in history[-12:]
         if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
@@ -449,7 +460,7 @@ async def _reviewer_call(history: list[dict]) -> "ReviewVerdict":  # type: ignor
     try:
         resp = await loop.run_in_executor(None, lambda: client.chat.completions.create(
             model=model,
-            messages=[{"role": "system", "content": REVIEWER.system_suffix}] + recent,
+            messages=[{"role": "system", "content": reviewer_system}] + recent,
             temperature=0,
             max_tokens=300,
         ))
@@ -459,6 +470,18 @@ async def _reviewer_call(history: list[dict]) -> "ReviewVerdict":  # type: ignor
         return ReviewVerdict(passed=True)
 
 
+def _should_use_harness(harness_mode: bool, task_type: str) -> bool:
+    """하네스 경로 사용 여부 결정.
+
+    활성 조건(AND): HARNESS_ENABLED(전역) + task_type 존재 +
+      (요청의 명시 harness_mode 플래그 OR 업무타입 설정의 harness 옵트인).
+    HARNESS_ENABLED=false면 항상 False — 기존 generate() 경로 무영향(I6).
+    """
+    if not (HARNESS_ENABLED and task_type):
+        return False
+    return bool(harness_mode) or task_type_harness_enabled(task_type)
+
+
 async def _harness_generate(message: str, thread_id: str, task_type: str, agent_mode: str):
     """Executor→Reviewer 하네스 래퍼. generate()를 호출해 기존 루프 재사용 (I5).
 
@@ -466,6 +489,7 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
     """
     loop = asyncio.get_event_loop()
     session_mgr = get_session_manager()
+    verify_prompt = task_type_verify_prompt(task_type)
 
     for round_n in range(_HARNESS_MAX_ROUNDS):
         is_last = (round_n == _HARNESS_MAX_ROUNDS - 1)
@@ -485,7 +509,7 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
 
         yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "reviewing"})
         history = await loop.run_in_executor(None, session_mgr.get_thread_messages, task_type, thread_id)
-        verdict = await _reviewer_call(history)
+        verdict = await _reviewer_call(history, verify_prompt)
 
         if verdict.passed:
             yield sse({"type": ev.DONE})
@@ -1359,7 +1383,7 @@ async def switch_model(name: str):
 
 @app.post("/chat")
 async def chat(body: ChatRequest):
-    if body.harness_mode and HARNESS_ENABLED and body.thread_id and body.task_type:
+    if _should_use_harness(body.harness_mode, body.task_type) and body.thread_id:
         gen = _harness_generate(body.message, body.thread_id, body.task_type, body.agent_mode)
     else:
         gen = generate(body.message, body.thread_id, body.task_type, body.agent_mode)

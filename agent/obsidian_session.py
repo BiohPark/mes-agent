@@ -111,6 +111,15 @@ _DEFAULT_TASK_CONFIGS = {
             "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록. "
             "배포 완료 후 결과를 obsidian_write_note로 Vault에 기록해라."
         ) + _AUTO_EXEC,
+        # 도메인 하네스 팩 v1: 배포는 결과 검증이 중요한 GxP 작업이므로
+        # Executor→Reviewer 자기검증 루프를 업무타입 단위로 옵트인한다.
+        # (HARNESS_ENABLED=true일 때만 실제 활성화 — 기본 off, I6)
+        "harness": True,
+        "verify_prompt": (
+            "배포 작업의 결과를 읽기 전용 도구로 점검하라: "
+            "서비스가 정상 기동했는지, 배포된 버전이 의도한 빌드와 일치하는지, "
+            "오류 로그가 없는지 확인하라. 문제가 있으면 구체적인 수정 지침을 피드백으로 제시하라."
+        ),
     },
     "obsidian": {
         "label": "Obsidian PKM",
@@ -228,6 +237,22 @@ def _save_vault_task_configs(configs: dict) -> None:
 def get_task_configs() -> dict:
     """Return built-in task configs merged with Vault custom task types."""
     return {**_DEFAULT_TASK_CONFIGS, **_load_vault_task_configs()}
+
+
+def task_type_harness_enabled(task_type: str) -> bool:
+    """업무타입 설정이 하네스(Executor→Reviewer 자기검증) 옵트인인지 반환.
+
+    미지정·미존재 업무타입은 False (하위호환·기본 비활성).
+    실제 활성화는 server.HARNESS_ENABLED와 AND로 결정한다(I6).
+    """
+    cfg = get_task_configs().get(task_type, {})
+    return bool(cfg.get("harness", False))
+
+
+def task_type_verify_prompt(task_type: str) -> str:
+    """업무타입 설정의 도메인 검증 프롬프트(Reviewer suffix에 주입). 없으면 빈 문자열."""
+    cfg = get_task_configs().get(task_type, {})
+    return str(cfg.get("verify_prompt", "")).strip()
 
 
 # ── 메인 클래스 ───────────────────────────────────────────────
