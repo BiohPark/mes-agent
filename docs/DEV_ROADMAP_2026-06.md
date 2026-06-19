@@ -19,11 +19,14 @@
 
 | # | 미션 | 근거 | 규모 | 상태 |
 |---|------|------|------|------|
-| 1 | **도메인 하네스 팩** — 업무타입별 옵트인 하네스/Verifier 연결 + 검증형 워크플로우 | 이미 만든 PoC·Verifier·RunLedger·워크플로우 템플릿을 실제 MES 버티컬에 연결. 자기검증으로 배포/검증 신뢰도↑(GxP 감사) | M | 🚧 v1 착수(syncade) |
+| 1 | **도메인 하네스 팩** — 업무타입별 옵트인 하네스/Verifier 연결 + 검증형 워크플로우 | 이미 만든 PoC·Verifier·RunLedger·워크플로우 템플릿을 실제 MES 버티컬에 연결. 자기검증으로 배포/검증 신뢰도↑(GxP 감사) | M | ✅ v1 완료 · 실측·2번째 버티컬 대기 |
 
-**v1 진행(2026-06-19)**: 업무 설정에 `harness`/`verify_prompt` 추가, `_should_use_harness()`
-업무타입 옵트인 라우팅, `syncade` 배포 버티컬 자기검증 활성. 후속: 추가 버티컬(MES 검증·
-Office 작성)은 회사 도메인 정보 확보 후.
+**v1 완료(2026-06-19, `c61ce1e`)**: 업무 설정에 `harness`/`verify_prompt` 추가,
+`_should_use_harness()` 업무타입 옵트인 라우팅, `syncade` 배포 버티컬 자기검증 활성,
+테스트 2종(`test_harness_optin`·`test_task_type_harness`). **다음 액션**: ① `syncade`
+옵트인 **실사용 실측** — Executor→Reviewer 루프의 토큰·스텝 비용과 자기교정 효과 측정
+(P1 #2 N 에픽 결정의 입력 데이터, 단일 차단요인 無). ② 두 번째 버티컬(MES 검증·Office
+작성) 연결 — 도메인 검증 프롬프트는 회사 PC 도메인 정보 확보 후.
 
 ## P1 — 높음 (가치·견고성, 대부분 unblocked)
 
