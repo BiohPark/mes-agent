@@ -1,6 +1,6 @@
 # P0 세부 개발계획 — 도메인 하네스 팩 (Domain Harness Pack)
 
-> 작성: 2026-06-19 · 상태: 🚧 v1 완료 → v2 계획 · 우선순위: **P0 (최우선)**
+> 작성: 2026-06-19 · 상태: ✅ Phase 1·2(G2)·3 완료(`0ebe0fa`) / G1·Phase 4 실행 대기 · 우선순위: **P0**
 > 기준: `docs/DEV_ROADMAP_2026-06.md`, `docs/contracts/harness-poc-v1.md`,
 > `docs/backlog/pending/N-harness-mode.md`, `docs/adr/0002-L1-loop-contract.md`
 
@@ -42,7 +42,7 @@
 
 ## 4. 단계별 개발계획
 
-### Phase 1 — 하네스 실측 계측 (관찰성) · 규모 M · **차단요인 無**
+### Phase 1 — 하네스 실측 계측 (관찰성) · 규모 M · ✅ 완료(`0ebe0fa`)
 
 > 목적: "하네스가 가치 있나?"를 데이터로 답할 수 있게 만든다. 모든 후속 결정의 토대.
 
@@ -65,7 +65,7 @@
 
 ---
 
-### Phase 2 — Reviewer 검증 충실도 (G1·G2 해결) · 규모 M · 일부 설계결정 선행
+### Phase 2 — Reviewer 검증 충실도 (G1·G2) · G2 ✅ 완료 / G1 ⏳ ADR-0004 Proposed
 
 > 목적: Reviewer가 "텍스트 추론"이 아니라 "읽기전용 도구로 실제 확인"하게 한다.
 
@@ -90,7 +90,7 @@
 
 ---
 
-### Phase 3 — 2번째 버티컬: Unscript 옵트인 (G4) · 규모 S · **차단요인 無**
+### Phase 3 — 2번째 버티컬: Unscript 옵트인 (G4) · 규모 S · ✅ 완료(`0ebe0fa`)
 
 > 목적: 하네스 가치를 도메인 1개에 의존하지 않게 일반화. unscript는 **테스트 도메인**이라
 > 검증 도구(`compare_screenshots`·`capture_screen_ocr`)가 자연스럽고 회사 정보 불필요.
@@ -105,7 +105,7 @@
 
 ---
 
-### Phase 4 — 실측 평가 방법론 + 실행 (P1 #2 입력) · 규모 S(방법론) / 실행은 회사PC
+### Phase 4 — 실측 평가 방법론 + 실행 (P1 #2 입력) · 4.1 ✅ 방법론 / 4.2 ⏳ 회사PC 실행
 
 > 목적: 하네스 ON/OFF를 같은 작업에 비교해 N 에픽(Planner 추가) 결정 근거를 만든다(G5).
 

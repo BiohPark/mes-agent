@@ -91,6 +91,13 @@ HARNESS_ENABLED(전역) AND task_type 존재
   `harness: true`면 명시 플래그 없이도 하네스 경로. 첫 버티컬 = `syncade`(배포 검증).
 - **도메인 검증 프롬프트**: config의 `verify_prompt`가 있으면 Reviewer suffix에 주입
   (`_reviewer_call(history, verify_prompt)`). 없으면 기존 기본 검증 프롬프트.
+- **Reviewer 멀티모달(Phase 2 G2, 2026-06-19)**: `_reviewer_call`이 화면 캡처(image_url)를
+  `prune_images`로 최신 `HARNESS_REVIEWER_IMAGES`개(기본 2)만 전달. `0`이면 전부 텍스트
+  자리표시자로 강등 — 멀티모달 미지원 LLM 안전 폴백. I2(tools 미전송) 불변.
+- **실측 계측(Phase 1 G3, 2026-06-19)**: `_harness_generate`가 매 Reviewer 판결을
+  RunLedger(`harness_round`, detail=JSON)에 영속화. 측정을 위해 **마지막 라운드도 검증을
+  기록**(재시도는 하지 않음). `agent/harness/metrics.summarize_harness_runs`가 집계,
+  `GET /threads/{type}/{id}/harness/metrics` 노출. G1(Reviewer 도구부여) 결정은 ADR-0004.
 
 ### 비활성화 조건(하네스 건너뜀)
 
@@ -107,5 +114,8 @@ HARNESS_ENABLED(전역) AND task_type 존재
 - [ ] `test_harness_orchestrator.py` 전체 통과 (FakeLLM, 네트워크 없음)
 - [ ] `test_task_type_harness.py` 전체 통과 (업무타입 옵트인 스키마·헬퍼)
 - [ ] `test_harness_optin.py` 전체 통과 (`_should_use_harness` 라우팅)
+- [ ] `test_harness_metrics.py` 전체 통과 (실측 집계, Phase 1)
+- [ ] `test_harness_ledger.py` 전체 통과 (라운드 RunLedger 영속화 + /metrics, Phase 1)
+- [ ] `test_reviewer_call.py` 전체 통과 (멀티모달 전달·I2·폴백, Phase 2 G2)
 - [ ] 기존 단위 테스트 회귀 없음
 - [ ] `HARNESS_ENABLED=false`(기본) 시 `/chat` 경로 무영향 확인
