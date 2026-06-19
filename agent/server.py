@@ -335,6 +335,12 @@ try:
     _HARNESS_MAX_ROUNDS = int(os.environ.get("HARNESS_MAX_ROUNDS", "2"))
 except (TypeError, ValueError):
     _HARNESS_MAX_ROUNDS = 2
+# Reviewer가 검증에 참고할 최신 화면 캡처 수(G2). 0이면 모든 이미지를 텍스트
+# 자리표시자로 강등 — 멀티모달 미지원 LLM의 안전 폴백.
+try:
+    _HARNESS_REVIEWER_IMAGES = int(os.environ.get("HARNESS_REVIEWER_IMAGES", "2"))
+except (TypeError, ValueError):
+    _HARNESS_REVIEWER_IMAGES = 2
 # 추출 타이밍: close(스레드 종료 시 1회 일괄, 비용↓) | turn(매 턴) | off(자동 추출 안 함)
 MEMORY_EXTRACT_MODE = os.environ.get("MEMORY_EXTRACT_MODE", "close").lower()
 
@@ -453,10 +459,15 @@ async def _reviewer_call(history: list[dict], verify_prompt: str = "") -> "Revie
     reviewer_system = REVIEWER.system_suffix
     if verify_prompt:
         reviewer_system = reviewer_system + "\n\n[도메인 검증 지침] " + verify_prompt
+    # G2: 화면 캡처(멀티모달 image_url 블록)도 Reviewer에 전달해 화면 기반 검증을 가능케 한다.
+    # 최신 _HARNESS_REVIEWER_IMAGES개만 남기고 과거 이미지는 텍스트 자리표시자로 강등(비용·안전).
+    from agent.core.compaction import prune_images
     recent = [
         m for m in history[-12:]
-        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+        if m.get("role") in ("user", "assistant")
+        and isinstance(m.get("content"), (str, list))
     ]
+    recent = prune_images(recent, keep_last_images=_HARNESS_REVIEWER_IMAGES)
     try:
         resp = await loop.run_in_executor(None, lambda: client.chat.completions.create(
             model=model,
@@ -482,10 +493,34 @@ def _should_use_harness(harness_mode: bool, task_type: str) -> bool:
     return bool(harness_mode) or task_type_harness_enabled(task_type)
 
 
+async def _record_harness_round(task_type: str, thread_id: str, round_n: int,
+                                verdict, history: list[dict]) -> None:
+    """하네스 라운드 판결을 RunLedger에 영속화한다 (Phase 1 실측 계측, G3).
+
+    detail은 JSON 문자열로 저장 — agent.harness.metrics.summarize_harness_runs가 집계.
+    실패해도 하네스 실행을 막지 않는다(감사 보조).
+    """
+    if not (thread_id and task_type):
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        detail = json.dumps({
+            "round": round_n,
+            "passed": bool(verdict.passed),
+            "feedback_len": len(verdict.feedback or ""),
+            "history_tokens": estimate_message_tokens(history),
+        }, ensure_ascii=False)
+        await loop.run_in_executor(None, wf_storage.append_ledger, task_type, thread_id,
+            LedgerEntry(ts=datetime.now(timezone.utc).isoformat(),
+                        event="harness_round", detail=detail, phase="verifying"))
+    except Exception:
+        pass
+
+
 async def _harness_generate(message: str, thread_id: str, task_type: str, agent_mode: str):
     """Executor→Reviewer 하네스 래퍼. generate()를 호출해 기존 루프 재사용 (I5).
 
-    max_rounds=1이면 Reviewer 없이 단순 pass-through.
+    측정을 위해 매 라운드 Reviewer 판결을 기록한다(마지막 라운드 포함, 재시도 없음).
     """
     loop = asyncio.get_event_loop()
     session_mgr = get_session_manager()
@@ -498,20 +533,19 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
         async for raw in generate(exec_msg, thread_id, task_type, agent_mode):
             try:
                 data = json.loads(raw.removeprefix("data: ").strip())
-                if data.get("type") == ev.DONE and not is_last:
-                    break  # 중간 DONE 억제 — generate() 종료 신호, client엔 미전달
+                if data.get("type") == ev.DONE:
+                    break  # generate() 종료 신호 억제 — 하네스가 종료를 통제
             except Exception:
                 pass
             yield raw
 
-        if is_last:
-            break
-
+        # 매 라운드 검증 — 마지막 라운드도 측정을 위해 판결을 기록(재시도 없음)
         yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "reviewing"})
         history = await loop.run_in_executor(None, session_mgr.get_thread_messages, task_type, thread_id)
         verdict = await _reviewer_call(history, verify_prompt)
+        await _record_harness_round(task_type, thread_id, round_n + 1, verdict, history)
 
-        if verdict.passed:
+        if verdict.passed or is_last:
             yield sse({"type": ev.DONE})
             return
 
@@ -519,6 +553,8 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
         updated = history + [{"role": "user", "content": feedback_content}]
         await loop.run_in_executor(None, session_mgr.save_thread_messages, task_type, thread_id, updated)
         yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "retrying", "feedback": verdict.feedback})
+
+    yield sse({"type": ev.DONE})  # 안전망 (루프가 return 없이 종료될 경우 I4)
 
 
 async def generate(message: str, thread_id: str = "", task_type: str = "", agent_mode: str = "auto",
@@ -1874,6 +1910,15 @@ async def get_thread_ledger(task_type: str, thread_id: str):
     legacy = await loop.run_in_executor(None, wf_storage.load_ledger, task_type, thread_id)
     entries = structured + legacy
     return {"entries": entries}
+
+
+@app.get("/threads/{task_type}/{thread_id}/harness/metrics")
+async def get_thread_harness_metrics(task_type: str, thread_id: str):
+    """스레드의 하네스 실측 메트릭을 반환한다 (Phase 1 — 라운드·재시도·자기교정·비용)."""
+    from agent.harness.metrics import summarize_harness_runs
+    loop = asyncio.get_event_loop()
+    entries = await loop.run_in_executor(None, wf_storage.load_ledger, task_type, thread_id)
+    return summarize_harness_runs(entries)
 
 
 # ── 기본 템플릿 엔드포인트 ─────────────────────────────────────

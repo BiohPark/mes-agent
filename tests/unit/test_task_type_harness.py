@@ -28,10 +28,19 @@ class TestTaskConfigSchema:
         cfg = get_task_configs()["general"]
         assert cfg.get("harness", False) is False
 
+    def test_unscript_opts_into_harness(self):
+        """2번째 버티컬(unscript)은 테스트 도메인이라 자기검증을 옵트인한다."""
+        cfg = get_task_configs()["unscript"]
+        assert cfg.get("harness") is True
+        assert cfg.get("verify_prompt", "").strip() != ""
+
 
 class TestHarnessEnabledHelper:
     def test_enabled_for_syncade(self):
         assert task_type_harness_enabled("syncade") is True
+
+    def test_enabled_for_unscript(self):
+        assert task_type_harness_enabled("unscript") is True
 
     def test_disabled_for_general(self):
         assert task_type_harness_enabled("general") is False

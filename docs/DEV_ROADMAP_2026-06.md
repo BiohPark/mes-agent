@@ -19,11 +19,23 @@
 
 | # | 미션 | 근거 | 규모 | 상태 |
 |---|------|------|------|------|
-| 1 | **도메인 하네스 팩** — 업무타입별 옵트인 하네스/Verifier 연결 + 검증형 워크플로우 | 이미 만든 PoC·Verifier·RunLedger·워크플로우 템플릿을 실제 MES 버티컬에 연결. 자기검증으로 배포/검증 신뢰도↑(GxP 감사) | M | 🚧 v1 착수(syncade) |
+| 1 | **도메인 하네스 팩** — 업무타입별 옵트인 하네스/Verifier 연결 + 실측 + 검증 충실도 | 이미 만든 PoC·Verifier·RunLedger·워크플로우 템플릿을 실제 MES 버티컬에 연결. 자기검증으로 배포/검증 신뢰도↑(GxP 감사) | M | ✅ Phase 1·2(G2)·3 완료 · 실측 실행·G1 대기 |
 
-**v1 진행(2026-06-19)**: 업무 설정에 `harness`/`verify_prompt` 추가, `_should_use_harness()`
-업무타입 옵트인 라우팅, `syncade` 배포 버티컬 자기검증 활성. 후속: 추가 버티컬(MES 검증·
-Office 작성)은 회사 도메인 정보 확보 후.
+세부계획·갭 진단: `docs/specs/domain-harness-pack.md`.
+
+**v1 완료(2026-06-19, `c61ce1e`)**: `harness`/`verify_prompt` 업무 설정, `_should_use_harness()`
+업무타입 옵트인 라우팅, `syncade` 자기검증.
+
+**Phase 1·2·3 완료(2026-06-19, `0ebe0fa`)**:
+- **Phase 1 실측 계측(G3)** — `agent/harness/metrics.py`, `_harness_generate`가 매 판결을
+  RunLedger(`harness_round`)에 영속화, `GET /threads/{type}/{id}/harness/metrics` 집계.
+- **Phase 2 Reviewer 멀티모달(G2)** — `_reviewer_call`이 화면 캡처를 `prune_images`로 최신
+  N개 전달(`HARNESS_REVIEWER_IMAGES`, 0=텍스트 폴백). **G1(Reviewer 도구부여)은 ADR-0004
+  Proposed** — Phase 4 실측 후 결정.
+- **Phase 3** — `unscript` 2번째 버티컬 옵트인.
+
+**남은 액션**: **Phase 4 실측 실행**(회사 PC, `HARNESS_ENABLED=true`) — 방법론
+`docs/harness/cards/harness-eval-methodology.md`. 결과가 P1 #2(N 에픽)와 ADR-0004 G1 결정의 입력.
 
 ## P1 — 높음 (가치·견고성, 대부분 unblocked)
 

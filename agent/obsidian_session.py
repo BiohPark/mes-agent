@@ -174,6 +174,15 @@ _DEFAULT_TASK_CONFIGS = {
             "화면 OCR(capture_screen_ocr)과 compare_screenshots로 UI 동작을 검증해. "
             "작업 시작 시 workflow_init으로 테스트 절차를 정의해라."
         ) + _AUTO_EXEC,
+        # 도메인 하네스 팩: 테스트는 기대값과 실제 결과의 일치 검증이 핵심이므로
+        # Executor→Reviewer 자기검증 루프를 옵트인한다 (HARNESS_ENABLED=true일 때만, I6).
+        "harness": True,
+        "verify_prompt": (
+            "테스트 실행 결과를 읽기 전용 도구로 점검하라: "
+            "기대 화면과 실제 화면이 일치하는지 compare_screenshots/OCR로 확인하고, "
+            "통과/실패 케이스를 명확히 구분하라. 불일치 시 어떤 케이스가 왜 실패했는지 "
+            "구체적인 피드백을 제시하라."
+        ),
     },
     "knox": {
         "label": "Knox 자동 수집",
