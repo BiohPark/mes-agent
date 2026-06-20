@@ -211,7 +211,8 @@ def get_system_info() -> str:
     try:
         cpu = psutil.cpu_percent(interval=0.5)
         mem = psutil.virtual_memory()
-        disk = psutil.disk_usage("C:\\")
+        disk_path = os.environ.get("SYSTEM_DISK_PATH", "C:\\")
+        disk = psutil.disk_usage(disk_path)
         return json.dumps({
             "cpu_percent": cpu,
             "memory": {

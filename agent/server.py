@@ -1978,4 +1978,5 @@ async def tool_test(body: ToolTestRequest):
 
 if __name__ == "__main__":
     port = int(os.environ.get("AGENT_PORT", 8000))
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    host = os.environ.get("AGENT_HOST", "127.0.0.1")
+    uvicorn.run(app, host=host, port=port, log_level="info")
