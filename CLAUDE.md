@@ -39,6 +39,7 @@
 | 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 268개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
+| 채팅 강제 자동스크롤 버그픽스 ✅ | `electron/renderer/scroll-utils.js` + `chat.js` + `index.html` + `style.css` | `scrollToBottom()`이 매 SSE 이벤트마다 무조건 바닥으로 끌어가던 문제 수정 — `isNearBottom()` 게이트로 사용자가 위로 스크롤해 읽는 중이면 자동스크롤 보류 + `#scroll-jump-btn`(↓ 새 메시지) 표시. 본인 발화(`appendUserMessage`)·끼어들기 로컬에코만 `scrollToBottom(true)`로 강제 유지(채팅앱 관례). `supervisor-state.js`와 동일한 UMD 듀얼 export 패턴, 테스트: `tests/renderer/scroll-utils.test.js` + `tests/unit/test_scroll_utils_js.py` |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
 | LLM 프로파일 전환 | `agent/config.py` | OpenAI ↔ 사내 LLM 런타임 전환, UI 버튼 |
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |

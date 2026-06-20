@@ -809,7 +809,7 @@ function appendUserMessage(text) {
   el.className = 'message user'
   el.innerHTML = `<div class="msg-role">나</div><div class="msg-bubble">${renderMarkdown(text)}</div>`
   messagesEl.appendChild(el)
-  scrollToBottom()
+  scrollToBottom(true)
 }
 
 function appendAgentMessage() {
@@ -821,9 +821,24 @@ function appendAgentMessage() {
   return el
 }
 
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight
+const scrollJumpBtn = document.getElementById('scroll-jump-btn')
+
+function scrollToBottom(force = false) {
+  if (force || window.ScrollUtils.isNearBottom(messagesEl)) {
+    messagesEl.scrollTop = messagesEl.scrollHeight
+    if (scrollJumpBtn) scrollJumpBtn.classList.add('hidden')
+  } else {
+    if (scrollJumpBtn) scrollJumpBtn.classList.remove('hidden')
+  }
 }
+
+scrollJumpBtn?.addEventListener('click', () => scrollToBottom(true))
+
+messagesEl.addEventListener('scroll', () => {
+  if (window.ScrollUtils.isNearBottom(messagesEl) && scrollJumpBtn) {
+    scrollJumpBtn.classList.add('hidden')
+  }
+})
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1451,7 +1466,7 @@ async function injectMessage(text) {
     const body = await r.json().catch(() => ({}))
     if (body.ok) {
       appendUserMessage(`↩ ${text}`)  // 끼어든 메시지 로컬 에코
-      scrollToBottom()
+      scrollToBottom(true)
     }
   } catch (e) { console.error('끼어들기 주입 실패', e) }
 }

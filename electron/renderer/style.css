@@ -543,6 +543,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 #messages {
@@ -553,6 +554,26 @@ body {
   flex-direction: column;
   gap: 16px;
 }
+
+/* 채팅 강제 자동스크롤 방지: 사용자가 위로 스크롤해 있을 때만 표시되는 점프 버튼 */
+#scroll-jump-btn {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f3460;
+  border: 1px solid #1a4a8a;
+  color: #e0e6f0;
+  padding: 6px 16px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s;
+  z-index: 10;
+}
+#scroll-jump-btn:hover { background: #1a4a8a; }
+#scroll-jump-btn.hidden { display: none; }
 
 /* 메시지 버블 */
 .message { display: flex; flex-direction: column; max-width: 75%; }
