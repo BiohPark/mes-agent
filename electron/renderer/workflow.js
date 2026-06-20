@@ -52,6 +52,11 @@ const wfZoomControls = document.getElementById('wf-zoom-controls')
 
 function _disposePanzoom() {
   if (_panzoom) { _savedView = _panzoom.getTransform(); _panzoom.dispose(); _panzoom = null }
+  const prevViewport = workflowStepsEl.querySelector('.wf-graph-viewport')
+  if (prevViewport && prevViewport._vpObserver) {
+    prevViewport._vpObserver.disconnect()
+    prevViewport._vpObserver = null
+  }
 }
 
 // 그래프 캔버스를 뷰포트 크기에 맞춰 축소(최대 1배)하고 중앙 정렬 → 전체가 한눈에 보이게
@@ -685,6 +690,16 @@ function _renderGraph(wf, steps, connectionsRaw) {
     }
     _lastFocusedStepId = currentStepId
     _onPanzoomTransform(_panzoom)
+
+    const vpForResize = viewport
+    const pzForResize = _panzoom
+    const observer = new ResizeObserver(() => {
+      if (_panzoom !== pzForResize) { observer.disconnect(); return }
+      if (_savedView) return
+      _fitToViewport(pzForResize, vpForResize, canvasW, canvasH)
+    })
+    observer.observe(viewport)
+    viewport._vpObserver = observer
   }
 }
 
