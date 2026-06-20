@@ -209,6 +209,25 @@ npm install
 npm start
 ```
 
+### 최초 실행 시 화면
+
+`npm start` 실행 후 앱이 뜨면 헤더 상태 표시가 다음 순서로 바뀝니다.
+
+1. `● 서버 연결 중...` — Python 에이전트 서버(FastAPI)가 뜨는 동안 표시 (최대 약 20초 폴링)
+2. `● 준비됨` — 서버 연결 성공. 이 시점에 LLM 프로파일·모델 목록·업무 설정을 불러오고,
+   **기본업무(`general`) 탭이 자동으로 열립니다** (`openTask('general')`)
+3. 좌측 사이드바에는 기본 5개 업무타입(기본업무·Syncade·Obsidian·Unscript·Knox) 버튼이 표시됩니다
+
+**`● 서버 연결 실패`가 뜬다면** 흔한 원인은 다음 두 가지입니다.
+
+- **포트 충돌**: 8000번(또는 `.env`의 `AGENT_PORT`) 포트를 다른 프로세스가 이미 사용 중 →
+  [문제 해결 — Python 서버 포트 충돌](SETUP.md#python-서버-포트-충돌) 참고
+- **conda 환경 미활성화**: `start.ps1`을 거치지 않고 `npm start`만 실행하면 Python 서버가
+  뜨지 않습니다 → [SETUP.md — 5단계 실행](SETUP.md#5단계--실행) 순서대로 다시 시도
+
+> 💡 `npm install` 전에 `node -v`로 Node 버전을 확인하세요. `.env.example`의 `NODE_VERSION`과
+> 다른 버전이면 네이티브 모듈(Electron) 빌드가 실패할 수 있습니다.
+
 ### DevTools 모드
 
 ```powershell
