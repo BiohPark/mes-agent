@@ -87,6 +87,7 @@ function closeTab(key) {
       updateCurrentThreadBar('', '', '')
       inputEl.placeholder = '스레드를 선택하거나 새로 시작하세요'
       setInputEnabled(false)
+      if (window.workflowPanel) window.workflowPanel.load(null, null)
       renderTabs()
     }
   } else {
