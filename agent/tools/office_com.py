@@ -681,6 +681,15 @@ def ppt_replace_text(path: str, find: str, replace: str) -> str:
     backup = _backup(path)
     try:
         from pptx import Presentation
+    except ImportError:
+        return json.dumps({
+            "error": (
+                "python-pptx 미설치로 PPT 편집 불가.\n"
+                "설치 방법: pip install \"python-pptx>=1.0.2\"\n"
+                "(폐쇄망: USB로 .whl 반입 후 pip install --no-index --find-links=. python-pptx)"
+            )
+        }, ensure_ascii=False)
+    try:
         prs = Presentation(path)
         n = 0
         for slide in prs.slides:
