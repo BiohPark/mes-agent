@@ -418,6 +418,13 @@ body {
 }
 .task-group-header:hover .tg-new-btn { opacity: 1; }
 .tg-new-btn:hover { background: #1a4a8a; color: #e0f0ff; }
+.tg-new-btn--highlight {
+  border-color: #4a9eff;
+  color: #4a9eff;
+  font-weight: 600;
+  opacity: 1;
+}
+.tg-new-btn--highlight:hover { background: rgba(74, 158, 255, 0.15); color: #e0f0ff; }
 
 /* 그룹 바디 */
 .task-group-body {

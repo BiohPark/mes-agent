@@ -1134,6 +1134,12 @@ async function renderSidebarThreads(taskType) {
   updateGroupBadge(taskType, activeCount)
   refreshActiveRuns()
 
+  // 스레드가 1개 이상이면 "+ 새 시작" 버튼 강조
+  const newBtn = document.querySelector(`.task-group[data-task="${taskType}"] .tg-new-btn`)
+  if (newBtn) {
+    newBtn.classList.toggle('tg-new-btn--highlight', threads.length > 0)
+  }
+
   const body = getGroupBody(taskType)
   if (!body || !expandedGroups.has(taskType)) return threads
 
@@ -1403,9 +1409,11 @@ async function selectThread(taskType, threadId, status) {
   openOrFocusTab(taskType, threadId, status, false)
 
   messagesEl.innerHTML = ''
+  let loadedMsgCount = 0
   try {
     const res = await fetch(`${BASE_URL}/threads/${taskType}/${threadId}/messages`)
     const msgs = await res.json()
+    loadedMsgCount = msgs.length
     if (msgs.length === 0) {
       showWelcome(taskType)
     } else {
@@ -1424,7 +1432,9 @@ async function selectThread(taskType, threadId, status) {
   const cfg = taskConfigs[taskType] || {}
   inputEl.placeholder = status === 'completed'
     ? '(완료된 스레드입니다)'
-    : `${cfg.label || taskType} 스레드에 메시지를 입력하세요...`
+    : loadedMsgCount > 0
+      ? `이어서 입력… (새 업무는 ＋ 새 시작)`
+      : `${cfg.label || taskType} 스레드에 메시지를 입력하세요...`
   inputEl.disabled = status === 'completed'
   sendBtn.disabled = status === 'completed'
 
