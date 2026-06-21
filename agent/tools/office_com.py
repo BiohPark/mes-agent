@@ -577,6 +577,62 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
+def excel_active_set_cells(cells: dict, sheet: str = "") -> str:
+    """현재 열려있는 활성 Excel 창의 특정 셀들에 값을 실시간으로 설정합니다."""
+    if not isinstance(cells, dict) or not cells:
+        return json.dumps({"error": "cells는 비어있지 않은 {셀주소: 값} 객체여야 합니다."}, ensure_ascii=False)
+    if not _HAS_PYWIN32:
+        return _no_com_msg("활성 Excel 제어")
+    
+    try:
+        import win32com.client as win32
+        try:
+            excel = win32.GetActiveObject("Excel.Application")
+        except Exception:
+            return json.dumps({"error": "현재 열려있는 Excel 창이 없습니다. 사용자가 Excel을 먼저 열어두어야 합니다."}, ensure_ascii=False)
+        
+        wb = excel.ActiveWorkbook
+        if wb is None:
+            return json.dumps({"error": "열려있는 통합 문서가 없습니다."}, ensure_ascii=False)
+        ws = wb.Worksheets(sheet) if sheet else wb.ActiveSheet
+        for addr, val in cells.items():
+            ws.Range(addr).Value = val
+        return json.dumps({
+            "engine": "com_active", 
+            "cells_set": len(cells),
+            "message": "활성 Excel 창 실시간 편집 완료 (화면에서 변경사항을 확인하세요)"
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"활성 문서 제어 오류: {str(e)}"}, ensure_ascii=False)
+
+
+def excel_active_get_range(cell_range: str, sheet: str = "") -> str:
+    """현재 열려있는 활성 Excel 창의 특정 범위 값을 실시간으로 읽습니다."""
+    if not _HAS_PYWIN32:
+        return _no_com_msg("활성 Excel 제어")
+    
+    try:
+        import win32com.client as win32
+        try:
+            excel = win32.GetActiveObject("Excel.Application")
+        except Exception:
+            return json.dumps({"error": "현재 열려있는 Excel 창이 없습니다."}, ensure_ascii=False)
+        
+        wb = excel.ActiveWorkbook
+        if wb is None:
+            return json.dumps({"error": "열려있는 통합 문서가 없습니다."}, ensure_ascii=False)
+        ws = wb.Worksheets(sheet) if sheet else wb.ActiveSheet
+        val = ws.Range(cell_range).Value
+        if isinstance(val, tuple):
+            rows = [list(r) if isinstance(r, tuple) else [r] for r in val]
+        else:
+            rows = [[val]]
+        return json.dumps({"range": cell_range, "engine": "com_active", "values": rows}, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"활성 문서 제어 오류: {str(e)}"}, ensure_ascii=False)
+
+
+
 # ── PowerPoint 편집 ───────────────────────────────────────────
 
 def ppt_replace_text(path: str, find: str, replace: str) -> str:
@@ -853,6 +909,53 @@ MANIFEST = [
             },
         },
         "handler": lambda a: excel_get_range(a["path"], a["cell_range"], a.get("sheet", "")),
+    },
+    {
+        "name": "excel_active_set_cells",
+        "label": "실시간 Excel 셀 편집",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "excel_active_set_cells",
+                "description": (
+                    "현재 사용자가 열어둔 활성 Excel 창의 특정 셀들에 값을 실시간으로 설정합니다. "
+                    "사용자가 눈으로 직접 엑셀을 보면서 호흡을 맞추며 작업할 때 사용하세요. "
+                    "파일 경로 없이 현재 화면의 엑셀에 바로 입력합니다. 저장은 하지 않습니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cells": {"type": "object", "description": "셀 주소와 값 딕셔너리. 예: {\"A1\": 100, \"B1\": \"=A1*2\"}"},
+                        "sheet": {"type": "string", "description": "시트명 (생략 시 현재 활성 시트)"},
+                    },
+                    "required": ["cells"],
+                },
+            },
+        },
+        "handler": lambda a: excel_active_set_cells(a["cells"], a.get("sheet", "")),
+    },
+    {
+        "name": "excel_active_get_range",
+        "label": "실시간 Excel 셀 읽기",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "excel_active_get_range",
+                "description": (
+                    "현재 사용자가 열어둔 활성 Excel 창의 특정 범위 값을 실시간으로 읽습니다. "
+                    "파일 경로 없이 현재 화면에 켜져 있는 엑셀 문서를 기준으로 합니다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cell_range": {"type": "string", "description": "범위 주소. 예: 'A1:C10'"},
+                        "sheet": {"type": "string", "description": "시트명 (생략 시 현재 활성 시트)"},
+                    },
+                    "required": ["cell_range"],
+                },
+            },
+        },
+        "handler": lambda a: excel_active_get_range(a["cell_range"], a.get("sheet", "")),
     },
     {
         "name": "ppt_replace_text",

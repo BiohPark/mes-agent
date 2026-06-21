@@ -1,6 +1,6 @@
 """OCRProvider 어댑터 수용 테스트 (트랙3a 1단계 게이트).
 
-명세: docs/specs/ocr-provider.md. 실 tesseract/디스플레이 없이 검증(monkeypatch).
+명세: docs/specs/ocr-provider.md. 실 디스플레이 없이 검증(monkeypatch).
 구현 전에는 ImportError/AttributeError로 실패(=레드). 구현 후 전부 green이면 완료.
 """
 import json
@@ -9,57 +9,26 @@ import pytest
 
 
 # ── get_ocr_provider / 폴백 ──────────────────────────────────────
-def test_default_provider_is_tesseract(monkeypatch):
+def test_default_provider_is_uia(monkeypatch):
     monkeypatch.delenv("OCR_PROVIDER", raising=False)
     from agent.core import ocr_provider as op
     if hasattr(op, "reset_ocr_provider"):
         op.reset_ocr_provider()
-    assert isinstance(op.get_ocr_provider(), op.TesseractProvider)
+    assert isinstance(op.get_ocr_provider(), op.UIAutomationProvider)
 
 
-def test_unknown_provider_falls_back_to_tesseract(monkeypatch):
+def test_unknown_provider_falls_back_to_uia(monkeypatch):
     monkeypatch.setenv("OCR_PROVIDER", "does-not-exist-xyz")
     from agent.core import ocr_provider as op
     if hasattr(op, "reset_ocr_provider"):
         op.reset_ocr_provider()
-    assert isinstance(op.get_ocr_provider(), op.TesseractProvider)  # 예외 없이 폴백
+    assert isinstance(op.get_ocr_provider(), op.UIAutomationProvider)  # 예외 없이 폴백
 
 
-# ── TesseractProvider 래핑 ───────────────────────────────────────
-def test_tesseract_image_to_string_passthrough(monkeypatch):
-    from agent.core import ocr_provider as op
-    calls = {}
-
-    def fake_i2s(image, lang=None):
-        calls["image"] = image
-        calls["lang"] = lang
-        return "  hello  "  # 원시(strip 안 함) 반환 검증
-
-    monkeypatch.setattr(op.pytesseract, "image_to_string", fake_i2s)
-    monkeypatch.setenv("OCR_LANG", "kor+eng")
-    monkeypatch.setenv("OCR_TESSERACT_CMD", "X:/tess.exe")
-
-    out = op.TesseractProvider().image_to_string("IMG")
-    assert out == "  hello  "
-    assert calls["lang"] == "kor+eng"
-    assert op.pytesseract.pytesseract.tesseract_cmd == "X:/tess.exe"
 
 
-def test_tesseract_image_to_data_uses_dict_output(monkeypatch):
-    from agent.core import ocr_provider as op
-    captured = {}
 
-    def fake_i2d(image, lang=None, output_type=None):
-        captured["output_type"] = output_type
-        return {"text": ["hi"], "conf": [95], "left": [0], "top": [0], "width": [10], "height": [10]}
-
-    monkeypatch.setattr(op.pytesseract, "image_to_data", fake_i2d)
-    data = op.TesseractProvider().image_to_data("IMG")
-    assert isinstance(data, dict) and data["text"] == ["hi"]
-    assert captured["output_type"] == op.pytesseract.Output.DICT
-
-
-# ── 도구 4곳이 provider 경유(직접 pytesseract 호출 없음) ──────────
+# ── 도구 4곳이 provider 경유 ──────────
 class _FakeProvider:
     def __init__(self):
         self.used = {"s": False, "d": False}

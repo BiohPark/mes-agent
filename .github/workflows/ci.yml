@@ -40,11 +40,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Tesseract OCR
-        # Windows 러너에서 Chocolatey로 설치 — pytesseract 런타임 의존성
-        run: choco install tesseract --no-progress -y
-        shell: pwsh
-
       - name: Install Playwright browsers
         run: python -m playwright install chromium
         shell: pwsh

@@ -1,7 +1,9 @@
 # mes-agent 대전환 프로젝트 마스터 플랜
 
 > 작성: 2026-06-12 · 상태: DRAFT (대화하며 발전시키는 살아있는 문서)
-> 목적: Claude Code 세션이 이 문서를 읽고 각 트랙의 다음 작업을 이어갈 수 있게 한다.
+> 목적: 트랙별 아키텍처·불변 제약·차용 전략을 담는 마스터 플랜.
+> ⚠️ **현재 개발 우선순위(무엇을 먼저 할지)는 `docs/DEV_ROADMAP_2026-06.md`(P0~P3 단일 SSOT)를 본다.**
+> 본 문서는 트랙 구조와 제약을 정의하고, "다음에 뭘 먼저"는 DEV_ROADMAP에 위임한다(중복 방지).
 
 ## 불변 제약 (모든 트랙 공통)
 
@@ -43,6 +45,7 @@
 > L2 seed 구현으로 작업버퍼(`agent-messages`)와 표시 transcript(`agent/transcripts/...jsonl`)를 분리했다.
 > compaction 이후에도 새로 기록된 user/assistant 표시 대화와 compaction summary는 active/archive display·count·search에서 복원된다.
 > RunLedger writer seed 구현으로 request_id 단위 JSONL 감사추적과 phase/role 이벤트 기록을 추가했다.
+> **(2026-06-18)** 사용자 열린 엑셀 창과 실시간으로 호흡하는 Active COM 연동(`excel_active_set_cells`, `excel_active_get_range`)을 구현하여 실시간 Shared-State Interaction을 달성했다.
 
 ### 후속(선행조건 아님, 분리 트랙)
 - **transcript 3계층 + 원문 무손실 + RunLedger** → 트랙 **1C** seed 구현, 계약 `docs/contracts/L2_message_invariants.md`.
@@ -153,11 +156,11 @@
 
 ### 3a. Tesseract 제거 (이미지 인식 LLM/네이티브 전환)
 - 현황: pytesseract는 실시간 화면 텍스트(버튼/좌표) 용도, 복잡한 이미지는 이미 멀티모달 방침
-- [ ] pytesseract 호출 지점 전수 조사 → (a) 실시간 좌표/텍스트 (b) 문서 인식 분류
-- [ ] **(a)의 1순위 대안: pywinauto 접근성 트리** — 대상이 Windows 네이티브 앱으로 확인됨. OCR 없이 텍스트+좌표를 API로 직접 획득 (빠르고 결정적, GxP 재현성 유리)
-- [ ] (b)는 멀티모달 LLM 직행 (사내 LLM 멀티모달 지원 확인이 전제)
-- [ ] `OCRProvider` 어댑터 인터페이스 도입 → config 플래그로 신구 전환/롤백
-- 완료 기준: tesseract 바이너리·kor.traineddata·pytesseract가 설치 절차에서 제거, 기존 시나리오 회귀 테스트 통과
+- [x] pytesseract 호출 지점 전수 조사 → (a) 실시간 좌표/텍스트 (b) 문서 인식 분류
+- [x] **(a)의 1순위 대안: pywinauto/UIA 접근성 트리** — 대상이 Windows 네이티브 앱으로 확인됨. OCR 없이 텍스트+좌표를 API로 직접 획득.
+- [x] (b)는 이미지를 Base64로 인코딩하여 멀티모달 LLM 직행.
+- [x] `OCRProvider` 어댑터 인터페이스 도입 및 TesseractProvider 완전 제거 (UIA 기본 제공).
+- 완료 기준: tesseract 바이너리·kor.traineddata·pytesseract가 설치 절차에서 완전히 제거됨. (완료 ✅)
 
 ### 3b. 녹스(Knox) 메신저 업무 챗봇 (향후 과제 — 설계만)
 - [ ] ADR 1편 작성: FastAPI 웹훅 수신, 사용자별 세션 관리(상태·권한 분리), 인증, GxP 감사추적

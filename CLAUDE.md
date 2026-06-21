@@ -39,11 +39,12 @@
 | 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 268개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
+| 채팅 강제 자동스크롤 버그픽스 ✅ | `electron/renderer/scroll-utils.js` + `chat.js` + `index.html` + `style.css` | `scrollToBottom()`이 매 SSE 이벤트마다 무조건 바닥으로 끌어가던 문제 수정 — `isNearBottom()` 게이트로 사용자가 위로 스크롤해 읽는 중이면 자동스크롤 보류 + `#scroll-jump-btn`(↓ 새 메시지) 표시. 본인 발화(`appendUserMessage`)·끼어들기 로컬에코만 `scrollToBottom(true)`로 강제 유지(채팅앱 관례). `supervisor-state.js`와 동일한 UMD 듀얼 export 패턴, 테스트: `tests/renderer/scroll-utils.test.js` + `tests/unit/test_scroll_utils_js.py` |
 | 앱 시작 시 기본업무 자동 진입 | `electron/renderer/chat.js` | `initWhenReady()` → `openTask('general')` 자동 호출 |
 | LLM 프로파일 전환 | `agent/config.py` | OpenAI ↔ 사내 LLM 런타임 전환, UI 버튼 |
 | FastAPI 서버 | `agent/server.py` | `/health` `/chat` `/profile` `/tool/test` `/task-config` `/threads/*` |
-| OCR (전체/영역) | `agent/tools/ocr.py` + `screen.py` | Tesseract 5.4, kor+eng, 영역 지정 OCR |
-| OCRProvider 어댑터 (트랙3a 1단계) ✅ | `agent/core/ocr_provider.py` + `ocr.py`·`screen.py` | OCR을 `pytesseract` 직접결합에서 분리 — `OCRProvider`(ABC)·`TesseractProvider`·`get_ocr_provider()`(`OCR_PROVIDER` env, 미지원값 tesseract 폴백). 도구 4곳이 provider 경유 → 향후 UIA/멀티모달로 교체·롤백 가능. tesseract 제거는 후속. 첫 Ralph 루프 실험 산출. 상세: `docs/specs/ocr-provider.md` |
+| 비전 (전체/영역) | `agent/tools/ocr.py` + `screen.py` | 멀티모달 LLM(base64) 및 UIA(접근성 트리) 활용 |
+| 화면 인식 제공자 | `agent/core/ocr_provider.py` | UIA 기본 제공. 레거시 Tesseract 제거됨 ✅ |
 | 화면 인텔리전스 | `agent/tools/screen.py` | 이미지 템플릿 매칭, 텍스트 좌표, 이미지/텍스트 대기(**interval 파라미터 명시화**), 스크린샷 비교, 픽셀 색상, 창 캡처 (9종) |
 | 데스크탑 제어 | `agent/tools/desktop.py` | 마우스(클릭·이동·스크롤·드래그·down/up)·**mouse_click after_delay_ms 추가**, 키보드(press·down·up), 클립보드, 창 관리 (19종) |
 | 브라우저 자동화 | `agent/tools/browser.py` | Playwright Chromium 싱글턴, 클릭·입력·대기·JS·스크린샷·파일업로드·쿠키 (22종), **전용 단일 스레드 executor로 greenlet 스레드 충돌("Cannot switch to a different thread") 해결**, **포커스 비탈취(백로그 I): open/navigate 시 사용자 foreground 창 복원, `bring_to_front`·`BROWSER_FOCUS_STEAL`** |
@@ -79,7 +80,7 @@
 | wait_for_image/wait_for_text interval 명시화 (Phase 5 ✅) | `agent/tools/screen.py` | MANIFEST 스키마에 `interval` 파라미터 노출 → LLM이 폴링 간격 직접 제어 가능 |
 | mouse_click after_delay_ms (Phase 5 ✅) | `agent/tools/desktop.py` | 클릭 후 안정화 대기 옵션, MANIFEST 스키마 및 함수 시그니처에 추가 |
 | 런타임 라우팅 엔진 (Phase 6A ✅) | `agent/workflow/model.py` + `workflow.py` + `server.py` | `set_step("done")` 시 다음 노드 자동 running, `branch_output` 분기 선택, `PATCH /workflow/nodes/{id}` UI 제어 엔드포인트 |
-| 그래프 캔버스 시각화 (Phase 6B ✅) | `electron/renderer/workflow.js` + `style.css` | BFS 레이아웃 2D 그래프, running/done/error 애니메이션, 분기 색상·흐름 연결선, 진행 바 |
+| 그래프 캔버스 시각화 (Phase 6B ✅) | `electron/renderer/workflow.js` + `style.css` | BFS 레이아웃 2D 그래프, running/done/error 애니메이션, 분기 색상·흐름 연결선, 진행 바. **버그픽스**: 우측 패널 CSS 폭 트랜지션 중 그래프 가로 오버플로 — viewport `ResizeObserver`로 트랜지션 종료 후 재맞춤 |
 | 인터랙티브 노드 컨트롤 (Phase 6C ✅) | `electron/renderer/workflow.js` + `style.css` | 노드 ⋮ 클릭 → 완료/건너뛰기/실행/재시도/분기 선택 패널 |
 | Obsidian PKM 스레드 (Phase 7 ✅) | `agent/tools/obsidian_rag.py` + `obsidian_session.py` | `obsidian-rag` → `obsidian` 전환, 2-tier 탐색·편집·이동 9종 신규 툴, 시스템 프롬프트 전면 개편 |
 | Vault 노트작성 가이드 (Phase 7B ✅) | `D:\_Archives\obsidian\brain\agent\guides\🤖 Agent 노트작성 가이드.md` | frontmatter 스키마·태그·Templater 연동 기준, `🏛 Vault Guides.md` 연결 |
@@ -95,9 +96,10 @@
 | 긴 호흡·자가복구 에이전트 ✅ | `agent/obsidian_session.py` + `agent/server.py` | `_AUTO_EXEC`/`_AUTONOMOUS_INSTRUCTION`에 끈질긴 문제해결·근본원인 조사·선택지 제시 지침, `_MAX_STEPS` 20→40, 단계 상한 도달 시 '계속' 안내 |
 | 실행 중 창 비켜 보기 UX (백로그 C + 감독 HUD) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `index.html` + `electron/renderer/hud.*` | agentState=running 시 기본 `hud`(작게 비켜 보기)로 공용 HUD에 목표·단계·도구·위험 표시, 선택 모드로 자동 최소화/반투명/끄기 유지(헤더 토글, localStorage 저장), idle 시 원복 |
 | 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
-| IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화 |
+| 설정 정리·모델 출처 표기 (백로그 W) ✅ | `.env.example` + `chat.js` | `.env.example` LLM/Office/Vision 블록 분리, `COMPACT_RATIO` 0.7 보수화, 모델 드롭다운 `loadModels()`에 `source`(동적/.env 프리셋) title 표시. 트랙0 P3·I1, 상세 `docs/TRANSFORMATION_PLAN.md` 트랙0 |
+| IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화. **버그픽스**: 마지막 탭 닫을 때 우측 워크플로우 패널이 갱신 안 되던 stale 버그 — `window.workflowPanel.load(null, null)` 호출 추가 |
 | 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<250px) 세로 컴팩트 카드(완료 단계 접기), 이상이면 2D 그래프(기본 패널폭 300 → 그래프, fit-to-view로 맞춤) |
-| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증 (11종) |
+| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증. **Active Excel 실시간 연동**(`excel_active_set_cells`/`excel_active_get_range` — 사용자가 띄워놓은 활성 창에 직접 입출력, 백로그 W) (13종) |
 | Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성, **포트·토큰을 `webPreferences.additionalArguments`로 preload에 전달(샌드박스 안전 — preload에서 `fs`/`path` require 금지, `sandbox:true` 유지)**, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
@@ -115,16 +117,18 @@
 | 대화 가독성: 의도 라벨·로그 접힘 (백로그 S) ✅ | `agent/server.py`(`_intent_label`) + `electron/renderer/chat.js`(`buildToolResult`) + `style.css` | **① 규칙 기반 의도 라벨**: `_AUTO_EXEC`가 모델 예고 문구를 금지(L1 루프 보호)하므로 서버가 도구명+핵심 인자(명령 excerpt·URL 호스트·파일명·selector)로 `tool_start.label` 합성. **② 명령 로그 접힘**: 스크립트(`run_command` 등)·긴 출력(>200자)은 기본 접힘(요약 1줄+토글), 에러는 펼침, 스크립트는 모노 작은폰트. 짧은 결과는 평문 유지. 상세: `docs/backlog/done/S-chat-readability.md` |
 | 좌측 프레임 IA 개편 (백로그 P) ✅ | `electron/renderer/index.html` + `style.css` + `chat.js` + `agent/server.py`(`/search`) + `obsidian_session.py`(`search_threads`) | `#sidebar`를 **3영역**(상단 고정 검색·진행중 / 중단 스크롤 업무그룹 / 하단 고정 관리·개발자도구)으로 재구성 → 스레드가 늘어도 **관리 버튼이 화면 밖으로 안 밀림**. 빠른작업·도구테스트는 접이식 **🛠️ 개발자 도구**로 이동. **전역 검색**(`GET /search?q=` substring, 디바운스 드롭다운) + **진행 중 작업(Active runs)**(전 타입 in_progress 평면 목록). 상세: `docs/backlog/done/P-left-frame-ia.md` |
 | 워크플로우 시각화 고도화 (백로그 U) ✅ | `electron/renderer/workflow.js` + `vendor/panzoom.min.js` + `style.css` + `index.html` + `chat.js` + `agent/workflow/model.py` + `agent/tools/workflow.py` + `agent/server.py` | **① 팬/줌** — 벤더링 anvaka/panzoom UMD(`vendor/panzoom.min.js`, 무의존, 폐쇄망 USB 반입용)로 그래프 캔버스 휠 줌·드래그 팬 + ⊕⊖⊙ 줌 버튼, 재렌더 간 뷰 보존(`anvaka`에 `reset`/`setTransform`이 없어 `zoomAbs`+`moveTo`로 복원), **최초 렌더 시 `_fitToViewport`로 그래프 전체가 보이도록 축소·중앙정렬**하고 실행/대기 노드가 바뀌면 현재 노드 쪽으로 뷰 보정(⊙=전체 보기). **② 동적 디테일(LoD)** — 줌 배율(<0.7/0.7–1.3/>1.3)에 따라 노드 정보 점진 노출(`lod-low/mid/high`). **③ 노드 인라인 로그** — 도구 실행 로그를 running 노드에 요약 표시(`recordToolLog`, chat.js `tool_done`에서 적재) → 백로그 S 근본 해결. **④ 미니맵** — 전체 그래프 오버뷰 + 뷰포트 사각형, 클릭 이동. **⑤ 그룹/서브워크플로우** — `WorkflowNode.group` 모델 필드 + 신규 `workflow_set_group` 툴, 그룹 박스·접기(pill)·레인 정렬. 하위 호환(group 미존재=빈 문자열). 상세: `docs/backlog/done/U-workflow-visualization.md` |
-| 감독 콘솔 검증·RunSnapshot 라벨 ✅ | `electron/renderer/supervisor-state.js` + `workflow.js` + `chat.js` + `index.html` | 감독 상태 reducer를 순수 JS 모듈로 분리해 renderer와 Node fixture가 같은 전이 로직을 사용. 기존 SSE 이벤트를 `planning/executing/observing/waiting/done/error` phase와 `planner/executor/observer/safety/orchestrator` role로 1차 매핑하고, 감독 탭·HUD에 `phase/role` 표시. confirm/tool/done/error 전이는 `tests/renderer/supervisor-state.test.js` + `tests/unit/test_supervisor_state_js.py`로 검증. 상세: `docs/harness/cards/supervisor-ui-verification.md` |
+| 감독 콘솔 검증·RunSnapshot 라벨 ✅ | `electron/renderer/supervisor-state.js` + `workflow.js` + `chat.js` + `index.html` | 감독 상태 reducer를 순수 JS 모듈로 분리해 renderer와 Node fixture가 같은 전이 로직을 사용. 기존 SSE 이벤트를 `planning/executing/observing/verifying/waiting/done/error` phase와 `planner/executor/observer/verifier/safety/orchestrator` role로 매핑하고, 감독 탭·HUD에 `phase/role` 표시. confirm/tool/done/error 전이는 `tests/renderer/supervisor-state.test.js` + `tests/unit/test_supervisor_state_js.py`로 검증. **Track 1C(2026-06-17)**: `tool_done` 시 evidence 누적 ≥2이면 `verifying`/`verifier` 전이 — 결과 확인 단계를 구조적으로 구분. 상세: `docs/harness/cards/supervisor-ui-verification.md` |
 | RunSnapshot 영속화 + RunLedger 감사 추적 (Track 1B) ✅ | `agent/workflow/model.py`(`LedgerEntry`) + `agent/workflow/storage.py`(`append_ledger/load_ledger`) + `agent/server.py`(`GET /ledger`, done/error/stop/max_steps 기록) + `electron/renderer/workflow.js`(`_saveSnapshot/_restoreSnapshot`, localStorage) | **① RunSnapshot(localStorage)**: `_supervisorState`의 persistent fields(goal/step/phase/role/agentState/evidence/lastError/contextText)를 `done·error·agent_state·workflow_update` 이벤트 후 자동 저장 → 스레드 전환·새로고침 후 `loadWorkflowForThread()`에서 복원. 실시간 ephemeral fields(currentTool/waitingApproval 등)는 복원 제외. **② RunLedger(JSONL)**: `{thread_id}_ledger.jsonl`에 세션 경계 이벤트(start→done/error/stopped/max_steps) 추적, `LedgerEntry.from_dict()` 역직렬화, 손상 줄 건너뜀. `GET /threads/{type}/{id}/ledger` 엔드포인트. `delete_workflow()`시 ledger도 삭제. 테스트: `tests/unit/test_run_ledger.py` 10개. |
 | 도구 타임아웃 안전망·작업 가시성 (백로그 V 1단계) ✅ | `agent/core/timeouts.py` + `agent/server.py` + `agent/tools/office_com.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`style.css` | **무한 행 방지**: 도구별 작은 baseline에서 시작해 단계적으로 타임아웃을 늘려 같은 작업을 더 기다리고, 디스패치 하드 캡(`TOOL_TIMEOUT_CAP`) 도달 시 구조화 오류로 마감(`_run_tool_watched`). office COM은 `OFFICE_COM_TIMEOUT` 워치독+**PID 스코프 킬**(사용자가 연 Office 보호)+executor 재생성+Open 대화상자 억제(`Notify=False`)로 무한 행 제거. **가시성**: 길어지면 `TOOL_WAIT` SSE 내레이션('더 기다리는 중')+경과시간+상태바 현재 도구+중단 강조. 전체 적응형(진행도 탐지·인루프 판단·자동 백그라운드)은 백로그 V 2단계. 출처 클린룸(claw-code MIT, 패턴만). 상세: `docs/adr/0003-adaptive-tool-timeout.md` |
 | Adaptive timeout V2 liveness spike ✅ | `agent/core/timeouts.py` + `agent/tools/process.py` + `tests/unit/test_process_liveness.py` | `LivenessObservation`/`classify_liveness()`를 추가하고 `run_command` timeout 경로가 partial stdout/stderr를 관측해 `slow`/`stuck`을 구분. 기존 `툴 실행 오류` 접두와 structured timeout shape는 유지. Office COM kill, background registry, LLM 인루프 판단은 후속 카드로 분리. 상세: `docs/harness/cards/adaptive-timeout-v2-liveness-spike.md` |
 | Adaptive timeout V2 인루프 판단 (V-2 Phase 2) ✅ | `agent/core/timeouts.py` + `tests/unit/test_timeout_inloop.py` | `_TOOL_ALTERNATIVES`(도구별·접두별 회복 대안 딕셔너리) + `_lookup_alternatives()`(개별→접두→기본 조회) 추가. `classify_timeout()` → `alternatives` 필드 포함. `timeout_error_text()` → "회복 옵션:\n  1. ...\n  2. ..." 번호 매긴 형식으로 개선 — LLM이 명확히 선택하도록 유도. 테스트 17개 전체 통과. 순수 로직, IO 없음. |
-| 하네스 PoC v1 — Executor+Reviewer 2역할 (백로그 N) ✅ | `agent/harness/roles.py`·`orchestrator.py` + `docs/contracts/harness-poc-v1.md` + `agent/server.py`(`_harness_generate`·`_reviewer_call`·`HARNESS_ENABLED`) + `agent/core/events.py`(`HARNESS_ROUND`) + `electron/renderer/chat.js` | **Executor→Reviewer 자기교정 루프**: 역할 정의(`HarnessRole`, EXECUTOR/REVIEWER), `parse_verdict()`(JSON 파싱, 실패=안전 폴백), `run_harness()`(FakeLLM 테스트 가능 순수 오케스트레이터). 서버: `HARNESS_ENABLED=true` + `/chat harness_mode=true`로 활성화(`_harness_generate` 래퍼), `_reviewer_call()`(tools 미전송 I2, 비스트리밍). UI: `harness_round` 이벤트 뱃지("🔍 검증 중"·"↺ 재시도"). 기본 off — 기존 경로 무영향(I6). 계약: `docs/contracts/harness-poc-v1.md`. 테스트 26개 전체 통과. |
+| Adaptive timeout V2 Phase 2 보완 — effective_cap ✅ | `agent/core/timeouts.py` + `agent/server.py` | 디스패치 캡이 도구가 요청한 `timeout` 인자를 무시하던 버그 수정 — `effective_cap(name, arguments)`이 `TOOL_TIMEOUT_HARD_CEILING`(기본 300s) 안에서 도구 자체 timeout을 존중. LLM이 시스템 추천 회복옵션("timeout 늘려 재시도")을 따라도 무력화되던 문제 해결. 테스트: `test_timeouts.py`+`test_run_tool_watched.py`(신규) |
+| Adaptive timeout V2 Phase 3 자동 백그라운드 디태치 ✅ | `agent/core/timeouts.py` + `agent/server.py` | 정당히 긴 작업(`should_background`)을 SSE 블로킹 없이 백그라운드로 전환(`_background_tasks` + `_background_watchdog`), 완료 시 LLM 턴이 비어있으면 백로그 O 인프라를 재사용하여 결과 주입(I1 보존, 고아 tool_calls 방지). 상세: `docs/adr/0003-adaptive-tool-timeout.md` |
+| 하네스 PoC v1 — Executor+Reviewer 2역할 (백로그 N) ✅ | `agent/harness/roles.py`·`orchestrator.py` + `docs/contracts/harness-poc-v1.md` + `agent/server.py`(`_harness_generate`·`_reviewer_call`·`HARNESS_ENABLED`) + `agent/core/events.py`(`HARNESS_ROUND`) + `electron/renderer/chat.js` | **Executor→Reviewer 자기교정 루프**: 역할 정의(`HarnessRole`, EXECUTOR/REVIEWER), `parse_verdict()`(JSON 파싱, 실패=안전 폴백), `run_harness()`(FakeLLM 테스트 가능 순수 오케스트레이터). 서버: `HARNESS_ENABLED=true` + `/chat harness_mode=true`로 활성화(`_harness_generate` 래퍼), `_reviewer_call()`(tools 미전송 I2, 비스트리밍). UI: `harness_round` 이벤트 뱃지("🔍 검증 중"·"↺ 재시도"). 기본 off — 기존 경로 무영향(I6). 계약: `docs/contracts/harness-poc-v1.md`. 테스트 26개 전체 통과. **도메인 하네스 팩 v1(2026-06-19)**: 업무타입 설정에 `harness`/`verify_prompt` 필드 추가 → `_should_use_harness()`가 **업무타입 단위 옵트인**(요청 플래그 OR 설정)을 판정(`HARNESS_ENABLED` AND, I6 유지), `_reviewer_call(verify_prompt)`로 도메인 검증 지침 주입. 첫 버티컬 `syncade` 배포가 자기검증 옵트인(GxP 감사). 헬퍼: `obsidian_session.task_type_harness_enabled/verify_prompt`. **도메인 하네스 팩 Phase 1·2·3(2026-06-19)**: ① 실측 계측(G3) — `agent/harness/metrics.py`(`summarize_harness_runs`), `_harness_generate`가 매 Reviewer 판결을 RunLedger(`harness_round`)에 영속화(마지막 라운드도 측정 기록), `GET /threads/{type}/{id}/harness/metrics`로 라운드·재시도·자기교정·토큰 집계. ② Reviewer 멀티모달(G2) — `_reviewer_call`이 화면 캡처(image_url)를 `prune_images`로 최신 `HARNESS_REVIEWER_IMAGES`개(기본 2, 0=텍스트 강등 폴백) 전달. ③ 2번째 버티컬 `unscript` 옵트인. G1(Reviewer 도구부여)은 `docs/adr/0004-reviewer-verification-fidelity.md`에 Proposed(실측 후 결정). 세부계획·평가법: `docs/specs/domain-harness-pack.md`·`docs/harness/cards/harness-eval-methodology.md`. |
 | 작업 상태 명확화·작업 중 끼어들기 (백로그 Q) ✅ | `agent/server.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`index.html`·`style.css` | **① 끼어들기**: 실행 중에도 입력칸을 열어 두고(전송 버튼만 비활성) 별도 `↩ 끼어들기` 버튼·Enter로 메시지를 `POST /inject/{request_id}` → `_pending_messages` 큐 적재. `generate()` 루프가 **단계 경계(I1 도구 짝 보존 지점, 중단 확인 직후)에서 드레인**해 `[사용자 끼어들기]` user 메시지로 주입, `INJECTED` SSE로 투명 고지. stop과 구분(작업 유지). **② 상태 강조**: waiting을 "⏳ 당신 차례 — 입력해 주세요"로 색·펄스 강조(`data-state` 클래스). **큐 메커니즘은 백로그 O(외부 원격 제어)가 재사용**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md` |
 | Vault 매개 원격 제어(명령함) (백로그 O) ✅ | `agent/control/inbox.py` + `agent/server.py` | **포트 개방 없이** 동기화되는 Obsidian Vault 파일로 원격 지시·모니터링. 폴러가 `agent/control/inbox.md`의 `- [ ] 명령`을 집어(체크박스=멱등 마커, 처리 시 `- [x]`) 실행하고 `agent/control/status.md`에 결과 누적(newest-first). 활성 러닝이 있으면 **백로그 Q 끼어들기 큐에 합류**(`_pending_messages`), 없으면 `generate(auto_confirm="deny")` **헤드리스 실행**. `auto_confirm`은 G3 게이트에서 UI 라운드트립 없이 즉시 결정 — 무인 환경이라 **위험·쓰기 작업 자동 거부**(GxP 안전, 읽기·관찰만 실행). `CONTROL_ENABLED` opt-in(기본 false)·`CONTROL_POLL_INTERVAL`. (B) LAN 바인딩은 후속. 상세: `docs/backlog/done/O-external-control.md` |
 
-**총 툴 수: 134종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
+**총 툴 수: 136종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
 | 모듈 | 툴 수 |
 |------|-------|
@@ -140,7 +144,7 @@
 | `obsidian_session.py` | 4 |
 | `vision.py` | 3 |
 | `ui_automation.py` | 3 |
-| `office_com.py` | 11 |
+| `office_com.py` | 13 |
 | `office_libre.py` | 1 |
 | `office_cloud.py` | 3 |
 | `memory_tools.py` | 3 |
@@ -150,7 +154,7 @@
 
 > **Phase 0 기반(2026-05-29) ✅ 완료**: task_type/thread_id 주입·`_AUTO_EXEC` 워크플로우 지침·기본 업무 타입 5종·태스크별 기본 템플릿·워크플로우 모델/스토리지/툴/API·우측 패널·상태 바·컨텍스트 바·실행 로그·빠른 작업·SSE 이벤트 상수. (상세는 위 "현재 상태" 표 + `agent/workflow/`·`obsidian_session.py`)
 >
-> **미착수 항목은 아래 "향후 개선 아이디어(Backlog)"가 단일 목록**(F·G·K·L·N·T·V·W·X·Y). **최우선 핫픽스는 `docs/TRANSFORMATION_PLAN.md` 트랙0**(P1·P2·P3+I1).
+> **현재 개발 우선순위(P0~P3)의 단일 SSOT는 `docs/DEV_ROADMAP_2026-06.md`** — 세션 시작 시 우선순위는 여기서 확인한다. 아래 "향후 개선 아이디어(Backlog)"는 미착수 항목의 상세 사양 목록(F·G·K·L·N·V·X·Y 등), `docs/TRANSFORMATION_PLAN.md`는 트랙별 마스터 플랜이다.
 
 ---
 
@@ -182,7 +186,7 @@ L1 루프 강화는 클린룸 거버넌스 하에 완료됨(G3·G1·G2·G4). 향
 - **psutil** — 프로세스 관리
 
 ### 화면 인식
-- **pytesseract + Tesseract 5.4** — OCR (kor+eng)
+
 - **pillow** — 이미지 처리
 - **opencv-python** — 이미지 템플릿 매칭, 스크린샷 비교
 - **mss** — 빠른 스크린샷 (pyautogui 대비 ~10x)
@@ -267,7 +271,8 @@ mes-agent/
 │       ├── hud.html/hud.js ← 협업 코치 플로팅 HUD (백로그 H)
 │       └── style.css       ← 다크 테마
 ├── agent/
-│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S) + 명령함 폴러(O). (/health /chat /stop /inject /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow)
+│   ├── server.py           ← FastAPI 루프(generate) + 안전게이트(G3)·compaction(G1)·nudge(G2)·plan모드(G4)·장기기억 + `_intent_label`(S) + 명령함 폴러(O) + 하네스 래퍼(`_harness_generate`·`_reviewer_call`). (/health /chat /stop /inject /memory /collaborate/* /profile /models /confirm /tool/test /task-config /search /threads/* /workflow /ledger /harness/metrics)
+│   ├── harness/            ← 제품 내부 하네스(백로그 N): roles.py(EXECUTOR/REVIEWER)·orchestrator.py(run_harness)·metrics.py(summarize_harness_runs 실측 집계) ✅
 │   ├── control/            ← 백로그 O: Vault 매개 원격 제어(명령함). inbox.py=순수 파싱/마킹/status 포맷, 폴러는 server.py ✅
 │   ├── llm.py              ← LLM 클라이언트 팩토리
 │   ├── config.py           ← LLM 프로파일 (openai/internal) + 모델 오버라이드
@@ -280,7 +285,7 @@ mes-agent/
 │   │   ├── compaction.py   ← G1 컨텍스트 compaction 순수 로직(첫 system 병합 + 짝 보존) ✅
 │   │   ├── transcript.py   ← 런타임 제어 메시지 저장/표시 필터(트랙0 P1) ✅
 │   │   ├── timeouts.py     ← 도구 타임아웃 baseline·escalation·분류 순수 로직(백로그 V 1단계) ✅
-│   │   └── ocr_provider.py ← OCR 제공자 어댑터(Tesseract 래퍼, OCR_PROVIDER 전환) 트랙3a 1단계 ✅
+│   │   └── ocr_provider.py ← 화면 인식 어댑터 (UIA 전용, Tesseract 제거됨) ✅
 │   ├── workflow/
 │   │   ├── model.py        ← WorkflowDefinition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py      ← Vault 저장/로드(YAML frontmatter) + 구포맷 자동 마이그레이션
@@ -293,7 +298,7 @@ mes-agent/
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
 │       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx + office_locate (15종) ✅
 │       ├── obsidian_rag.py ← Obsidian PKM: 탐색·편집·이동·Templater (18종) ✅
-│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + 폴백 (11종) ✅
+│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + Active Excel 실시간 연동 + 폴백 (13종) ✅
 │       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 폴백) (1종) ✅
 │       ├── office_cloud.py    ← MS Graph 클라우드 Excel 편집(셀/수식 REST) (3종) ✅
 │       ├── vision.py        ← 멀티모달 화면: capture_screen(메인루프 이미지 주입)·analyze_screen/region (3종) ✅
@@ -377,29 +382,17 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 ---
 
-> **에픽 N·O·T·V** 상세 설계·확인사항은 각 `docs/backlog/pending/{N,O,T,V}-*.md`.
-> **PO 추천 시퀀스**: **트랙0 핫픽스(P2→P1→W)** → **T**(Vault 영속 업무타입) → **O**(원격 제어) → **V-2단계**(타임아웃 고도화) → **N**(멀티에이전트, L과 통합). X·Y는 보안/회사PC 선검증 후.
-> **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · N↔L(이벤트 스트림).
+> **에픽 N·V** 상세 설계·확인사항은 각 `docs/backlog/pending/{N,V}-*.md`.
+> **PO 추천 시퀀스**: **V-2단계**(타임아웃 고도화) → **N**(멀티에이전트 에픽 결정, L과 통합). X·Y는 보안/회사PC 선검증 후. (T·O는 완료 — 현재 상태 표 참조)
+> **의존성**: N↔L(이벤트 스트림).
 
-### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
+### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — PoC v1·Phase 1~3 완료 ✅, 잔여: 에픽 결정
 
-단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/pending/N-harness-mode.md`.
-
-### O. 외부 기기 지시·모니터링(원격 제어) 📱 — ✅ (A)안 완료 (현재 상태 표 참조)
-
-폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함** ✅ 완료(`agent/control/inbox.md` 폴링 — 포트 개방 없이 동기화로 원격, 백로그 Q 큐 재사용, 무인 위험작업 자동 거부). **(B) LAN 바인딩+인증 강화** 🔲 후속: `host=0.0.0.0` 옵트인 + Origin 허용목록 + 토큰 영속화, `LAN_ENABLED=true`로 활성화. 상세: `docs/backlog/done/O-external-control.md`.
-
-### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — ✅ 완료
-
-`_DEFAULT_TASK_CONFIGS` + Vault `agent/task_types.json` 오버레이 + 신규 도구 `task_type_create/remove`(확인 게이트) + `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링까지 완료. 기본 5타입 삭제는 차단. 상세: `docs/backlog/done/T-dynamic-task-types.md`.
+PoC v1(Executor+Reviewer 자기교정 루프)과 도메인 하네스 팩 Phase 1~3(실측 계측·Reviewer 멀티모달·2번째 버티컬)은 완료(현재 상태 표 참조). 남은 결정은 **Planner 역할까지 추가한 정식 멀티에이전트 에픽으로 확장할지 여부** — `docs/DEV_ROADMAP_2026-06.md` P1 #2("하네스 N 에픽 결정")에서 PoC 실사용 데이터를 본 뒤 판단한다. 확장 시 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출하는 구조. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. 상세: `docs/backlog/pending/N-harness-mode.md`.
 
 ### V-2단계. 적응형 타임아웃 고도화 🔲
 
-V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
-
-### W. 설정 정리·모델 출처 표기 (트랙0 P3·I1) 🔲
-
-`.env` 그룹핑(LLM/Office/외부SaaS 블록 분리) + 기본값으로 슬림화 + 전문가 섹션 분리. 모델 드롭다운에 출처(`/v1/models` 동적 vs `.env` 프리셋) 표시. 저비용·같은 표면. 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0.
+V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). **자동 백그라운드 디태치 구현 완료(ADR-0003)**. (진행도 탐지 OS별 신뢰성 보완 및 baseline 학습이 남음). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
 
 ### X. 창 UX 고도화 (트랙0 I2) 🔲 — Electron 수동확인, 보안 검토 선행
 
@@ -425,4 +418,4 @@ Office365 로그인창 뜨나 로그인 시도 안 함 → 자격증명 사전 �
 - `npx -y`는 외부 다운로드 시도 → `mcp-obsidian`은 외부망에서 `npm pack`으로 챙길 것
 - MCP 클라이언트(백로그 J): Python `mcp` 패키지 + Oracle MCP 서버(python-oracledb 기반 권장)를 USB 사전반입. 미설치여도 앱은 동작(지연 import)
 
-대전환 프로젝트 진행 시 docs/TRANSFORMATION_PLAN.md를 먼저 읽을 것
+개발 우선순위는 `docs/DEV_ROADMAP_2026-06.md`(P0~P3 SSOT)를, 트랙별 마스터 플랜은 `docs/TRANSFORMATION_PLAN.md`를 먼저 읽을 것

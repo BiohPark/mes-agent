@@ -34,9 +34,10 @@ _AUTO_EXEC = (
     " 각 단계 실행 시작 시 workflow_set_step(status='running'),"
     " 완료 시 'done', 오류 시 'error'로 업데이트해라."
     " task_type·thread_id는 시스템 메시지의 [현재 세션] 섹션에서 읽어 그대로 사용해라."
-    " [Office 문서 편집] 기존 .docx/.xlsx를 실제로 편집할 때는 write_file이 아니라"
-    " word_edit_text(찾아바꾸기)·excel_set_cells(셀/수식)를 사용해라(설치된 Office로 서식·수식 보존)."
-    " 새 문서 작성은 write_word, 표 데이터 저장은 write_excel을 쓴다."
+    " [Office 문서 제어] 엑셀 수식 계산 등을 위해 파워셸/파이썬 스크립트(run_command)를 직접 작성하지 마라 (COM 대기/멈춤 발생 가능)."
+    " 반드시 제공된 전용 툴을 조합해라: 빈 파일은 write_excel로 만들고, 수식 입력은 excel_set_cells, 결과 읽기는 excel_get_range를 써라."
+    " 만약 사용자가 '열려있는 엑셀에 작업해줘' 또는 '실시간으로 호흡하자'라고 하면, 파일 경로 없이 바로 작동하는 excel_active_set_cells와 excel_active_get_range 툴을 사용하여 열려있는 창에 실시간으로 작업해라."
+    " 파워셸/파이썬 스크립트로 COM 코드를 직접 짜지 마라. 무작정 UI 창을 띄우지 마라(start_process('excel') 금지). 눈으로 확인해야 할 때만 사용자가 엑셀을 직접 열어두거나, 네가 'Start-Process excel' 셸 명령을 써라."
     " 조사 내용을 기존 문서에 채울 때는 word_insert_text(앵커 뒤/문서 끝)·excel_set_cells를 쓰고,"
     " 슬라이드는 ppt_add_slide·ppt_replace_text를 사용해라."
     " 클라우드 문서(SharePoint/OneDrive/365)는 먼저 office_locate_file로 동기화된 로컬 사본을 찾아"
@@ -110,6 +111,15 @@ _DEFAULT_TASK_CONFIGS = {
             "1)빌드 확인 2)환경 접속 3)패키지 업로드 4)배포 실행 5)기동 확인 6)결과 기록. "
             "배포 완료 후 결과를 obsidian_write_note로 Vault에 기록해라."
         ) + _AUTO_EXEC,
+        # 도메인 하네스 팩 v1: 배포는 결과 검증이 중요한 GxP 작업이므로
+        # Executor→Reviewer 자기검증 루프를 업무타입 단위로 옵트인한다.
+        # (HARNESS_ENABLED=true일 때만 실제 활성화 — 기본 off, I6)
+        "harness": True,
+        "verify_prompt": (
+            "배포 작업의 결과를 읽기 전용 도구로 점검하라: "
+            "서비스가 정상 기동했는지, 배포된 버전이 의도한 빌드와 일치하는지, "
+            "오류 로그가 없는지 확인하라. 문제가 있으면 구체적인 수정 지침을 피드백으로 제시하라."
+        ),
     },
     "obsidian": {
         "label": "Obsidian PKM",
@@ -164,6 +174,15 @@ _DEFAULT_TASK_CONFIGS = {
             "화면 OCR(capture_screen_ocr)과 compare_screenshots로 UI 동작을 검증해. "
             "작업 시작 시 workflow_init으로 테스트 절차를 정의해라."
         ) + _AUTO_EXEC,
+        # 도메인 하네스 팩: 테스트는 기대값과 실제 결과의 일치 검증이 핵심이므로
+        # Executor→Reviewer 자기검증 루프를 옵트인한다 (HARNESS_ENABLED=true일 때만, I6).
+        "harness": True,
+        "verify_prompt": (
+            "테스트 실행 결과를 읽기 전용 도구로 점검하라: "
+            "기대 화면과 실제 화면이 일치하는지 compare_screenshots/OCR로 확인하고, "
+            "통과/실패 케이스를 명확히 구분하라. 불일치 시 어떤 케이스가 왜 실패했는지 "
+            "구체적인 피드백을 제시하라."
+        ),
     },
     "knox": {
         "label": "Knox 자동 수집",
@@ -227,6 +246,22 @@ def _save_vault_task_configs(configs: dict) -> None:
 def get_task_configs() -> dict:
     """Return built-in task configs merged with Vault custom task types."""
     return {**_DEFAULT_TASK_CONFIGS, **_load_vault_task_configs()}
+
+
+def task_type_harness_enabled(task_type: str) -> bool:
+    """업무타입 설정이 하네스(Executor→Reviewer 자기검증) 옵트인인지 반환.
+
+    미지정·미존재 업무타입은 False (하위호환·기본 비활성).
+    실제 활성화는 server.HARNESS_ENABLED와 AND로 결정한다(I6).
+    """
+    cfg = get_task_configs().get(task_type, {})
+    return bool(cfg.get("harness", False))
+
+
+def task_type_verify_prompt(task_type: str) -> str:
+    """업무타입 설정의 도메인 검증 프롬프트(Reviewer suffix에 주입). 없으면 빈 문자열."""
+    cfg = get_task_configs().get(task_type, {})
+    return str(cfg.get("verify_prompt", "")).strip()
 
 
 # ── 메인 클래스 ───────────────────────────────────────────────

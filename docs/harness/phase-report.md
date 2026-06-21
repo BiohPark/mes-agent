@@ -1,6 +1,10 @@
-# 개발 계획 Phase 보고서
+# 개발 계획 Phase 보고서 (이력)
 
-> 목적: Codex CLI 정상화 이후 mes-agent 개발 계획을 우선순위 기반 Phase로 쪼개, 각 단계의 산출물과 게이트를 명확히 한다.
+> ⚠️ **이력 문서**: 이 보고서는 2026-06-13~15 개발 하네스 셋업(Phase 0~5)의 진행 기록이다.
+> **현재 개발 우선순위는 `docs/DEV_ROADMAP_2026-06.md`(P0~P3 단일 SSOT)를 본다.** 아래의 Phase 0~5와
+> "Next Actions"는 당시 시점 기록으로 보존하며, 최신 우선순위와 충돌 시 DEV_ROADMAP이 우선한다.
+>
+> 목적(당시): Codex CLI 정상화 이후 mes-agent 개발 계획을 우선순위 기반 Phase로 쪼개, 각 단계의 산출물과 게이트를 명확히 한다.
 
 ## 우선순위 원칙
 
@@ -182,7 +186,10 @@ Gate:
 - 완료 보고에 변경 파일, 테스트 결과, 사용자 확인 방법 포함
 - diff review 통과
 
-## 현재 최우선 Next Actions
+## Next Actions (2026-06-15 시점 기록 — 최신 우선순위는 DEV_ROADMAP 참조)
+
+> 아래는 당시 진행 스냅샷이다. 대부분 완료됐고(Task T·Supervisor·RunLedger·V-2 spike 등은 CLAUDE.md
+> 현재상태 표 참조), **현재 우선순위는 `docs/DEV_ROADMAP_2026-06.md`** 가 대체한다.
 
 1. P0 하네스 정합화 변경(`run-plan-critics.ps1`, ECC rules, 관련 문서)은 `ceef24b chore: normalize dev harness setup`으로 로컬 커밋 완료 상태다. 원격 push는 사용자 명시 승인 후 진행한다.
 2. `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harness\run-plan-critics.ps1 -Smoke`는 2026-06-14 기준 `CODEX_EXEC_OK`, `CLAUDE_EXEC_OK`로 통과했다. Claude Code의 `SessionEnd hook ... Hook cancelled` 경고는 smoke 실패가 아니라 전역 plugin hook 후속 점검 항목이다.

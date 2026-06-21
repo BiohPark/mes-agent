@@ -54,3 +54,28 @@ cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --too
 3. Claude Code daemon/session 상태를 정리한 뒤 `claude.cmd -p ...`를 재실행한다.
 4. 여전히 timeout이면 네트워크/API 호출 경로를 진단한다.
 5. smoke가 통과하기 전에는 Claude Code worker 대상 구현을 시작하지 않는다.
+
+---
+
+## 2026-06-17 후속 진단
+
+| 실험 | 결과 |
+|------|------|
+| 1-A: `--ignore-user-config` | 플래그 미지원 (v2.1.178에 해당 옵션 없음) |
+| 1-B: `--max-turns 1` | **정상** — `CLAUDE_EXEC_OK` 즉시 반환 |
+| 1-C: Python SDK 직접 호출 | 미실행 (1-B에서 원인 특정됨) |
+| 1-D: Stop hook 비활성화 후 원본 명령 | **정상** — `CLAUDE_EXEC_OK` 60초 내 반환 |
+
+**원인 판정:** `.claude/settings.json`의 `Stop` hook이 `-p` 세션 종료 후 실행되면서 행(hang) 유발.  
+구체적으로 `"git status --short 2>/dev/null | head -20 || true"` 명령이 포함된 Stop hook이  
+비대화형(non-interactive) `-p` 실행에서 정상적으로 종료되지 않거나 행 상태에서 150초 timeout을 유발한 것으로 판단된다.  
+전역 `settings.json` (~/.claude/settings.json)에는 Stop hook 없음 — 프로젝트 로컬 hook이 원인.
+
+**해결 조치:** `.claude/settings.json`에서 `Stop` hook 블록을 제거 (PostToolUse는 유지).  
+백업: `.claude/settings.json.bak_20260617` (git 미추적).
+
+**최종 smoke 통과 명령:**
+```powershell
+& "C:\Users\qldh1\.local\bin\claude.exe" -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence
+```
+출력: `CLAUDE_EXEC_OK` (정상)

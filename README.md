@@ -131,9 +131,9 @@
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
 
-### 툴 (134종)
+### 툴 (136종)
 
-> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 134).
+> LLM API의 `tools` 배열 한계(128)로, 요청마다 `select_tools`가 관련도 상위 ≤128개만 전송합니다(전체 등록은 136).
 
 | 분류 | 수 | 상태 |
 |------|-----|------|
@@ -142,7 +142,7 @@
 | 브라우저 자동화 (Playwright Chromium/Edge, Office Online 진입) | 23 | ✅ |
 | 프로세스/시스템 (PowerShell, 파일, 프로세스 — 위험명령 가드) | 9 | ✅ |
 | 문서 처리 (Excel·Word·PDF·텍스트·마크다운→docx·검토메모·수정추적·PPT·로컬파일탐색) | 15 | ✅ |
-| **MS Office 편집 (COM: Word·Excel·PPT 찾아바꾸기·삽입·셀/수식·메모·수정추적·PDF, 라이브러리 폴백)** | 11 | ✅ |
+| **MS Office 편집 (COM: Word·Excel·PPT 찾아바꾸기·삽입·셀/수식·메모·수정추적·PDF·Active Excel 실시간 연동, 라이브러리 폴백)** | 13 | ✅ |
 | **LibreOffice 변환 (오프라인 PDF/포맷 변환, MS Office 미설치 폴백)** | 1 | ✅ |
 | **클라우드 Office (MS Graph: M365 Excel 셀/수식 REST 편집)** | 3 | ✅ |
 | Obsidian PKM (탐색·편집·이동·고급검색·Templater) | 18 | ✅ |
@@ -171,7 +171,7 @@ pyperclip                      — 클립보드 경유 한글 입력
 playwright (Chromium)          — 브라우저 자동화
 psutil                         — 프로세스 관리
 
-pytesseract + Tesseract 5.4    — OCR (kor+eng)
+
 opencv-python + mss            — 이미지 매칭, 고속 스크린샷
 pillow                         — 이미지 처리
 
@@ -209,6 +209,25 @@ npm install
 npm start
 ```
 
+### 최초 실행 시 화면
+
+`npm start` 실행 후 앱이 뜨면 헤더 상태 표시가 다음 순서로 바뀝니다.
+
+1. `● 서버 연결 중...` — Python 에이전트 서버(FastAPI)가 뜨는 동안 표시 (최대 약 20초 폴링)
+2. `● 준비됨` — 서버 연결 성공. 이 시점에 LLM 프로파일·모델 목록·업무 설정을 불러오고,
+   **기본업무(`general`) 탭이 자동으로 열립니다** (`openTask('general')`)
+3. 좌측 사이드바에는 기본 5개 업무타입(기본업무·Syncade·Obsidian·Unscript·Knox) 버튼이 표시됩니다
+
+**`● 서버 연결 실패`가 뜬다면** 흔한 원인은 다음 두 가지입니다.
+
+- **포트 충돌**: 8000번(또는 `.env`의 `AGENT_PORT`) 포트를 다른 프로세스가 이미 사용 중 →
+  [문제 해결 — Python 서버 포트 충돌](SETUP.md#python-서버-포트-충돌) 참고
+- **conda 환경 미활성화**: `start.ps1`을 거치지 않고 `npm start`만 실행하면 Python 서버가
+  뜨지 않습니다 → [SETUP.md — 5단계 실행](SETUP.md#5단계--실행) 순서대로 다시 시도
+
+> 💡 `npm install` 전에 `node -v`로 Node 버전을 확인하세요. `.env.example`의 `NODE_VERSION`과
+> 다른 버전이면 네이티브 모듈(Electron) 빌드가 실패할 수 있습니다.
+
 ### DevTools 모드
 
 ```powershell
@@ -244,7 +263,7 @@ mes-agent/
 │   ├── workflow/
 │   │   ├── model.py         — Definition/Node/Connection(불변) + RunState(가변) + 마이그레이션
 │   │   └── storage.py       — Vault 저장(YAML frontmatter) + 구포맷 마이그레이션
-│   └── tools/               — 134종 툴 (MANIFEST 자동 디스커버리)
+│   └── tools/               — 136종 툴 (MANIFEST 자동 디스커버리)
 │       ├── __init__.py      — 자동 등록 레지스트리 (수정 불필요)
 │       ├── ocr.py           — 화면 OCR (1종)
 │       ├── screen.py        — 화면 인텔리전스 (9종)
@@ -252,20 +271,22 @@ mes-agent/
 │       ├── browser.py       — Playwright 브라우저 + Office Online 진입 (23종)
 │       ├── process.py       — 프로세스·시스템·파일 (9종)
 │       ├── document.py      — Excel·Word·PDF·텍스트·docx변환·파일탐색 (15종)
-│       ├── office_com.py    — MS Office COM 편집 + 폴백 (11종)
+│       ├── office_com.py    — MS Office COM 편집 + Active Excel 실시간 연동 + 폴백 (13종)
 │       ├── office_libre.py  — LibreOffice 헤드리스 변환 (1종)
 │       ├── office_cloud.py  — MS Graph 클라우드 Excel (3종)
 │       ├── obsidian_rag.py  — Obsidian PKM 탐색·편집·이동 (18종)
 │       ├── interaction.py   — 사용자 확인 팝업 ask_user (1종)
-│       ├── workflow.py      — 워크플로우 관리 (8종)
+│       ├── workflow.py      — 워크플로우 관리 (9종)
 │       ├── vision.py        — 멀티모달 화면: capture_screen(메인루프 주입)·analyze_* (3종, VISION_ENABLED 기본 켬)
 │       ├── ui_automation.py — Windows UI Automation / 접근성 트리 (3종)
+│       ├── memory_tools.py  — 장기기억 명시적 도구 remember/forget/recall (3종)
+│       ├── task_type.py     — 업무 타입 생성/삭제 (2종)
 │       └── _safety.py       — 파괴적 작업 가드 + 위험도 분류 (툴 아님)
 ├── docs/
 │   ├── adr/                 — 아키텍처 결정 기록(ADR-0001·0002)
 │   └── backlog/
-│       ├── pending/         — 미착수 기능 사양(N·O·Q·T·U)
-│       └── done/            — 완료 구현 배경 기록(H·I·J·M·P·R·S)
+│       ├── pending/         — 미착수 기능 사양(N·V)
+│       └── done/            — 완료 구현 배경 기록(H·I·J·M·O·P·Q·R·S·T·U·W)
 ├── start.ps1                — 개발 환경 시작 (conda + nvm PATH 설정)
 ├── .env                     — 로컬 설정 (git 제외)
 ├── .env.example             — 설정 템플릿
@@ -399,7 +420,7 @@ Vault/
 - **Python**: `conda-pack`으로 환경 압축 → USB 이전
 - **Node**: `node_modules` 폴더 전체 복사
 - **Playwright**: `python -m playwright install chromium` 후 `%LOCALAPPDATA%\ms-playwright\` 전체 이전
-- **Tesseract**: UB-Mannheim 설치본 오프라인 설치
+
 
 자세한 내용 → [SETUP.md — 폐쇄망 이전](SETUP.md#폐쇄망-이전)
 

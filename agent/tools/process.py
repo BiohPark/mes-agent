@@ -145,7 +145,8 @@ def is_process_running(name: str) -> str:
 def start_process(cmd: str, wait: bool = False, force: bool = False) -> str:
     """프로세스를 실행합니다.
     wait=True 시 완료될 때까지 기다립니다 (최대 30초).
-    되돌릴 수 없는 위험 명령은 차단되며, 사용자 확인 후 force=true로 실행합니다."""
+    되돌릴 수 없는 위험 명령은 차단되며, 사용자 확인 후 force=true로 실행합니다.
+    UI 프로그램(Excel 등)을 실행하려면 단순 'excel' 대신 'Start-Process excel'과 같은 명령을 사용하세요."""
     from agent.tools._safety import is_dangerous_command, danger_block_message
     if not force and is_dangerous_command(cmd):
         return json.dumps({"blocked": True, "message": danger_block_message(cmd),
@@ -210,7 +211,8 @@ def get_system_info() -> str:
     try:
         cpu = psutil.cpu_percent(interval=0.5)
         mem = psutil.virtual_memory()
-        disk = psutil.disk_usage("C:\\")
+        disk_path = os.environ.get("SYSTEM_DISK_PATH", "C:\\")
+        disk = psutil.disk_usage(disk_path)
         return json.dumps({
             "cpu_percent": cpu,
             "memory": {
@@ -312,7 +314,7 @@ MANIFEST = [
             "type": "function",
             "function": {
                 "name": "start_process",
-                "description": "명령어로 프로세스를 실행합니다. wait=true 시 완료 대기합니다. 위험 명령은 차단되며 사용자 확인 후 force=true로 실행합니다.",
+                "description": "명령어로 프로세스를 실행합니다. wait=true 시 완료 대기합니다. 위험 명령은 차단되며 사용자 확인 후 force=true로 실행합니다. UI 프로그램(Excel 등)은 단순 'excel'이 아닌 'Start-Process excel' 등 셸 명령을 사용하세요.",
                 "parameters": {
                     "type": "object",
                     "properties": {

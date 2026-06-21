@@ -7,7 +7,7 @@
 | Windows | 10 / 11 (64비트) | |
 | Miniconda | 최신 | Python 3.11 환경 생성용 |
 | Node.js | 22.x | nvm-windows 권장 |
-| Tesseract OCR | 5.x | UB-Mannheim 설치본 |
+
 | Git | 최신 | 저장소 클론용 |
 
 ---
@@ -33,15 +33,9 @@ conda activate mes-agent
 pip install -r requirements.txt
 ```
 
-### Tesseract OCR 설치
+### 화면 인식 (UI Automation 및 Vision LLM) 설정
 
-1. [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) 에서 `tesseract-ocr-w64-setup-*.exe` 다운로드
-2. 설치 시 **Korean** 언어 팩 체크 (Korean.traineddata)
-3. 설치 경로 확인 후 `.env`에 반영:
-
-```ini
-OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
-```
+mes-agent는 Windows UI Automation(`OCR_PROVIDER=uia`)을 사용하여 화면 내 텍스트와 좌표를 구조적으로 파악하며, 복잡한 화면은 이미지를 Base64로 인코딩하여 멀티모달 Vision LLM에 전달하여 분석합니다. **별도의 외부 OCR 엔진(Tesseract 등)은 필요하지 않습니다.**
 
 ### Playwright 브라우저 바이너리 설치
 
@@ -106,7 +100,7 @@ OPENAI_API_KEY=sk-...
 AGENT_PORT=8000
 
 # ── OCR ──────────────────────────────────────────────
-OCR_TESSERACT_CMD=D:/Program Files/Tesseract-OCR/tesseract.exe
+
 OCR_LANG=kor+eng
 
 # ── Obsidian ──────────────────────────────────────────
@@ -137,6 +131,19 @@ Obsidian Local REST API 키는 Obsidian 앱 내에서 발급합니다:
 4. `.env`의 `OBSIDIAN_API_KEY=` 뒤에 붙여넣기
 
 > 폐쇄망 주의: `Local REST API` 플러그인이 없으면 외부망 PC에서 미리 다운로드해야 합니다.
+
+### 필수 설정 체크리스트
+
+`.env`의 모든 항목을 다 채울 필요는 없습니다. 아래 표로 무엇이 필수이고 무엇이 선택인지 확인하세요.
+
+| 설정 | 필수 여부 | env 키 | 확인 방법 |
+|------|-----------|--------|-----------|
+| **LLM 연결** | 필수 | `LLM_ACTIVE`, `LLM_OPENAI_BASE_URL`/`LLM_INTERNAL_BASE_URL`, `OPENAI_API_KEY`/`INTERNAL_API_KEY` | 앱 헤더 상태가 `● 준비됨`으로 바뀌고 채팅에 메시지를 보내 응답이 오는지 확인 |
+| **OCR (화면 인식)** | 선택 | `OCR_PROVIDER`, `OCR_LANG` | 기본값(`uia`)으로 동작. 화면 OCR 빠른 작업 버튼을 눌러 결과가 오면 정상 |
+| **Obsidian 연동** | 선택 | `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_HOST`, `OBSIDIAN_API_KEY` | Obsidian 업무 탭에서 `obsidian_search` 등 RAG 툴 호출 시 결과가 오면 정상. 미설정 시 Obsidian 관련 툴만 비활성 |
+
+> 💡 **LLM 키만으로 채팅은 바로 동작합니다.** OCR·Obsidian·MCP 등 나머지 항목은 해당 기능을
+> 쓸 때만 채워도 무방합니다 — 미설정이어도 앱 구동이나 다른 업무에는 영향이 없습니다.
 
 ---
 
@@ -215,9 +222,7 @@ C:\Users\<사용자명>\AppData\Local\ms-playwright\
 $env:PLAYWRIGHT_BROWSERS_PATH = "D:\playwright-browsers"
 ```
 
-### Tesseract OCR 이전
 
-UB-Mannheim 설치본(`tesseract-ocr-w64-setup-*.exe`)을 USB로 복사 후 설치.
 
 ---
 
@@ -236,12 +241,6 @@ conda init powershell
 $env:PATH = "C:\Users\<사용자명>\AppData\Local\nvm;C:\nvm4w\nodejs;" + $env:PATH
 ```
 또는 `start.ps1`을 실행하면 자동 처리됩니다.
-
-### Tesseract 오류
-```
-TesseractNotFoundError
-```
-`.env`의 `OCR_TESSERACT_CMD` 경로가 실제 `tesseract.exe` 위치와 일치하는지 확인하세요.
 
 ### Playwright 브라우저 오류
 ```

@@ -13,9 +13,11 @@
 
 문서를 편집/작성하라는 요청을 받으면 **아래 사다리를 위에서부터** 시도한다. 위가 가능하면 아래로 내려가지 않는다.
 
-1. **로컬/동기화 사본 먼저** — `office_locate_file("문서명")`으로 찾는다.
+0. **스크립트 작성 및 화면 띄우기 금지 (원칙)** — 단순 계산이나 조작을 위해 PowerShell/Python 스크립트(`run_command`)를 직접 짜서 COM을 제어하려 하지 마라(무한 대기에 빠질 수 있음). 무작정 `start_process('excel')`로 창을 띄우지도 마라. 반드시 **제공된 전용 도구(write_excel, excel_set_cells 등)**를 조합해서 사용해라. (사용자가 화면을 눈으로 보길 원할 때만 예외적으로 `Start-Process excel` 셸 명령을 사용한다.)
+1. **로컬/동기화 사본 먼저** — `office_locate_file("문서명")`으로 찾는다. (임시 수식 계산이 필요하면 `write_excel`로 빈 파일을 만든 후 `excel_set_cells`와 `excel_get_range`를 조합한다)
    - 찾으면: `word_edit_text`·`word_insert_text`·`excel_set_cells`·`ppt_replace_text`(COM, 완전충실도)로 편집. 새 문서는 `write_word`/`write_excel`/`ppt_add_slide`.
    - 변환·PDF: `word_export_pdf`/`ppt_export_pdf`(COM, 없으면 `libre_convert` 자동 폴백).
+1.5. **활성 엑셀 창 연동 (실시간 호흡)** — 사용자가 명시적으로 "열려있는 엑셀에 작업해줘"라고 지시한 경우, `excel_active_set_cells` 및 `excel_active_get_range` 도구를 사용하여 현재 활성화된 엑셀 창을 직접 제어한다. (파일 경로나 저장, 파일 열기/닫기가 필요 없이 화면에 즉시 반영됨)
 2. **M365 클라우드 Excel** — `GRAPH_ACCESS_TOKEN`이 있으면 `graph_find_item` → `graph_excel_set_range`/`get_range`로 셀·수식 직접 편집.
 3. **웹에서만 열리는 문서** — `office_web_open(url 또는 상대경로)`.
    - 반환값의 **`known_limitation`을 인지**: 웹 편집기는 iframe+캔버스라 `browser_click` selector 편집이 거의 불가능하다. 절대 같은 클릭을 반복하지 마라.

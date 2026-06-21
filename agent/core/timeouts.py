@@ -211,6 +211,43 @@ def office_com_timeout() -> float:
         return 45.0
 
 
+def timeout_hard_ceiling() -> float:
+    """어떤 도구도 이 절대 상한(초)을 넘겨 대기하지 않는다 — 도구 자체 timeout이 아무리 커도 무시."""
+    raw = os.getenv("TOOL_TIMEOUT_HARD_CEILING", "")
+    try:
+        return float(raw) if raw else 300.0
+    except ValueError:
+        return 300.0
+
+
+def effective_cap(name: str, arguments) -> float:
+    """디스패치 캡을 계산한다 — 도구가 명시적으로 요청한 timeout을 존중하되 절대 상한은 유지.
+
+    run_command/run_powershell처럼 자체 timeout 인자를 받는 도구가 회복 조치(timeout 늘려
+    재시도)를 따라도, 디스패치 레벨 캡(기본 90s)이 그보다 먼저 끝내버려 무의미해지는 문제를 막는다.
+
+    arguments는 run_tool()과 동일한 형태 — generate() 루프에서는 LLM이 스트리밍으로 누적한
+    **JSON 문자열**(아직 파싱 전)이고, 직접 호출/테스트에서는 dict일 수도 있다. 파싱 실패·
+    timeout 필드 없음·숫자가 아니면 기존 timeout_cap()만 사용한다(절대 예외를 던지지 않음).
+    """
+    base = timeout_cap()
+    parsed: dict = {}
+    if isinstance(arguments, dict):
+        parsed = arguments
+    elif isinstance(arguments, str) and arguments.strip():
+        try:
+            loaded = json.loads(arguments)
+        except (TypeError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict):
+            parsed = loaded
+    raw_timeout = parsed.get("timeout")
+    if not isinstance(raw_timeout, (int, float)) or isinstance(raw_timeout, bool):
+        return base
+    buffer = 5.0
+    return min(timeout_hard_ceiling(), max(base, float(raw_timeout) + buffer))
+
+
 def escalation_schedule(baseline: float, cap: float, factor: float = 4.0) -> list[float]:
     """'시작부터의 누적 대기 한계(초)' 리스트(단조 증가, 마지막=cap).
     예: baseline=1, cap=90, factor=4 → [1, 4, 16, 64, 90].
@@ -286,3 +323,14 @@ def timeout_error_text(name: str, waited: float, progressed: bool = False,
         f"회복 옵션:\n{alts_text}\n"
         f"위 옵션 중 하나를 선택해 진행하거나, 선택이 어려우면 ask_user로 사용자에게 보고하세요."
     )
+
+
+def should_background(name: str, arguments: dict | str) -> bool:
+    """도구를 백그라운드로 실행할지(디태치) 결정한다.
+    
+    정당하게 긴 작업(예: 대용량 변환, 오랜 시간이 걸리는 분석 등)은 
+    SSE를 막지 않고 백그라운드 작업으로 전환하여 무한 행을 방지하고 
+    UI 응답성을 유지한다. (ADR-0003 V-2 Phase 3)
+    """
+    # V-2 Phase 3 백그라운드 파일럿 일시 비활성화 (에이전트가 비동기 완료를 기다리지 못하는 문제 발생)
+    return False
