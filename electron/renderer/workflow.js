@@ -1196,22 +1196,19 @@ function _cancelEdit() {
 
 // ── RunLedger 히스토리 표시 ───────────────────────────────────
 
-const _TERMINAL_EVENTS = new Set(['done', 'error', 'stopped', 'max_steps'])
-
 async function _loadLedgerHistory(taskType, threadId) {
   if (!svLedger || !taskType || !threadId) return
   try {
     const base = `http://localhost:${window.electronAPI?.serverPort ?? 8000}`
     const res = await fetch(`${base}/threads/${taskType}/${threadId}/ledger`)
-    if (!res.ok) return
+    if (!res.ok) { svLedger.textContent = '-'; return }
     const data = await res.json()
-    const entries = (data.legacy || []).filter(e => _TERMINAL_EVENTS.has(e.event)).slice(-3).reverse()
-    if (!entries.length) { svLedger.textContent = '-'; return }
-    svLedger.innerHTML = entries.map(e => {
-      const ts = (e.ts || '').slice(0, 16).replace('T', ' ')
-      return `<div class="sv-run-entry sv-run-${e.event}"><span class="sv-run-ts">${ts}</span><span class="sv-run-ev">${e.event}</span></div>`
-    }).join('')
-  } catch {}
+    const entries = window.LedgerHistory?.normalizeLedgerEntries(data) || []
+    const html = window.LedgerHistory?.renderLedgerHistoryHtml(entries) || ''
+    svLedger.innerHTML = html || '-'
+  } catch {
+    svLedger.textContent = '-'
+  }
 }
 
 // ── 워크플로우 로드 (스레드 선택 시) ──────────────────────────

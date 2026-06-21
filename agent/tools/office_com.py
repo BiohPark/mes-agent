@@ -466,9 +466,10 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
         return json.dumps({"error": "cells는 비어있지 않은 {셀주소: 값} 객체여야 합니다."},
                           ensure_ascii=False)
     backup = _backup(path)
+    has_formula = any(isinstance(v, str) and v.startswith("=") for v in cells.values())
 
     # 1) COM 경로
-    if _HAS_PYWIN32:
+    if _HAS_PYWIN32 and not has_formula:
         try:
             excel = _get_excel()
             # Notify=False: 파일이 잠겨 있으면 "사용 중" 대화상자로 무한 대기하지 않고 즉시 예외
@@ -478,7 +479,7 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
             try:
                 ws = wb.Worksheets(sheet) if sheet else wb.ActiveSheet
                 for addr, val in cells.items():
-                    ws.Range(addr).Value = val  # '='로 시작하면 수식으로 처리됨
+                    ws.Range(addr).Value = val
                 wb.Save()
             finally:
                 wb.Close(SaveChanges=0)
@@ -488,7 +489,7 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
         except Exception as e:
             com_err = str(e)
     else:
-        com_err = "pywin32/COM 미사용"
+        com_err = "수식 입력은 COM 계산 대기 없이 openpyxl 폴백" if has_formula else "pywin32/COM 미사용"
 
     # 2) openpyxl 폴백
     try:
@@ -514,6 +515,24 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
     if err:
         return json.dumps({"error": err}, ensure_ascii=False)
 
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb[sheet] if sheet else wb.active
+        rows = [[c.value for c in row] for row in ws[cell_range]]
+        if any(v is None for r in rows for v in r):
+            wbf = openpyxl.load_workbook(path, data_only=False)
+            wsf = wbf[sheet] if sheet else wbf.active
+            frows = [[c.value for c in row] for row in wsf[cell_range]]
+            rows = [
+                [v if v is not None else fv for v, fv in zip(r, fr)]
+                for r, fr in zip(rows, frows)
+            ]
+        return json.dumps({"range": cell_range, "engine": "openpyxl", "values": rows},
+                          ensure_ascii=False, default=str)
+    except Exception:
+        pass
+
     if _HAS_PYWIN32:
         try:
             excel = _get_excel()
@@ -531,8 +550,9 @@ def excel_get_range(path: str, cell_range: str, sheet: str = "") -> str:
                     rows = [[val]]
             finally:
                 wb.Close(SaveChanges=0)
-            return json.dumps({"range": cell_range, "engine": "com", "values": rows},
-                              ensure_ascii=False, default=str)
+            if not any(v is None for r in rows for v in r):
+                return json.dumps({"range": cell_range, "engine": "com", "values": rows},
+                                  ensure_ascii=False, default=str)
         except Exception:
             pass
 

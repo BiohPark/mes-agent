@@ -6,6 +6,7 @@
 """
 
 import json
+import importlib.util
 import zipfile
 
 import pytest
@@ -99,6 +100,7 @@ class TestComRoundtrip:
 
 # ── PowerPoint (python-pptx — Office 설치 불필요) ─────────────
 
+@pytest.mark.skipif(importlib.util.find_spec("pptx") is None, reason="python-pptx 미설치")
 class TestPpt:
     def test_ppt_add_and_replace(self, tmp_path):
         path = tmp_path / "deck.pptx"

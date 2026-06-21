@@ -1574,13 +1574,20 @@ body {
   margin-right: 6px;
 }
 
-.sv-ledger-list { font-size: 11px; }
-.sv-run-entry { display: flex; gap: 6px; padding: 2px 0; border-top: 1px solid #152845; }
+.sv-ledger-list { font-size: 11px; display: flex; flex-direction: column; gap: 4px; }
+.sv-run-entry { padding: 4px 0; border-top: 1px solid #152845; }
 .sv-run-entry:first-child { border-top: 0; padding-top: 0; }
+.sv-run-main { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .sv-run-ts { color: #526a88; }
-.sv-run-done .sv-run-ev { color: #4caf50; }
-.sv-run-error .sv-run-ev, .sv-run-stopped .sv-run-ev { color: #f44336; }
-.sv-run-max_steps .sv-run-ev { color: #ff9800; }
+.sv-run-ev { color: #9bb6d6; font-weight: 600; white-space: nowrap; }
+.sv-run-phase { color: #526a88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-run-summary { color: #c6d3e1; margin-top: 2px; overflow-wrap: anywhere; }
+.sv-run-success .sv-run-ev { color: #4caf50; }
+.sv-run-error .sv-run-ev { color: #f44336; }
+.sv-run-warning .sv-run-ev { color: #ff9800; }
+.sv-run-approval .sv-run-ev { color: #ffc857; }
+.sv-run-running .sv-run-ev { color: #65b5ff; }
+.sv-run-legacy .sv-run-ev { color: #8da2bc; }
 
 .sv-error {
   background: #210710;
