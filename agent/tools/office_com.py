@@ -244,6 +244,12 @@ def _verify_xlsx(path: str) -> None:
             f"경로: {path}\n"
             "백업 파일(.bak)에서 복구하거나 재저장을 시도하세요."
         ) from e
+    except (OSError, PermissionError) as e:
+        raise RuntimeError(
+            f"저장된 파일을 열어 검증할 수 없습니다: {e}\n"
+            f"경로: {path}\n"
+            "파일이 잠겨있거나 경로가 유효하지 않을 수 있습니다."
+        ) from e
     if "xl/workbook.xml" not in names:
         raise RuntimeError(
             f"저장된 파일 손상 의심 — xl/workbook.xml 누락: {path}\n"
