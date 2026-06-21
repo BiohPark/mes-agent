@@ -229,6 +229,28 @@ def _no_com_msg(op: str) -> str:
     }, ensure_ascii=False)
 
 
+def _verify_xlsx(path: str) -> None:
+    """저장된 XLSX가 유효한 ZIP 컨테이너임을 확인한다.
+
+    손상된 파일(EOCD 없음, Bad ZIP 등)이나 필수 내부 엔트리가 누락된 경우
+    RuntimeError를 발생시켜 호출자가 "완료" 대신 error JSON을 반환하도록 한다.
+    """
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+    except zipfile.BadZipFile as e:
+        raise RuntimeError(
+            f"저장된 파일이 손상된 ZIP입니다: {e}\n"
+            f"경로: {path}\n"
+            "백업 파일(.bak)에서 복구하거나 재저장을 시도하세요."
+        ) from e
+    if "xl/workbook.xml" not in names:
+        raise RuntimeError(
+            f"저장된 파일 손상 의심 — xl/workbook.xml 누락: {path}\n"
+            "백업 파일(.bak)에서 복구하거나 재저장을 시도하세요."
+        )
+
+
 # ── Word 편집 ─────────────────────────────────────────────────
 
 def word_edit_text(path: str, find: str, replace: str,
@@ -483,6 +505,10 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
                 wb.Save()
             finally:
                 wb.Close(SaveChanges=0)
+            try:
+                _verify_xlsx(path)
+            except RuntimeError as ve:
+                return json.dumps({"error": str(ve), "backup": backup}, ensure_ascii=False)
             return json.dumps({"path": path, "engine": "com", "backup": backup,
                                "cells_set": len(cells),
                                "message": "Excel 셀 편집 완료(수식·서식 보존)"}, ensure_ascii=False)
@@ -499,6 +525,10 @@ def excel_set_cells(path: str, cells: dict, sheet: str = "") -> str:
         for addr, val in cells.items():
             ws[addr] = val
         wb.save(path)
+        try:
+            _verify_xlsx(path)
+        except RuntimeError as ve:
+            return json.dumps({"error": str(ve), "backup": backup}, ensure_ascii=False)
         return json.dumps({"path": path, "engine": "openpyxl", "backup": backup,
                            "cells_set": len(cells), "com_error": com_err,
                            "message": "Excel 셀 편집 완료(openpyxl 폴백 — 차트 등 일부 객체는 유실될 수 있음)"},
