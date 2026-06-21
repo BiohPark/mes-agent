@@ -128,7 +128,7 @@ def _intent_label(name: str, arguments) -> str:
             fname = Path(path).name if path else ""
             header = f"PPT 슬라이드 추가: '{_trim(title, 20)}'" if title else "PPT 슬라이드 추가"
             return f"{header} ← {fname}" if fname else header
-        if name in ("word_edit_text", "word_find_replace", "word_insert_text"):
+        if name in ("word_edit_text", "word_insert_text"):
             path = args.get("path", "")
             find = str(args.get("find", args.get("search", "")))
             fname = Path(path).name if path else ""

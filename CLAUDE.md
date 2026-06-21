@@ -36,7 +36,7 @@
 | 항목 | 파일 | 비고 |
 |------|------|------|
 | 개발 하네스(ECC/Claude/Ralph) ✅ | `.claude/` + `.agents/` + `.codex/` + `docs/harness/` | Claude Code 전역 `ecc@ecc` plugin + repo-local `.claude/rules/ecc/{common,python,typescript,web}`를 표준으로 사용. ECC full/manual installer는 중복 skills/hooks 위험 때문에 금지. `ralph-loop` plugin은 Task T처럼 반복 테스트가 명확한 worker 카드부터 사용. 상세: `docs/harness/2026-06-14-ecc-rules-readiness.md` |
-| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 268개 테스트, `.\test.ps1` 으로 실행 |
+| 자동화 테스트 (TDD) | `tests/` + `pytest.ini` + `test.ps1` | unit/integration/smoke 3계층, 현재 pytest 수집 기준 700+개 테스트, `.\test.ps1` 으로 실행 |
 | Electron 앱 실행 | `electron/main.js` | Python 서버 자동 시작, IPC server-ready 이벤트 |
 | 채팅 UI | `electron/renderer/` | SSE 스트리밍, 툴 실행 단계 실시간 표시, 환영 메시지 |
 | 채팅 강제 자동스크롤 버그픽스 ✅ | `electron/renderer/scroll-utils.js` + `chat.js` + `index.html` + `style.css` | `scrollToBottom()`이 매 SSE 이벤트마다 무조건 바닥으로 끌어가던 문제 수정 — `isNearBottom()` 게이트로 사용자가 위로 스크롤해 읽는 중이면 자동스크롤 보류 + `#scroll-jump-btn`(↓ 새 메시지) 표시. 본인 발화(`appendUserMessage`)·끼어들기 로컬에코만 `scrollToBottom(true)`로 강제 유지(채팅앱 관례). `supervisor-state.js`와 동일한 UMD 듀얼 export 패턴, 테스트: `tests/renderer/scroll-utils.test.js` + `tests/unit/test_scroll_utils_js.py` |
@@ -99,7 +99,7 @@
 | 설정 정리·모델 출처 표기 (백로그 W) ✅ | `.env.example` + `chat.js` | `.env.example` LLM/Office/Vision 블록 분리, `COMPACT_RATIO` 0.7 보수화, 모델 드롭다운 `loadModels()`에 `source`(동적/.env 프리셋) title 표시. 트랙0 P3·I1, 상세 `docs/TRANSFORMATION_PLAN.md` 트랙0 |
 | IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화. **버그픽스**: 마지막 탭 닫을 때 우측 워크플로우 패널이 갱신 안 되던 stale 버그 — `window.workflowPanel.load(null, null)` 호출 추가 |
 | 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<250px) 세로 컴팩트 카드(완료 단계 접기), 이상이면 2D 그래프(기본 패널폭 300 → 그래프, fit-to-view로 맞춤) |
-| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증. **Active Excel 실시간 연동**(`excel_active_set_cells`/`excel_active_get_range` — 사용자가 띄워놓은 활성 창에 직접 입출력, 백로그 W) (13종) |
+| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증. **Active Excel 실시간 연동**(`excel_active_set_cells`/`excel_active_get_range` — 사용자가 띄워놓은 활성 창에 직접 입출력, 백로그 W) (13종). **AA-1 버그픽스(2026-06-22)**: `excel_set_cells` COM/openpyxl 저장 후 `_verify_xlsx`로 ZIP 무결성 검증 추가 — 손상 파일을 "완료"로 잘못 보고하던 문제 수정. **AA-2 버그픽스(2026-06-22)**: `ppt_replace_text` python-pptx 미설치 시 폐쇄망 설치 안내 반환 — bare `ImportError`로 무음 실패하던 문제 수정. |
 | Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성, **포트·토큰을 `webPreferences.additionalArguments`로 preload에 전달(샌드박스 안전 — preload에서 `fs`/`path` require 금지, `sandbox:true` 유지)**, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
