@@ -96,9 +96,10 @@
 | 긴 호흡·자가복구 에이전트 ✅ | `agent/obsidian_session.py` + `agent/server.py` | `_AUTO_EXEC`/`_AUTONOMOUS_INSTRUCTION`에 끈질긴 문제해결·근본원인 조사·선택지 제시 지침, `_MAX_STEPS` 20→40, 단계 상한 도달 시 '계속' 안내 |
 | 실행 중 창 비켜 보기 UX (백로그 C + 감독 HUD) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `index.html` + `electron/renderer/hud.*` | agentState=running 시 기본 `hud`(작게 비켜 보기)로 공용 HUD에 목표·단계·도구·위험 표시, 선택 모드로 자동 최소화/반투명/끄기 유지(헤더 토글, localStorage 저장), idle 시 원복 |
 | 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
+| 설정 정리·모델 출처 표기 (백로그 W) ✅ | `.env.example` + `chat.js` | `.env.example` LLM/Office/Vision 블록 분리, `COMPACT_RATIO` 0.7 보수화, 모델 드롭다운 `loadModels()`에 `source`(동적/.env 프리셋) title 표시. 트랙0 P3·I1, 상세 `docs/TRANSFORMATION_PLAN.md` 트랙0 |
 | IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화. **버그픽스**: 마지막 탭 닫을 때 우측 워크플로우 패널이 갱신 안 되던 stale 버그 — `window.workflowPanel.load(null, null)` 호출 추가 |
 | 워크플로우 컴팩트·반응형 (백로그 B) ✅ | `electron/renderer/workflow.js` + `style.css` | ResizeObserver로 패널 폭 감지 → 좁으면(<250px) 세로 컴팩트 카드(완료 단계 접기), 이상이면 2D 그래프(기본 패널폭 300 → 그래프, fit-to-view로 맞춤) |
-| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증 (11종) |
+| MS Office 편집 엔진 (COM + 폴백) ✅ | `agent/tools/office_com.py` | Word(찾아바꾸기·삽입·메모·수정추적수락·PDF)·Excel(셀/수식·범위읽기)·PPT(슬라이드추가·찾아바꾸기·PDF)를 COM으로 구동(완전충실도). 전용 STA 단일스레드 executor, COM 불가 시 python-docx/openpyxl/python-pptx 자동 폴백, 편집 전 자동 백업, OOXML 검증. **Active Excel 실시간 연동**(`excel_active_set_cells`/`excel_active_get_range` — 사용자가 띄워놓은 활성 창에 직접 입출력, 백로그 W) (13종) |
 | Office Online(웹) 편집 진입 ✅ | `agent/tools/browser.py` | `office_web_open` — SharePoint/365 문서를 브라우저로 열고 편집화면 대기+스크린샷. `BROWSER_CHANNEL=msedge`로 실제 Edge 구동. 이후 키보드(Ctrl+H/Ctrl+S)+UI Automation 편집 |
 | 보안: 인증·Origin 게이트 (S1/S3) ✅ | `agent/server.py` + `main.js` + `preload.js` + `chat.js` | 원격 Origin 차단 + 토큰(X-Auth-Token/?token) 검증. main.js 실행마다 랜덤토큰 생성, **포트·토큰을 `webPreferences.additionalArguments`로 preload에 전달(샌드박스 안전 — preload에서 `fs`/`path` require 금지, `sandbox:true` 유지)**, 토큰 미설정 시 미강제(dev/test 호환), /health 무인증 |
 | 보안: 파괴적 작업 가드 (S2/S4/S5) ✅ | `agent/tools/_safety.py` + `process.py` + `document.py` | 치명적 명령(재귀삭제·포맷·디스크/레지스트리·종료) 차단→force 필요, 시스템 보호경로 쓰기 차단, 기존파일 덮어쓰기 전 자동 백업 |
@@ -297,7 +298,7 @@ mes-agent/
 │       ├── process.py      ← 프로세스·시스템·파일 관리 (9종) ✅
 │       ├── document.py     ← Excel·Word·PDF·텍스트 처리 + 마크다운→docx + office_locate (15종) ✅
 │       ├── obsidian_rag.py ← Obsidian PKM: 탐색·편집·이동·Templater (18종) ✅
-│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + 폴백 (11종) ✅
+│       ├── office_com.py    ← MS Office COM 편집(Word·Excel·PPT) + Active Excel 실시간 연동 + 폴백 (13종) ✅
 │       ├── office_libre.py   ← LibreOffice 헤드리스 변환(오프라인 폴백) (1종) ✅
 │       ├── office_cloud.py    ← MS Graph 클라우드 Excel 편집(셀/수식 REST) (3종) ✅
 │       ├── vision.py        ← 멀티모달 화면: capture_screen(메인루프 이미지 주입)·analyze_screen/region (3종) ✅
@@ -381,31 +382,17 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 ---
 
-> **에픽 N·O·T·V** 상세 설계·확인사항은 각 `docs/backlog/pending/{N,O,T,V}-*.md`.
-> **PO 추천 시퀀스**: **트랙0 핫픽스(P2→P1→W)** → **T**(Vault 영속 업무타입) → **O**(원격 제어) → **V-2단계**(타임아웃 고도화) → **N**(멀티에이전트, L과 통합). X·Y는 보안/회사PC 선검증 후.
-> **의존성**: Q↔O(메시지 큐) · P↔T(사이드바 동적화) · N↔L(이벤트 스트림).
+> **에픽 N·V** 상세 설계·확인사항은 각 `docs/backlog/pending/{N,V}-*.md`.
+> **PO 추천 시퀀스**: **V-2단계**(타임아웃 고도화) → **N**(멀티에이전트 에픽 결정, L과 통합). X·Y는 보안/회사PC 선검증 후. (T·O는 완료 — 현재 상태 표 참조)
+> **의존성**: N↔L(이벤트 스트림).
 
-### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — 🔬 리서치·PoC 우선
+### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — PoC v1·Phase 1~3 완료 ✅, 잔여: 에픽 결정
 
-단일 `generate()` 루프를 역할 분리(Planner/Executor/Reviewer)로. 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. PoC 스파이크(역할 2개)로 가치 검증. 상세: `docs/backlog/pending/N-harness-mode.md`.
-
-### O. 외부 기기 지시·모니터링(원격 제어) 📱 — ✅ (A)안 완료 (현재 상태 표 참조)
-
-폰/다른 PC에서 작업 지시+진행 확인. **(A) Vault 매개 명령함** ✅ 완료(`agent/control/inbox.md` 폴링 — 포트 개방 없이 동기화로 원격, 백로그 Q 큐 재사용, 무인 위험작업 자동 거부). **(B) LAN 바인딩+인증 강화** 🔲 후속: `host=0.0.0.0` 옵트인 + Origin 허용목록 + 토큰 영속화, `LAN_ENABLED=true`로 활성화. 상세: `docs/backlog/done/O-external-control.md`.
-
-### T. 동적 업무 타입 관리(AI 대화로 추가/제거) 🧩 — ✅ 완료
-
-`_DEFAULT_TASK_CONFIGS` + Vault `agent/task_types.json` 오버레이 + 신규 도구 `task_type_create/remove`(확인 게이트) + `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링까지 완료. 기본 5타입 삭제는 차단. 상세: `docs/backlog/done/T-dynamic-task-types.md`.
+PoC v1(Executor+Reviewer 자기교정 루프)과 도메인 하네스 팩 Phase 1~3(실측 계측·Reviewer 멀티모달·2번째 버티컬)은 완료(현재 상태 표 참조). 남은 결정은 **Planner 역할까지 추가한 정식 멀티에이전트 에픽으로 확장할지 여부** — `docs/DEV_ROADMAP_2026-06.md` P1 #2("하네스 N 에픽 결정")에서 PoC 실사용 데이터를 본 뒤 판단한다. 확장 시 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출하는 구조. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. 상세: `docs/backlog/pending/N-harness-mode.md`.
 
 ### V-2단계. 적응형 타임아웃 고도화 🔲
 
 V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). **자동 백그라운드 디태치 구현 완료(ADR-0003)**. (진행도 탐지 OS별 신뢰성 보완 및 baseline 학습이 남음). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
-
-### W. 설정 정리·모델 출처 표기 (트랙0 P3·I1) ✅
-
-> **완료 (2026-06-16)**: `.env.example` LLM/Office/Vision 블록 분리, COMPACT_RATIO 0.7, 모델 드롭다운 `loadModels()`에 `source` title 표시 (`chat.js`). 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0 P3·P2·I1.
-
-`.env` 그룹핑(LLM/Office/외부SaaS 블록 분리) + 기본값으로 슬림화 + 전문가 섹션 분리. 모델 드롭다운에 출처(`/v1/models` 동적 vs `.env` 프리셋) 표시. 저비용·같은 표면. 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0.
 
 ### X. 창 UX 고도화 (트랙0 I2) 🔲 — Electron 수동확인, 보안 검토 선행
 

@@ -1,6 +1,6 @@
 # 백로그 N — 하네스(멀티에이전트 역할) 모드 🤖🤖
 
-> 상태: 🔲 미착수 (🔬 리서치·PoC 우선) · 참조: HarnessLab/claw-code-agent
+> 상태: PoC v1 + Phase 1~3(실측 계측·Reviewer 멀티모달·2번째 버티컬) 완료 ✅ · 잔여: Planner 역할 추가 여부 에픽 결정 · 참조: HarnessLab/claw-code-agent
 > 거버넌스: 외부 하니스 패턴은 **클린룸**(유출 소스 금지) · 계약서(`docs/contracts/`) 먼저 → TDD (`docs/CLAW_PORT_PLAN.md`)
 
 ## 문제·가치
@@ -35,4 +35,5 @@
 5. 백로그 L(OpenHands)과 **병합 범위**(이벤트 스트림/컨덴서 공유).
 
 ## 규모
-XL(에픽). **PoC 스파이크로 가치 검증 후** 정식 에픽화.
+XL(에픽). PoC 스파이크(Executor+Reviewer)는 가치 검증을 마쳤고 Phase 1~3까지 실 업무(syncade/unscript)에 배포됨.
+정식 에픽화(Planner 역할 추가) 여부는 `docs/DEV_ROADMAP_2026-06.md` P1 #2에서 실측 데이터 확보 후 결정.

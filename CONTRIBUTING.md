@@ -15,7 +15,7 @@
 
 ---
 
-## 구현된 툴 목록 (134종)
+## 구현된 툴 목록 (136종)
 
 > 각 모듈의 `MANIFEST`가 단일 출처(자동 디스커버리). 아래 분류·수치는 요약이며, 정확한 현황은
 > 각 `agent/tools/*.py`의 MANIFEST와 `CLAUDE.md` "현재 상태" 표를 따른다.
@@ -124,7 +124,7 @@
 | `write_file(path, content, append)` | 텍스트 파일 쓰기/추가 (`.docx`/`.xlsx` 금지 — 깨짐) |
 | `office_locate_file(name, max_results)` | 로컬 Office 문서 찾기(OneDrive/SharePoint 동기화 폴더 포함). 클라우드 문서 라운드트립 편집용 |
 
-### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (11종)
+### MS Office 편집 — COM 엔진 + 라이브러리 폴백 (13종)
 
 > **기존 Office 문서를 열고·편집·저장**하는 고품질 경로. 설치된 Word/Excel을 COM으로 구동(서식·수식·수정추적·메모·PDF 완전 충실도)하고, COM 불가 시 `python-docx`/`openpyxl`로 자동 폴백한다.
 >
@@ -141,6 +141,8 @@
 | `word_add_comment(path, anchor_text, comment)` | 특정 텍스트에 검토 메모 추가 (COM 필요) |
 | `excel_set_cells(path, cells, sheet)` | 셀/수식 편집 후 저장. `{"B2":"=A1+A2"}`. COM→openpyxl 폴백 |
 | `excel_get_range(path, cell_range, sheet)` | 범위 값 읽기(`'A1:C10'`). COM→openpyxl 폴백 |
+| `excel_active_set_cells(cells, sheet)` | 사용자가 화면에 띄워놓은 **활성 엑셀 창**에 실시간 셀 입력(파일경로 불필요, 자동저장·닫기 없음. COM 필요) |
+| `excel_active_get_range(cell_range, sheet)` | 활성 엑셀 창에서 범위 값 실시간 읽기 (COM 필요) |
 | `ppt_add_slide(path, title, body, layout)` | 슬라이드 추가(제목+본문). 파일 없으면 생성 (python-pptx) |
 | `ppt_replace_text(path, find, replace)` | 모든 슬라이드 찾아바꾸기 (python-pptx) |
 | `ppt_export_pdf(path, pdf_path)` | PPT→PDF 내보내기 (PowerPoint COM 필요) |
@@ -424,7 +426,7 @@ agent/
     ├── browser.py       — MANIFEST(23종)
     ├── process.py       — MANIFEST(9종)
     ├── document.py      — MANIFEST(15종)
-    ├── office_com.py    — MANIFEST(11종) MS Office COM 편집 + 폴백
+    ├── office_com.py    — MANIFEST(13종) MS Office COM 편집 + Active Excel 실시간 연동 + 폴백
     ├── office_libre.py  — MANIFEST(1종) LibreOffice 변환
     ├── office_cloud.py  — MANIFEST(3종) MS Graph 클라우드 Excel
     ├── obsidian_rag.py  — MANIFEST(18종) 탐색·편집·이동·고급검색
