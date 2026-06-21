@@ -99,6 +99,56 @@ def _intent_label(name: str, arguments) -> str:
                 host = url.split("//", 1)[-1].split("/", 1)[0]
                 return f"🌐 {_trim(host, 40)} 여는 중"
             return base
+        # Office COM 도구별 세부 라벨 (AA-3, AA-4)
+        if name == "excel_set_cells":
+            path = args.get("path", "")
+            cells = args.get("cells", {}) or {}
+            fname = Path(path).name if path else ""
+            keys = list(cells.keys()) if isinstance(cells, dict) else []
+            cell_list = ", ".join(keys[:3])
+            suffix = f" 외 {len(keys) - 3}개" if len(keys) > 3 else ""
+            header = f"Excel 셀 편집: {cell_list}{suffix}" if cell_list else "Excel 셀 편집"
+            return f"{header} ← {fname}" if fname else header
+        if name == "excel_active_set_cells":
+            cells = args.get("cells", {}) or {}
+            keys = list(cells.keys()) if isinstance(cells, dict) else []
+            cell_list = ", ".join(keys[:3])
+            suffix = f" 외 {len(keys) - 3}개" if len(keys) > 3 else ""
+            return f"Excel(활성) 셀 편집: {cell_list}{suffix}" if cell_list else "Excel(활성) 셀 편집"
+        if name == "ppt_replace_text":
+            path = args.get("path", "")
+            old = str(args.get("find", args.get("old_text", args.get("old", ""))))
+            fname = Path(path).name if path else ""
+            old_excerpt = _trim(old, 20) if old else ""
+            header = f"PPT 텍스트 교체: '{old_excerpt}'" if old_excerpt else "PPT 텍스트 교체"
+            return f"{header} ← {fname}" if fname else header
+        if name == "ppt_add_slide":
+            path = args.get("path", "")
+            title = str(args.get("title", ""))
+            fname = Path(path).name if path else ""
+            header = f"PPT 슬라이드 추가: '{_trim(title, 20)}'" if title else "PPT 슬라이드 추가"
+            return f"{header} ← {fname}" if fname else header
+        if name in ("word_edit_text", "word_find_replace", "word_insert_text"):
+            path = args.get("path", "")
+            find = str(args.get("find", args.get("search", "")))
+            fname = Path(path).name if path else ""
+            header = f"Word 텍스트 편집: '{_trim(find, 20)}'" if find else "Word 텍스트 편집"
+            return f"{header} ← {fname}" if fname else header
+        if name == "word_add_comment":
+            path = args.get("path", "")
+            comment = str(args.get("comment", args.get("text", "")))
+            fname = Path(path).name if path else ""
+            header = f"Word 메모 추가: '{_trim(comment, 20)}'" if comment else "Word 메모 추가"
+            return f"{header} ← {fname}" if fname else header
+        if name in ("word_export_pdf", "ppt_export_pdf"):
+            path = args.get("path", "")
+            fname = Path(path).name if path else ""
+            kind = "Word" if name.startswith("word") else "PPT"
+            return f"{kind} PDF 내보내기 ← {fname}" if fname else f"{kind} PDF 내보내기"
+        if name == "word_accept_all_changes":
+            path = args.get("path", "")
+            fname = Path(path).name if path else ""
+            return f"Word 수정 전체 수락 ← {fname}" if fname else "Word 수정 전체 수락"
         # 파일 계열: 경로 basename 노출
         path = args.get("path") or args.get("file_path") or args.get("file") or args.get("doc_path") or ""
         if path:
