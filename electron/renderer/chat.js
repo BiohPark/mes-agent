@@ -717,7 +717,12 @@ function needsTextInput(label) {
   return TEXT_INPUT_KEYWORDS.some(k => label.includes(k))
 }
 
+let _confirmQueueCount = 0
+
 async function showConfirmDialog({ confirm_id, question, options, risk, command }) {
+  _confirmQueueCount++
+  const mySeq = _confirmQueueCount
+
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
     overlay.className = 'confirm-overlay'
@@ -735,9 +740,13 @@ async function showConfirmDialog({ confirm_id, question, options, risk, command 
       ? `<div class="confirm-command">${escapeHtml(command)}</div>`
       : ''
 
+    const seqBadge = mySeq > 1
+      ? `<span class="confirm-seq-badge">${mySeq}</span>`
+      : ''
+
     overlay.innerHTML = `
       <div class="confirm-dialog${isDestructive ? ' confirm-destructive' : ''}">
-        <div class="confirm-header">${header}</div>
+        <div class="confirm-header">${header}${seqBadge}</div>
         <div class="confirm-question">${escapeHtml(question)}</div>
         ${cmdBlock}
         <div class="confirm-options">${optBtns}</div>
@@ -757,6 +766,7 @@ async function showConfirmDialog({ confirm_id, question, options, risk, command 
     let selectedLabel = null
 
     async function submit(choice, customText = '') {
+      _confirmQueueCount = Math.max(0, _confirmQueueCount - 1)
       overlay.remove()
       try {
         await fetch(`${BASE_URL}/confirm/${confirm_id}`, {
