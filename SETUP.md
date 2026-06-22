@@ -159,6 +159,70 @@ conda init powershell
 # PowerShell 재시작
 ```
 
+### AI 코딩 에이전트(Claude Code/Codex)용 conda 자동 활성화 (선택)
+
+**Claude Code 자체 도구 호출은 이제 자동 처리됩니다** — `.claude/hooks/inject-mes-agent-env.mjs` +
+`.claude/settings.json`의 PreToolUse 훅이 저장소에 커밋되어 있어서, 클론만 하면 별도 설정 없이
+Bash/PowerShell 도구가 mes-agent conda 환경을 자동으로 찾습니다(conda 설치 위치가 달라도 동적으로
+탐색). 아래 프로필 함수는 **Claude Code 도구가 아니라 사용자 본인이 직접 여는 수동 터미널
+세션**(예: VS Code 통합 터미널, 그냥 PowerShell 창)에서 `python`/`pytest`/`pip`를 칠 때만 필요합니다.
+이런 수동 작업을 하지 않는다면 이 섹션은 건너뛰어도 됩니다.
+
+Claude Code·Codex의 Bash/PowerShell 도구는 명령마다 새 셸 프로세스를 띄우므로, `conda activate mes-agent`를
+한 번 실행해도 다음 명령에는 적용되지 않습니다(`conda run -n mes-agent ...`를 매번 붙여야 함).
+
+**`conda activate`/hook 초기화를 셸 시작마다 무조건 실행하면 git/ls 같은 python과 무관한 명령에도
+매번 비용이 듭니다.** 그래서 conda hook 대신, 사용자 프로필에 `python`/`pytest`/`pip` **함수만**
+정의해서 — 이 이름이 실제로 호출될 때만, 그리고 이 저장소 경로일 때만 — mes-agent의 `python.exe`를
+직접 호출하도록 합니다. conda 서브프로세스는 전혀 실행되지 않고, 무관한 명령에는 영향이 없습니다.
+다른 프로젝트/conda 환경에도 영향 없습니다.
+
+`$PROFILE`(PowerShell, `Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`)에 추가:
+```powershell
+$MesAgentRoot = "D:\GithubRepositories\mes-agent"
+$MesAgentPython = "D:\programs\miniconda3\envs\mes-agent\python.exe"   # 본인 경로로 교체
+
+function global:python {
+    if ((Get-Location).Path -like "$MesAgentRoot*") { & $MesAgentPython @args }
+    else { & python.exe @args }
+}
+function global:pytest {
+    if ((Get-Location).Path -like "$MesAgentRoot*") { & $MesAgentPython -m pytest @args }
+    else { & pytest.exe @args }
+}
+function global:pip {
+    if ((Get-Location).Path -like "$MesAgentRoot*") { & $MesAgentPython -m pip @args }
+    else { & pip.exe @args }
+}
+```
+
+`~/.bashrc`(Git Bash)에 추가, 그리고 `~/.bash_profile`에 `[ -f ~/.bashrc ] && source ~/.bashrc`:
+```bash
+MES_AGENT_ROOT="/d/GithubRepositories/mes-agent"
+MES_AGENT_PYTHON="/d/programs/miniconda3/envs/mes-agent/python.exe"   # 본인 경로로 교체
+
+python() {
+    case "$PWD" in
+        "$MES_AGENT_ROOT"*) "$MES_AGENT_PYTHON" "$@" ;;
+        *) command python "$@" ;;
+    esac
+}
+pytest() {
+    case "$PWD" in
+        "$MES_AGENT_ROOT"*) "$MES_AGENT_PYTHON" -m pytest "$@" ;;
+        *) command pytest "$@" ;;
+    esac
+}
+pip() {
+    case "$PWD" in
+        "$MES_AGENT_ROOT"*) "$MES_AGENT_PYTHON" -m pip "$@" ;;
+        *) command pip "$@" ;;
+    esac
+}
+```
+
+이 파일들은 저장소 밖(사용자 계정)에 있어 git으로 관리되지 않으므로, 새 PC로 옮길 때마다 수동으로 다시 설정해야 합니다.
+
 ### 개발 환경 시작
 
 ```powershell

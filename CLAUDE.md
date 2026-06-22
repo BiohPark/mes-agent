@@ -127,6 +127,7 @@
 | 하네스 PoC v1 — Executor+Reviewer 2역할 (백로그 N) ✅ | `agent/harness/roles.py`·`orchestrator.py` + `docs/contracts/harness-poc-v1.md` + `agent/server.py`(`_harness_generate`·`_reviewer_call`·`HARNESS_ENABLED`) + `agent/core/events.py`(`HARNESS_ROUND`) + `electron/renderer/chat.js` | **Executor→Reviewer 자기교정 루프**: 역할 정의(`HarnessRole`, EXECUTOR/REVIEWER), `parse_verdict()`(JSON 파싱, 실패=안전 폴백), `run_harness()`(FakeLLM 테스트 가능 순수 오케스트레이터). 서버: `HARNESS_ENABLED=true` + `/chat harness_mode=true`로 활성화(`_harness_generate` 래퍼), `_reviewer_call()`(tools 미전송 I2, 비스트리밍). UI: `harness_round` 이벤트 뱃지("🔍 검증 중"·"↺ 재시도"). 기본 off — 기존 경로 무영향(I6). 계약: `docs/contracts/harness-poc-v1.md`. 테스트 26개 전체 통과. **도메인 하네스 팩 v1(2026-06-19)**: 업무타입 설정에 `harness`/`verify_prompt` 필드 추가 → `_should_use_harness()`가 **업무타입 단위 옵트인**(요청 플래그 OR 설정)을 판정(`HARNESS_ENABLED` AND, I6 유지), `_reviewer_call(verify_prompt)`로 도메인 검증 지침 주입. 첫 버티컬 `syncade` 배포가 자기검증 옵트인(GxP 감사). 헬퍼: `obsidian_session.task_type_harness_enabled/verify_prompt`. **도메인 하네스 팩 Phase 1·2·3(2026-06-19)**: ① 실측 계측(G3) — `agent/harness/metrics.py`(`summarize_harness_runs`), `_harness_generate`가 매 Reviewer 판결을 RunLedger(`harness_round`)에 영속화(마지막 라운드도 측정 기록), `GET /threads/{type}/{id}/harness/metrics`로 라운드·재시도·자기교정·토큰 집계. ② Reviewer 멀티모달(G2) — `_reviewer_call`이 화면 캡처(image_url)를 `prune_images`로 최신 `HARNESS_REVIEWER_IMAGES`개(기본 2, 0=텍스트 강등 폴백) 전달. ③ 2번째 버티컬 `unscript` 옵트인. G1(Reviewer 도구부여)은 `docs/adr/0004-reviewer-verification-fidelity.md`에 Proposed(실측 후 결정). 세부계획·평가법: `docs/specs/domain-harness-pack.md`·`docs/harness/cards/harness-eval-methodology.md`. |
 | 작업 상태 명확화·작업 중 끼어들기 (백로그 Q) ✅ | `agent/server.py` + `agent/core/events.py` + `electron/renderer/chat.js`·`index.html`·`style.css` | **① 끼어들기**: 실행 중에도 입력칸을 열어 두고(전송 버튼만 비활성) 별도 `↩ 끼어들기` 버튼·Enter로 메시지를 `POST /inject/{request_id}` → `_pending_messages` 큐 적재. `generate()` 루프가 **단계 경계(I1 도구 짝 보존 지점, 중단 확인 직후)에서 드레인**해 `[사용자 끼어들기]` user 메시지로 주입, `INJECTED` SSE로 투명 고지. stop과 구분(작업 유지). **② 상태 강조**: waiting을 "⏳ 당신 차례 — 입력해 주세요"로 색·펄스 강조(`data-state` 클래스). **큐 메커니즘은 백로그 O(외부 원격 제어)가 재사용**. 상세: `docs/backlog/done/Q-agent-state-and-intervention.md` |
 | Vault 매개 원격 제어(명령함) (백로그 O) ✅ | `agent/control/inbox.py` + `agent/server.py` | **포트 개방 없이** 동기화되는 Obsidian Vault 파일로 원격 지시·모니터링. 폴러가 `agent/control/inbox.md`의 `- [ ] 명령`을 집어(체크박스=멱등 마커, 처리 시 `- [x]`) 실행하고 `agent/control/status.md`에 결과 누적(newest-first). 활성 러닝이 있으면 **백로그 Q 끼어들기 큐에 합류**(`_pending_messages`), 없으면 `generate(auto_confirm="deny")` **헤드리스 실행**. `auto_confirm`은 G3 게이트에서 UI 라운드트립 없이 즉시 결정 — 무인 환경이라 **위험·쓰기 작업 자동 거부**(GxP 안전, 읽기·관찰만 실행). `CONTROL_ENABLED` opt-in(기본 false)·`CONTROL_POLL_INTERVAL`. (B) LAN 바인딩은 후속. 상세: `docs/backlog/done/O-external-control.md` |
+| Claude Code conda 환경 자동탐지 (PowerShell 도구 버그픽스) ✅ | `.claude/hooks/inject-mes-agent-env.mjs` + `.claude/settings.json` | PowerShell 도구가 프로필을 안 읽어 base conda(fastapi 없음)를 잡던 문제 수정. PreToolUse 훅이 `python`/`pytest`/`pip` 토큰이 있는 명령에만 conda의 `~/.conda/environments.txt` 레지스트리를 읽어 mes-agent 환경 경로를 동적으로 찾아 PATH 선주입 — 하드코딩 없이 어떤 PC에서 클론해도 동작(포터빌리티). Bash·PowerShell 둘 다 적용, 무관 명령은 즉시 통과. 테스트: `tests/hooks/inject-mes-agent-env.test.mjs` + `tests/unit/test_inject_mes_agent_env_js.py` |
 
 **총 툴 수: 136종** (각 툴 파일의 `MANIFEST` 기준 — 자동 디스커버리로 등록. 단, LLM API 128 한계로 **요청당 `select_tools`가 ≤128개만 전송**)
 
@@ -405,6 +406,39 @@ Office365 로그인창 뜨나 로그인 시도 안 함 → 자격증명 사전 �
 ### (대기) Office 편집 백엔드 확정
 
 사내 문서 백엔드(네트워크 드라이브 / 온프렘 SharePoint / 사내 M365 / OnlyOffice) 확인 후 경로 구현 → G·`docs/office-editing-next-steps.md`. 회사 PC 확인 선행.
+
+---
+
+## 개발 환경 — conda 자동 활성화 / 스킬·플러그인 사용 정책
+
+**conda 자동 활성화 (Claude Code 도구 호출, ✅ 완료 2026-06-22)**: Claude Code의 Bash/PowerShell
+도구는 매 명령마다 새 셸 프로세스를 띄우고, 사용자의 `$PROFILE`/`~/.bashrc`도 로드하지 않는다(Git
+Bash는 예외적으로 `~/.bashrc`를 로드하지만, 그건 저장소 밖 개인 dotfile이라 새 PC/클론에서는 재현 안
+됨). 해결: `.claude/hooks/inject-mes-agent-env.mjs` + `.claude/settings.json`의 PreToolUse 훅
+(저장소에 커밋됨) — 명령에 `python`/`pytest`/`pip` 토큰이 있을 때만 conda 자신의
+`~/.conda/environments.txt` 레지스트리를 읽어 "mes-agent" 환경 경로를 동적으로 찾아 PATH 맨 앞에
+주입한다. 환경 경로를 하드코딩하지 않으므로 conda 설치 위치가 다른 어떤 PC에서 클론해도 그대로
+동작한다(포터빌리티). Bash·PowerShell 도구 둘 다 적용. 토큰이 없는 명령(`git status` 등)은 즉시
+통과해 무관한 명령에 비용이 들지 않는다. Codex의 자체 `exec` 모드에는 이 훅이 적용되지 않음(별도
+메커니즘 필요, 미해결 — 알려진 한계).
+
+`$PROFILE`/`~/.bashrc`의 `python`/`pytest`/`pip` 함수 정의(`SETUP.md` "AI 코딩 에이전트용 conda
+자동 활성화" 참조)는 이제 **사용자가 직접 여는 수동 터미널 세션에서만** 의미가 있다 — Claude Code
+도구 호출에는 영향이 없으므로(위 훅이 그 역할을 대체) 필요하면 유지, 없어도 Claude Code 동작에는
+지장 없음.
+
+**스킬/플러그인 사용 정책**: 이 프로젝트에서는 Claude Code 스킬·플러그인을 **사용자가 명시적으로
+요청(슬래시 커맨드 등)한 경우에만** 사용한다. "조금이라도 관련 있으면 무조건 호출" 류의 기본 동작은
+따르지 않는다 — 불필요한 자동 호출이 응답 속도와 토큰 비용을 해친다. 이 정책은 superpowers 스킬 자체가
+명시하는 "사용자의 명시적 지침이 최우선"이라는 우선순위 규칙에 따라 적용된다. `superpowers@claude-plugins-official`
+플러그인은 이 프로젝트의 하네스 표준(`ecc@ecc` + repo-local rules, 위 표 참조)에 포함되지 않으므로
+`.claude/settings.json`에서 프로젝트 한정으로 비활성화한다.
+
+**멀티 CLI(A2A) 위임**: Codex/Claude Code/agy가 서로를 서브프로세스로 호출해 작업을 위임하는 절차와
+검증된 플래그는 `docs/harness/a2a-cli-delegation.md` 참조. Claude Code 쪽은 `.claude/skills/delegate-cli/`,
+Codex 쪽은 `.codex/agents/delegate.toml`. 항상 최소권한 모드(샌드박스/승인정책)만 자동으로 사용하고,
+막히면(승인 대기·타임아웃) **스스로 완전우회(`--dangerously-*`) 플래그로 재시도하지 않고 사용자에게
+승인을 구한다.**
 
 ---
 

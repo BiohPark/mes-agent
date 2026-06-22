@@ -1,0 +1,121 @@
+# Multi-CLI 상호 위임 (A2A: codex ↔ claude ↔ agy)
+
+이 프로젝트는 Codex CLI, Claude Code CLI, agy CLI(에이전틱 코딩 CLI) 셋을 함께 쓴다. 셋 모두
+**비대화형(headless) 단발 실행 모드**를 지원하므로, 한 CLI가 다른 CLI를 서브프로세스로 호출해
+작업을 위임(A2A)할 수 있다. 이 문서는 실측으로 확인한 명령/플래그만 기록한다(추측 금지).
+
+## 검증 방법
+
+모든 명령은 `<cli> --help` / `<cli> exec --help` 직접 실행으로 확인했다(버전 고정 아님 — CLI가
+업데이트되면 재확인 필요). 검증일: 2026-06-22.
+
+## 안전 원칙 (가드레일)
+
+위임 호출은 **항상 최소권한 모드만 자동으로 사용**한다(`.claude/skills/delegate-cli/`,
+`.codex/agents/delegate.toml` 모두 이 원칙으로 작성됨). `--dangerously-*` 류 완전우회 플래그는
+**에이전트가 스스로 선택해 재시도하지 않는다** — 최소권한 모드가 승인 대기로 막히면 무엇이 막혔는지
+사용자에게 보고하고, 완전우회를 이번 한 번만 써도 될지 명시적으로 물어본 뒤 승인받은 경우에만
+그 작업 한정으로 사용한다. 파괴적 작업(파일 삭제, git push, 외부 API 변경 등)은 위임 체인을 통해
+무인으로 실행하지 않는다 — 사람이 직접 승인한다.
+
+## codex
+
+- 버전: 0.139.0, 위치: `C:\nvm4w\nodejs\codex.ps1`
+- 비대화형 실행: `codex exec [PROMPT]` (별칭 `e`)
+- 결과 캡처: `-o, --output-last-message <FILE>` (마지막 메시지만 파일로), `--json` (전체 이벤트 JSONL stdout)
+- 구조화 출력: `--output-schema <FILE>` (JSON Schema로 응답 형식 강제)
+
+### 권장(최소권한) 호출
+```bash
+codex exec --sandbox workspace-write --ask-for-approval never \
+  -o result.txt "<위임할 작업 지시>"
+```
+- `-s/--sandbox {read-only|workspace-write|danger-full-access}` — 분석만 시키면 `read-only`
+- `-a/--ask-for-approval {untrusted|on-request|never}` — 무인 실행이면 `never` 필수(대화형 승인 대기 시 행 걸림)
+
+### 최후수단(완전우회)
+```bash
+codex exec --dangerously-bypass-approvals-and-sandbox "<작업 지시>"
+```
+승인·샌드박스를 전부 건너뛴다. "EXTREMELY DANGEROUS"라고 codex 자체가 경고함 — 외부에서 이미
+샌드박싱된 환경에서만 사용.
+
+### 기타
+- `-C, --cd <DIR>` — 작업 루트 지정
+- `--ephemeral` — 세션 파일 저장 안 함(위임용 일회성 호출에 적합)
+- `--skip-git-repo-check` — git repo 밖에서도 실행 허용
+
+## claude (Claude Code)
+
+- 버전: 2.1.183, 위치: `C:\Users\qldh1\.local\bin\claude`
+- 비대화형 실행: `claude -p "<prompt>"` (`--print`)
+- 출력 형식: `--output-format {text|json|stream-json}` — 위임 결과 파싱에는 `json` 권장
+- 비용 상한: `--max-budget-usd <amount>` (print 모드 전용) — 위임 호출에 항상 거는 것을 권장
+
+### 권장(최소권한) 호출
+```bash
+claude -p "<위임할 작업 지시>" --output-format json \
+  --permission-mode acceptEdits --max-budget-usd 1.0
+```
+- `--permission-mode {acceptEdits|auto|bypassPermissions|default|dontAsk|plan}`
+  - `acceptEdits`: 파일 편집은 자동 승인, 그 외 위험 작업은 여전히 막힘(무인 실행엔 완전하지 않음)
+  - `plan`: 실행 안 하고 계획만 — 위임받은 쪽이 "검토만" 해야 할 때 적합
+
+### 최후수단(완전우회)
+```bash
+claude -p "<작업 지시>" --dangerously-skip-permissions --max-budget-usd 1.0
+```
+모든 권한 검사를 우회한다. "Recommended only for sandboxes with no internet access"라고 명시됨.
+
+### 기타
+- `--add-dir <dir>` — 추가로 접근 허용할 디렉토리
+- `--mcp-config <file>` / `--strict-mcp-config` — MCP 서버를 통한 연동(아래 "향후 보강" 참조)
+- `--safe-mode` — 이 프로젝트의 모든 커스터마이징(CLAUDE.md/스킬/플러그인/훅 등)을 끄고 깨끗한 상태로 실행 — 위임받은 단발 작업이 불필요한 스킬 호출로 오염되지 않게 하려면 유용
+
+## agy — ⚠️ 헤드리스 위임 현재 비권장 (업스트림 버그, 2026-06-22 확인)
+
+- 버전: 1.0.10, 위치: `C:\Users\qldh1\AppData\Local\agy\bin\agy.exe`
+- 비대화형 실행: `agy --print "<prompt>"` (`-p`, 별칭 `--prompt`)
+- 타임아웃: `--print-timeout` (기본 5m) — 긴 위임 작업은 늘려야 함
+
+### 정체 확인됨: Google Antigravity CLI(Gemini 3.1 Pro 백엔드)
+`--log-file`로 강제 로그를 떠서 확인한 결과, `agy`는 실제로는 **Google Antigravity CLI**다
+(내부 로그에 "Antigravity", "GeminiDir", `daily-cloudcode-pa.googleapis.com` 등 등장).
+OAuth 인증은 정상 동작한다 — 키체인 경유로 `qldh1669@gmail.com` 계정으로 인증 성공하고
+`loadCodeAssist`/`fetchAvailableModels`/`streamGenerateContent` 호출까지 실제로 일어난다.
+즉 **권한/PATH/인증 문제가 아니다.**
+
+### 실측한 두 가지 실패 모드(둘 다 `--print` 헤드리스 모드 자체의 버그로 판단)
+1. **Git Bash에서 실행**: 실제 모델 응답 스트림(`streamGenerateContent`, 2회 확인)을 받고도,
+   그 직후 transcript 로그를 `/Users/qldh1/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`
+   (드라이브 문자 없는 비정상 Unix식 경로)에 쓰려다 `The system cannot find the path specified`로
+   반복 실패한다. 결과적으로 **stdout에 아무것도 출력하지 않고 조용히 종료**(exit 0).
+2. **PowerShell에서 실행**: 같은 프롬프트가 `--print-timeout 20s`를 명시했음에도 90초 넘게
+   응답 없이 행이 걸렸다(CPU 사용량도 거의 0 — 진짜로 멈춤). 강제 종료(`Stop-Process -Force`)해야
+   끝났다.
+3. `agy models`도 동일하게 무출력·exit 0으로 끝남(인증/네트워크 문제가 아니라 출력 파이프라인 자체의
+   문제로 보임).
+
+### 결론 및 권고
+- 코드/설정으로 우리 쪽에서 고칠 수 있는 문제가 아니다(agy 자체의 업스트림 버그로 판단).
+- **헤드리스 `--print` 위임은 현재 신뢰할 수 없다** — `.claude/skills/delegate-cli/`,
+  `.codex/agents/delegate.toml`에서 agy는 위임 대상에서 비권장으로 취급한다(재확인 전까지 보류).
+- 사용자가 원하면 직접 `agy`를 인자 없이 대화형으로 한 번 실행해 같은 증상이 재현되는지, 또는 agy를
+  업데이트(`agy update`)한 뒤 재현되는지 확인하는 게 다음 진단 단계.
+
+### 미확인 사항 (남은 것)
+- agy의 MCP 지원 여부 — `--help`에 MCP 관련 서브커맨드 없음 (plugin/plugins만 노출)
+- agy가 프로젝트 지침 파일(`AGENTS.md` 등)을 읽는지 — 미확인. 읽는다면 이 문서 링크가 자동으로 agy에도 전달됨
+
+## 결과 파싱 패턴
+
+| CLI | 추천 캡처 방법 |
+|-----|---------------|
+| codex | `-o result.txt`로 마지막 메시지만 받거나 `--json`으로 전체 이벤트 스트림 파싱 |
+| claude | `--output-format json` → stdout 전체가 단일 JSON, `result` 필드에 최종 텍스트 |
+| agy | stdout 그대로 텍스트 — 구조화 출력 미확인, 필요하면 프롬프트에 "JSON으로만 답해" 명시 |
+
+## 향후 보강 (이번 작업 범위 밖)
+
+- **MCP 기반 연동**: codex는 `codex mcp-server`(자신을 stdio MCP 서버로 노출)와 `codex mcp add/list/remove`(외부 MCP 서버 등록)를 지원하고, claude도 `--mcp-config`/`claude mcp`로 MCP 서버를 붙일 수 있다. claude ↔ codex는 셸 호출 대신 MCP로 더 구조화된 연동이 가능 — agy는 MCP 미지원이라 통일성을 위해 이 문서는 셸 호출 방식을 기본으로 채택했다.
+- agy의 config/확장 메커니즘이 추후 확인되면 이 문서와 `.codex/agents/delegate.toml`/`.claude/skills/delegate-cli/`를 보강한다.

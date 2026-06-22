@@ -60,6 +60,15 @@ Tests are in `tests/unit/`, `tests/integration/`, `tests/smoke/`.
 
 ---
 
+## Multi-CLI Delegation
+
+This project is developed using Codex, Claude Code, and agy CLIs together. Each supports a
+non-interactive single-shot mode and can delegate work to either of the others as a subprocess.
+Verified commands/flags and safety rules (always try minimal-privilege sandbox/approval modes
+first; never self-escalate to `--dangerously-*` bypass flags — stop and ask the user instead) are
+documented in `docs/harness/a2a-cli-delegation.md`. Only delegate when the user explicitly asks for
+it.
+
 ## More Detail
 
 - Full architecture, tool list, implementation state → `CLAUDE.md`

@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false
+  },
   "permissions": {
     "allow": [
       "Bash(git status)",
@@ -9,10 +12,27 @@
       "PowerShell(.\\test.ps1)",
       "PowerShell(.\\test.ps1 *)",
       "Bash(conda run -n mes-agent python -m pytest *)",
-      "Bash(conda run -n mes-agent pytest *)"
+      "Bash(conda run -n mes-agent pytest *)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "PowerShell(pytest *)",
+      "PowerShell(python -m pytest *)",
+      "PowerShell(python *)"
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/inject-mes-agent-env.mjs\"",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
