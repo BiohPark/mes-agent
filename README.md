@@ -48,7 +48,7 @@
 
 | 용어 | 영어 / 식별자 | 표시 위치 | 저장 위치 | 설명 |
 |------|--------------|----------|----------|------|
-| **업무** | Task / `task_type` | 사이드바 "업무 자동화" 버튼 | — | 업무 유형. `general`·`syncade`·`obsidian-rag`·`unscript`·`knox` |
+| **업무** | Task / `task_type` | 사이드바 "업무 자동화" 버튼 | — | 업무 유형. `general`·`syncade`·`obsidian`·`unscript`·`gmp-validation`·`knox` |
 | **스레드** | Thread / `thread_id` | 채팅 상단 스레드 바 탭 (`#001`…) | `agent/threads/{task_type}/{thread_id}.md` | 한 업무 안의 독립 작업 단위 = 하나의 대화 세션 |
 | **대화** | Conversation / `messages` | 가운데 채팅 영역 | 스레드 `.md` 내부 | 스레드 안의 메시지(user/assistant/tool) 이력 |
 | **워크플로우** | Workflow | 우측 패널 워크플로우 탭 | `agent/workflows/{task_type}/{thread_id}.json` | 그 스레드의 작업 단계 체크리스트 |
@@ -127,9 +127,10 @@
 | 인터랙티브 노드 컨트롤 | ✅ | 노드 ⋮ 클릭 → 완료·건너뛰기·실행·재시도·분기 선택 패널 |
 | 워크플로우 편집모드 | ✅ | 제목·단계 CUD, 드래그앤드롭 순서변경, SVG 분기 연결 CUD, AI 코웍 편집 |
 | 워크플로우 저장 | ✅ | `agent/workflows/{type}/{id}.md` YAML frontmatter + Obsidian 저장 |
-| 워크플로우 파일 감지 | ✅ | SSE mtime 폴링, 외부 편집 즉시 반영 |
+| 워크플로우 파일 감지 | ✅ | SSE fingerprint 폴링(mtime+size+digest), 외부 편집 즉시 반영 |
 | 실행 로그 탭 | ✅ | 툴별 소요시간·결과 기록 |
 | 기본 워크플로우 | ✅ | 파일 없을 때 업무별 기본 단계 템플릿 표시 |
+| GMP 품질평가 업무 | ✅ | `gmp-validation` 업무타입, 7단계 검증 워크플로우, harness 옵트인, CSV fixture 파서, artifact ledger 기록 |
 
 ### 툴 (136종)
 
@@ -216,7 +217,7 @@ npm start
 1. `● 서버 연결 중...` — Python 에이전트 서버(FastAPI)가 뜨는 동안 표시 (최대 약 20초 폴링)
 2. `● 준비됨` — 서버 연결 성공. 이 시점에 LLM 프로파일·모델 목록·업무 설정을 불러오고,
    **기본업무(`general`) 탭이 자동으로 열립니다** (`openTask('general')`)
-3. 좌측 사이드바에는 기본 5개 업무타입(기본업무·Syncade·Obsidian·Unscript·Knox) 버튼이 표시됩니다
+3. 좌측 사이드바에는 기본 6개 업무타입(기본업무·Syncade·Obsidian·Unscript·GMP 검증·Knox) 버튼이 표시됩니다
 
 **`● 서버 연결 실패`가 뜬다면** 흔한 원인은 다음 두 가지입니다.
 
@@ -307,8 +308,9 @@ Vault/
 │   ├── threads/             — 업무 스레드 대화 이력
 │   │   ├── general/         — 기본업무 스레드
 │   │   ├── syncade/         — Syncade 배포 스레드
-│   │   ├── obsidian-rag/    — Obsidian RAG 스레드
+│   │   ├── obsidian/        — Obsidian PKM 스레드
 │   │   ├── unscript/        — Unscript 테스트 스레드
+│   │   ├── gmp-validation/  — GMP 기능명세 검증 스레드
 │   │   ├── knox/            — Knox 수집 스레드
 │   │   └── _archive/        — 보관된 스레드
 │   ├── workflows/           — 스레드별 워크플로우 JSON
@@ -369,7 +371,7 @@ Vault/
 - [x] 그래프 모델 (WorkflowNode·WorkflowConnection·WorkflowRunState)
 - [x] SVG 분기 연결선 (from_output별 색상, 편집모드 연결 CUD UI)
 - [x] YAML frontmatter 스토리지 (`.md` 포맷 저장·로드)
-- [x] 워크플로우 파일 감지 SSE (`/workflow/events`, mtime 폴링)
+- [x] 워크플로우 파일 감지 SSE (`/workflow/events`, fingerprint 폴링)
 - [x] 툴 실패 → error 단계 자동 전환 + 재시도 버튼
 
 ### Phase 5 — 파라미터 명시화 ✅

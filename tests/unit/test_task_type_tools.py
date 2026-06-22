@@ -17,6 +17,7 @@ class TestGetTaskConfigs:
 
         assert set(_DEFAULT_TASK_CONFIGS).issubset(configs)
         assert "general" in configs
+        assert "gmp-validation" in configs
         assert (vault / "agent" / "task_types.json").exists() is False
 
     def test_merges_vault_custom_type(self, vault):

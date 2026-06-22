@@ -1,13 +1,15 @@
 import subprocess
 from pathlib import Path
 
+from tests.node_runner import node_command
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_inject_mes_agent_env_fixtures():
     result = subprocess.run(
-        ["node", "tests/hooks/inject-mes-agent-env.test.mjs"],
+        [node_command(), "tests/hooks/inject-mes-agent-env.test.mjs"],
         cwd=ROOT,
         text=True,
         capture_output=True,

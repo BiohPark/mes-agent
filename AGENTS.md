@@ -50,10 +50,16 @@ Users give natural language instructions; the agent controls the screen, browser
 ## Test Suite
 
 ```powershell
-.\test.ps1          # Full test suite (268 tests)
+.\test.ps1          # Full test suite (~731 collected)
 .\test.ps1 ci       # CI-safe subset (no LLM, no display, no Office)
 .\test.ps1 unit     # Unit tests only
 .\test.ps1 smoke    # Tool registry validation
+```
+
+If PowerShell blocks direct script execution, use:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 ci
 ```
 
 Tests are in `tests/unit/`, `tests/integration/`, `tests/smoke/`.

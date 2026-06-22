@@ -7,6 +7,7 @@ from agent.workflow.model import LedgerEntry, RunLedgerEvent
 from agent.workflow.storage import (
     append_ledger,
     append_run_ledger,
+    append_artifact_ledger,
     load_ledger,
     load_run_ledger,
     summarize_for_ledger,
@@ -98,6 +99,30 @@ class TestLedger:
         assert len(entries) == 2
         assert entries[0]["event"] == "ok"
         assert entries[1]["event"] == "ok2"
+
+    def test_append_artifact_ledger_records_manifest(self, vault):
+        artifact = tmp_file = vault / "tmp" / "sample.csv"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("id,value\nREQ-1,ok\n", encoding="utf-8")
+
+        entry = append_artifact_ledger(
+            "gmp-validation",
+            "thread-artifact",
+            source="https://sharepoint.example/sites/qa/spec.xlsx",
+            local_path=tmp_file,
+            kind="source-document",
+            note_link="agent/notes/gmp-eval.md",
+        )
+
+        entries = load_ledger("gmp-validation", "thread-artifact")
+        detail = json.loads(entries[0]["detail"])
+        assert entries[0]["event"] == "artifact"
+        assert entry.event == "artifact"
+        assert detail["kind"] == "source-document"
+        assert detail["source"] == "https://sharepoint.example/sites/qa/spec.xlsx"
+        assert detail["local_path"].endswith("sample.csv")
+        assert detail["sha256"]
+        assert detail["note_link"] == "agent/notes/gmp-eval.md"
 
 
 class TestRunLedgerEvent:

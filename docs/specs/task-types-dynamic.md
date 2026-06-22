@@ -143,11 +143,11 @@ async function renderTaskGroups() {
 
 ### unit — `tests/unit/test_task_type_tools.py`
 - [x] `task_type_create`: 중복 이름 거부 / 새 이름 Vault 저장
-- [x] `task_type_remove`: 기본 5타입 삭제 거부 / 커스텀 타입 삭제 OK
-- [x] `get_task_configs()`: Vault 없으면 기본 5타입만 / Vault 있으면 머지
+- [x] `task_type_remove`: 기본 내장 타입 삭제 거부 / 커스텀 타입 삭제 OK
+- [x] `get_task_configs()`: Vault 없으면 기본 내장 타입만 / Vault 있으면 머지
 
 ### integration — `tests/integration/test_task_config_api.py`
-- [x] `GET /task-config` — 기본 5타입 포함 응답
+- [x] `GET /task-config` — 기본 내장 타입 포함 응답
 - [x] Vault에 커스텀 타입 추가 후 `GET /task-config` — 기본 + 커스텀 모두 반환
 - [x] 기존 `test_server_health.py`의 `TestTaskConfig` 테스트 계속 통과
 
@@ -164,5 +164,5 @@ async function renderTaskGroups() {
 | 항목 | 결정 |
 |------|------|
 | 시스템 프롬프트 편집? | No — 코드에 유지, 별도 백로그 |
-| 기본 5타입 삭제 허용? | No — `task_type_remove`에서 차단 |
+| 기본 내장 타입 삭제 허용? | No — `task_type_remove`에서 차단 |
 | P 의존성? | 없음 — P 완료 ✅ |

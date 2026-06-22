@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+from tests.node_runner import node_command
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -27,7 +29,7 @@ def test_supervisor_state_verifier_role():
         "console.log('verifier role test passed');"
     )
     result = subprocess.run(
-        ["node", "--eval", script],
+        [node_command(), "--eval", script],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -39,7 +41,7 @@ def test_supervisor_state_verifier_role():
 
 def test_supervisor_state_reducer_fixtures():
     result = subprocess.run(
-        ["node", "tests/renderer/supervisor-state.test.js"],
+        [node_command(), "tests/renderer/supervisor-state.test.js"],
         cwd=ROOT,
         text=True,
         capture_output=True,

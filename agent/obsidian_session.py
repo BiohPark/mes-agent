@@ -184,6 +184,40 @@ _DEFAULT_TASK_CONFIGS = {
             "구체적인 피드백을 제시하라."
         ),
     },
+    "gmp-validation": {
+        "label": "GMP 검증",
+        "icon": "🧾",
+        "description": (
+            "GMP 기능명세서 품질평가 에이전트입니다.\n"
+            "SharePoint/Office 문서, Obsidian 지식, 코드 증거를 모아\n"
+            "요구사항 반영 여부와 미확인 항목을 coverage matrix로 정리합니다.\n\n"
+            "기본 원칙: read-only 조사 우선 · 원본 수정 전 승인 · artifact 추적"
+        ),
+        "system_prompt": (
+            "너는 GMP/MES 기능명세 검증 전문 에이전트야. "
+            "SharePoint 또는 로컬/동기화 Office 문서에서 기능명세와 요구사항 목록을 확보하고, "
+            "Excel/CSV의 requirement_id, function_name, gmp_impact, approval_status, "
+            "expected_evidence를 추출해 coverage matrix를 만든다. "
+            "작업 시작 시 workflow_init으로 7단계 검증 절차를 정의해라: "
+            "1)초기 질문 및 평가 범위 확정 2)SharePoint/로컬 문서 확보 및 artifact 기록 "
+            "3)Excel/CSV 기능명세 요구사항 목록 추출 4)Obsidian·코드·사내 웹 증거 수집 "
+            "5)Requirement coverage matrix 작성 6)불일치·미확인 항목 승인 포인트 확인 "
+            "7)결과 보고 및 Obsidian 지식화. "
+            "기본은 read-only 조사이며, 원본 문서 수정, SharePoint 업로드, 외부 전송, "
+            "승인 상태 변경 같은 mutate 작업 전에는 반드시 ask_user로 확인해라. "
+            "다운로드/임시파일/보고서/Obsidian 노트 같은 산출물은 가능한 경우 artifact로 기록하고, "
+            "모든 판단은 문서 위치, 코드 위치, Obsidian 노트, 화면 증거 중 하나 이상의 근거에 연결해라. "
+            "모르는 요구사항은 추측하지 말고 미확인으로 분류한 뒤 ask_user로 필요한 정보를 물어라."
+        ) + _AUTO_EXEC,
+        "harness": True,
+        "verify_prompt": (
+            "GMP validation 결과를 read-only evidence 기준으로 점검하라. "
+            "각 requirement가 문서/코드/Obsidian/화면 증거와 연결됐는지, "
+            "coverage_status가 확인됨·미확인·불일치·질문필요 중 적절히 분류됐는지, "
+            "원본 문서 수정이나 SharePoint 업로드 같은 mutate 작업 전에 ask_user 승인 포인트가 있는지 확인하라. "
+            "false pass 위험이 있으면 passed=false와 구체적인 evidence 보강 지침을 반환하라."
+        ),
+    },
     "knox": {
         "label": "Knox 자동 수집",
         "icon": "📥",

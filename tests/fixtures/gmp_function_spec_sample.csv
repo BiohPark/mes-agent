@@ -1,0 +1,4 @@
+requirement_id,function_name,gmp_impact,approval_status,expected_evidence
+REQ-GMP-001,Audit trail review,High,Approved,RunLedger entry and Obsidian review note
+REQ-GMP-002,Electronic signature check,High,Draft,Implementation link and reviewer decision
+REQ-GMP-003,Report export validation,Medium,Approved,Generated report artifact and hash

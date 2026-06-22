@@ -53,10 +53,10 @@ gates:
 test_dod:
   unit:
     - `task_type_create`: 중복 이름 거부, 새 이름 Vault 저장
-    - `task_type_remove`: 기본 5타입 삭제 거부, 커스텀 타입 삭제
+    - `task_type_remove`: 기본 내장 타입 삭제 거부, 커스텀 타입 삭제
     - `get_task_configs()`: Vault 없음 기본값, Vault 있음 머지
   integration:
-    - `GET /task-config`: 기본 5타입 반환
+    - `GET /task-config`: 기본 내장 타입 반환
     - Vault 커스텀 타입 추가 후 기본 + 커스텀 반환
   smoke:
     - `tests/smoke/test_tool_schemas.py::EXPECTED_TOOL_COUNT`를 신규 툴 2개만큼 갱신

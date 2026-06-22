@@ -21,7 +21,7 @@ scope:
     - `electron/renderer/chat.js`에서 `/task-config` 기반 `renderTaskGroups()` 추가
     - `initWhenReady()`에서 기존 thread load 전에 task group 렌더링
     - 기존 `data-task` 기반 sidebar 동작 유지
-    - Computer Use 접근성 트리로 기본 5타입 sidebar 노출 확인
+    - Computer Use 접근성 트리로 기본 내장 타입 sidebar 노출 확인
   out:
     - backend `get_task_configs()` 구현
     - 신규 task type tool 구현

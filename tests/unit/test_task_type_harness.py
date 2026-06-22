@@ -34,6 +34,14 @@ class TestTaskConfigSchema:
         assert cfg.get("harness") is True
         assert cfg.get("verify_prompt", "").strip() != ""
 
+    def test_gmp_validation_opts_into_harness(self):
+        """GMP 검증 업무는 품질평가 실측 대상이므로 자기검증을 옵트인한다."""
+        cfg = get_task_configs()["gmp-validation"]
+        assert cfg["label"] == "GMP 검증"
+        assert cfg.get("harness") is True
+        assert "read-only" in cfg.get("verify_prompt", "").lower()
+        assert "ask_user" in cfg.get("system_prompt", "")
+
 
 class TestHarnessEnabledHelper:
     def test_enabled_for_syncade(self):
@@ -41,6 +49,9 @@ class TestHarnessEnabledHelper:
 
     def test_enabled_for_unscript(self):
         assert task_type_harness_enabled("unscript") is True
+
+    def test_enabled_for_gmp_validation(self):
+        assert task_type_harness_enabled("gmp-validation") is True
 
     def test_disabled_for_general(self):
         assert task_type_harness_enabled("general") is False
@@ -55,6 +66,11 @@ class TestHarnessEnabledHelper:
 class TestVerifyPromptHelper:
     def test_returns_prompt_for_syncade(self):
         assert task_type_verify_prompt("syncade").strip() != ""
+
+    def test_returns_prompt_for_gmp_validation(self):
+        prompt = task_type_verify_prompt("gmp-validation")
+        assert "GMP" in prompt
+        assert "evidence" in prompt.lower()
 
     def test_blank_for_task_without_prompt(self):
         assert task_type_verify_prompt("general") == ""

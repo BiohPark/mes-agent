@@ -3,6 +3,7 @@ import json
 import asyncio
 import os
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 import uvicorn
@@ -1784,15 +1785,26 @@ from fastapi.responses import StreamingResponse
 
 @app.get("/threads/{task_type}/{thread_id}/workflow/events")
 async def workflow_file_events(request: Request, task_type: str, thread_id: str):
-    """파일 mtime 폴링으로 Obsidian 편집을 감지해 프론트엔드에 SSE로 전달한다.
-    새 의존성 없음 — pathlib.stat().st_mtime 폴링 방식.
+    """파일 fingerprint 폴링으로 Obsidian 편집을 감지해 프론트엔드에 SSE로 전달한다.
+    mtime 해상도에 걸리는 빠른 저장을 놓치지 않도록 크기와 짧은 digest를 함께 비교한다.
     """
-    def _mtime() -> tuple[float, float]:
+    def _mtime() -> tuple[tuple[float, int, str], tuple[float, int, str]]:
         md = wf_storage._def_path(task_type, thread_id)
         js = wf_storage._wf_path(task_type, thread_id)
         st = wf_storage._state_path(task_type, thread_id)
-        def _m(p): return p.stat().st_mtime if p and p.exists() else 0.0
-        return (_m(md) or _m(js), _m(st))
+        def _m(p):
+            if not p or not p.exists():
+                return (0.0, -1, "")
+            try:
+                stat = p.stat()
+                digest = hashlib.blake2b(p.read_bytes(), digest_size=8).hexdigest()
+                return (stat.st_mtime, stat.st_size, digest)
+            except OSError:
+                return (0.0, -1, "")
+        primary = _m(md)
+        if primary[1] < 0:
+            primary = _m(js)
+        return (primary, _m(st))
 
     poll_secs = float(os.environ.get("WF_POLL_INTERVAL", "2"))
 
@@ -1800,8 +1812,8 @@ async def workflow_file_events(request: Request, task_type: str, thread_id: str)
         loop = asyncio.get_event_loop()
         # 초기 워크플로우 즉시 전송
         wf = await loop.run_in_executor(None, wf_storage.load_workflow, task_type, thread_id)
-        yield f"data: {json.dumps({'type': 'workflow_update', 'workflow': wf.to_dict()}, ensure_ascii=False)}\n\n"
         last_mtime = _mtime()
+        yield f"data: {json.dumps({'type': 'workflow_update', 'workflow': wf.to_dict()}, ensure_ascii=False)}\n\n"
 
         tick = 0
         try:

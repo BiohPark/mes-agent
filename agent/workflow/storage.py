@@ -1,8 +1,10 @@
 import json
 import uuid
 import os
+import hashlib
 import yaml
 from pathlib import Path
+from datetime import datetime, timezone
 
 from .model import (
     Workflow,
@@ -45,6 +47,15 @@ _DEFAULT_STEPS: dict[str, list[dict]] = {
         {"title": "결과 스크린샷 비교·분석", "type": "auto"},
         {"title": "버그 리포트 작성", "type": "auto"},
     ],
+    "gmp-validation": [
+        {"title": "초기 질문 및 평가 범위 확정", "type": "semi_auto"},
+        {"title": "SharePoint/로컬 문서 확보 및 artifact 기록", "type": "semi_auto"},
+        {"title": "Excel/CSV 기능명세 요구사항 목록 추출", "type": "auto"},
+        {"title": "Obsidian·코드·사내 웹 증거 수집", "type": "auto"},
+        {"title": "Requirement coverage matrix 작성", "type": "auto"},
+        {"title": "불일치·미확인 항목 승인 포인트 확인", "type": "manual"},
+        {"title": "결과 보고 및 Obsidian 지식화", "type": "semi_auto"},
+    ],
     "knox": [
         {"title": "Knox 시스템 접속 확인", "type": "auto"},
         {"title": "수집 대상 채널·메일함 지정", "type": "semi_auto"},
@@ -59,6 +70,7 @@ _DEFAULT_TITLES: dict[str, str] = {
     "syncade":      "Syncade 배포 절차",
     "obsidian":     "Obsidian PKM 작업",
     "unscript":     "Unscript 테스트 절차",
+    "gmp-validation": "GMP 기능명세 검증 절차",
     "knox":         "Knox 데이터 수집",
 }
 
@@ -374,6 +386,48 @@ def load_ledger(task_type: str, thread_id: str) -> list[dict]:
     except Exception:
         pass
     return entries
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def append_artifact_ledger(
+    task_type: str,
+    thread_id: str,
+    *,
+    source: str,
+    local_path: str | Path,
+    kind: str,
+    note_link: str = "",
+    created_at: str = "",
+) -> LedgerEntry:
+    """Record a downloaded/generated artifact in the legacy thread ledger.
+
+    This intentionally uses the existing `/threads/{type}/{id}/ledger` surface so
+    evaluation evidence appears next to harness rounds and run boundary events.
+    """
+    path = Path(local_path)
+    detail = {
+        "kind": kind,
+        "source": source,
+        "local_path": str(path),
+        "sha256": _sha256_file(path) if path.exists() and path.is_file() else "",
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+        "note_link": note_link,
+    }
+    entry = LedgerEntry(
+        ts=detail["created_at"],
+        event="artifact",
+        detail=json.dumps(detail, ensure_ascii=False, sort_keys=True),
+        phase="evidence",
+    )
+    append_ledger(task_type, thread_id, entry)
+    return entry
 
 
 # ── Structured RunLedger: request-scoped append-only JSONL ───────────────────

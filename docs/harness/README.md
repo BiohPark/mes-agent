@@ -69,6 +69,9 @@ cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --too
 | `docs/harness/2026-06-13-plan-critic-readiness.md` | Codex CLI/Claude Code critic 준비 점검 |
 | `docs/harness/2026-06-14-ecc-rules-readiness.md` | ECC plugin/rules 정합성 점검 |
 | `docs/harness/2026-06-14-claude-code-smoke-diagnosis.md` | Claude Code `-p` smoke timeout 원인분석 |
+| `docs/harness/2026-06-23-quality-eval-readiness.md` | GMP/SharePoint/Obsidian 품질평가 준비도 진단 |
+| `docs/harness/cards/company-pc-b0-checklist.md` | 회사 PC 문서 백엔드·Office·Obsidian 실측 체크리스트 |
+| `docs/harness/cards/gmp-validation-eval-procedure.md` | `gmp-validation` harness ON/OFF 반복 평가 절차 |
 | `docs/harness/2026-06-13-existing-plan-review.md` | 기존 계획 수동 critic 리뷰 |
 | `docs/harness/2026-06-13-critic-round-1.md` | 첫 외부 critic 라운드 통합 결과 |
 | `docs/harness/phase-report.md` | 우선순위 기반 Phase 보고서 |
@@ -90,3 +93,10 @@ cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --too
 6. Claude repo 전송을 승인할 수 없으면 Codex Desktop 현재 세션에서 수동 critic을 수행하고 그 사실을 기록한다.
 7. critic 결과를 통합해 worker 지시를 닫힌 형태로 만든다.
 8. worker 완료 후 `code-reviewer` 또는 Codex 리뷰로 diff를 검토한다.
+
+## GMP 품질평가 운영 순서
+
+1. `docs/harness/cards/company-pc-b0-checklist.md`로 실제 문서 백엔드 경로를 먼저 확정한다.
+2. `gmp-validation` 업무 스레드에서 같은 입력을 harness off 3회, harness on 3회 실행한다.
+3. `docs/harness/cards/gmp-validation-eval-procedure.md`의 지표와 출력 위치에 맞춰 결과를 기록한다.
+4. B-0 결과가 온프렘 SharePoint일 때만 후속으로 SharePoint REST roundtrip 구현을 계획한다.
