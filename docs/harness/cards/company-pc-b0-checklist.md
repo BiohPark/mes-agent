@@ -62,6 +62,24 @@ Fill in this table after running the checklist on the company PC. One row per ru
 > Add one table (or one filled set of rows) per company-PC session. Keep raw sensitive content
 > out of this file — sanitize document names/URLs before recording.
 
+### 2026-06-23 local dry-run
+
+| Field | Value |
+|-------|-------|
+| Date/time | 2026-06-23 21:40:22 +09:00 |
+| Document host | local fixture only |
+| Opening method observed | REST dry-run input; no browser or Office document opened |
+| Sample document identifier | `tests/fixtures/gmp_function_spec_sample.csv` |
+| Original files unchanged? | Yes; no original GMP document was accessed |
+| Login/SSO friction | none; Computer Use bootstrap failed earlier with local `AppData` permission error, so UI automation was not used for this dry-run |
+| Backend path chosen (A/B/C/D) | Path A dry-run only |
+| Why this path | Local sanitized CSV fixture was selected to validate the MES server, RunLedger, and harness metrics flow without touching company documents |
+| `GET /threads/{type}/{id}/ledger` check | Pass; baseline threads returned 5 entries, harness threads returned 6 entries including `harness_round` |
+| `GET /threads/{type}/{id}/harness/metrics` check | Pass; harness threads `2026-06-23-005` to `2026-06-23-007` returned `total_reviews=1`, `retries=0`, `final_passed=true`, `self_corrected=false`, `max_history_tokens=1138` |
+
+This row does not classify the real company document backend. Repeat B-0 with a representative
+read-only GMP document before deciding Path B/C/D or implementing `agent/tools/office_sp.py`.
+
 ## Decision
 
 - **Path A: local/network/sync file** — no new backend; run GMP evaluation via local copy + COM/OpenXML.

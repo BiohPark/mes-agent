@@ -82,12 +82,18 @@ Fill in one row per run (6 rows total: 3 baseline + 3 harness).
 
 | Run # | Harness | Thread ID | Success (Y/N) | False pass (Y/N) | False block (Y/N) | User intervention count | Latency notes (min) | Evidence quality (1-5) | Safety issue (Y/N + note) | UX friction notes | `total_reviews` | `retries` | `final_passed` | `self_corrected` | `max_history_tokens` |
 |-------|---------|-----------|----------------|-------------------|---------------------|---------------------------|------------------------|----------------------------|------------------------------|---------------------|--------------------|-----------|-----------------|---------------------|--------------------------|
-| 1 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
-| 2 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
-| 3 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
-| 4 | on | | | | | | | | | | | | | | |
-| 5 | on | | | | | | | | | | | | | | |
-| 6 | on | | | | | | | | | | | | | | |
+| 1 | off | 2026-06-23-002 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | PowerShell needed `-UseBasicParsing`; no UI automation | n/a | n/a | n/a | n/a | n/a |
+| 2 | off | 2026-06-23-003 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | none after client option fix | n/a | n/a | n/a | n/a | n/a |
+| 3 | off | 2026-06-23-004 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | none after client option fix | n/a | n/a | n/a | n/a | n/a |
+| 4 | on | 2026-06-23-005 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | `harness_round` recorded | 1 | 0 | true | false | 1138 |
+| 5 | on | 2026-06-23-006 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | `harness_round` recorded | 1 | 0 | true | false | 1138 |
+| 6 | on | 2026-06-23-007 | Y | N | N | 0 | REST dry-run, <1 | 2 | N; local fixture only | `harness_round` recorded | 1 | 0 | true | false | 1138 |
+
+2026-06-23 local dry-run note: this run used the sanitized CSV fixture and a local
+OpenAI-compatible test double at `127.0.0.1` to avoid external transmission. It validates
+server restart behavior, `/chat`, `/ledger`, and `/harness/metrics` plumbing, but it is not a
+final evidence-quality measurement for a real company GMP document. The real B-0 backend path
+remains unclassified until a representative read-only document is observed.
 
 The first 10 columns are a direct mapping of the `## Metrics` bullets above. The last 5 columns
 are the exact field names returned by `GET /threads/{type}/{id}/harness/metrics`
