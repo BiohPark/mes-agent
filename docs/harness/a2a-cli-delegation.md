@@ -27,16 +27,15 @@
 내용(문서명, 시스템 명세, 회사 도메인 등)을 위임 프롬프트에 그대로 담아 보내면 이 위험이 발생한다.
 
 **기록된 사례(2026-06-23, 미확정 정확한 메커니즘 — 아래 헤지 참고)**: 이전 Codex 세션에서
-GMP 품질평가 readiness 설계 검토를 `claude -p "...GMP quality evaluation readiness..." \
---output-format json --permission-mode plan --max-budget-usd 1.0`로 claude에 위임 시도했고,
+GMP 품질평가 readiness 설계 검토를 `claude --print --output-format json \
+--permission-mode plan --max-budget-usd 1.0 "...GMP quality evaluation readiness..."`로 claude에 위임 시도했고,
 Codex 자신이 "사내 폐쇄망/회사 워크플로우 세부사항을 Anthropic 외부 API로 전송할 위험이 있어
 정책상 거부"라고 자체 보고하며 로컬 구현으로 대체했다는 보고가 있다. **이 보고는 호출 당사자(Codex)의
 자체 진술이며, 본 문서 작성 시점에 이 거부가 claude CLI 자체의 구조적 차단(예: 특정 키워드 필터)인지,
 Codex 쪽의 자율적 판단인지는 재현·확인되지 않았다** — 단정하지 않는다.
 
 이 사례는 `2026-06-14-claude-code-smoke-diagnosis.md`가 다루는 **다른**, 이미 해결된 문제
-(Stop hook으로 인한 `-p` 행 걸림, 2026-06-17 `.claude/settings.json`에서 Stop hook 제거로 해결—
-`--permission-mode plan --tools "" --no-session-persistence`가 정상 반환됨을 확인함)와는 무관하다.
+(Stop hook으로 인한 `--print` 행 걸림, 2026-06-17 `.claude/settings.json`에서 Stop hook 제거로 해결)와는 무관하다.
 이번 건은 행 걸림이 아니라 **내용 민감도에 대한 호출측의 자체 판단**으로 보인다.
 
 추가로 확인한 사항: 이 저장소에는 Bedrock/Vertex 등 엔터프라이즈 라우팅 Claude Code 설정이
@@ -82,22 +81,25 @@ codex exec --dangerously-bypass-approvals-and-sandbox "<작업 지시>"
 ## claude (Claude Code)
 
 - 버전: 2.1.183, 위치: `C:\Users\qldh1\.local\bin\claude`
-- 비대화형 실행: `claude -p "<prompt>"` (`--print`)
+- 비대화형 실행: `claude --print [options] "<prompt>"` (`-p`도 가능하나, `-p "<prompt>"` 형태가 아님)
 - 출력 형식: `--output-format {text|json|stream-json}` — 위임 결과 파싱에는 `json` 권장
 - 비용 상한: `--max-budget-usd <amount>` (print 모드 전용) — 위임 호출에 항상 거는 것을 권장
 
 ### 권장(최소권한) 호출
 ```bash
-claude -p "<위임할 작업 지시>" --output-format json \
-  --permission-mode acceptEdits --max-budget-usd 1.0
+claude --print --output-format json --permission-mode acceptEdits \
+  --max-budget-usd 1.0 --safe-mode --no-session-persistence \
+  "<위임할 작업 지시>"
 ```
+- Windows PowerShell에서 `--tools ""`는 variadic 옵션 파싱 때문에 뒤의 프롬프트까지 먹을 수 있으므로
+  권장 예시에서 제외한다. 도구를 제한해야 하면 짧은 별도 실측 후 사용한다.
 - `--permission-mode {acceptEdits|auto|bypassPermissions|default|dontAsk|plan}`
   - `acceptEdits`: 파일 편집은 자동 승인, 그 외 위험 작업은 여전히 막힘(무인 실행엔 완전하지 않음)
   - `plan`: 실행 안 하고 계획만 — 위임받은 쪽이 "검토만" 해야 할 때 적합
 
 ### 최후수단(완전우회)
 ```bash
-claude -p "<작업 지시>" --dangerously-skip-permissions --max-budget-usd 1.0
+claude --print --dangerously-skip-permissions --max-budget-usd 1.0 "<작업 지시>"
 ```
 모든 권한 검사를 우회한다. "Recommended only for sandboxes with no internet access"라고 명시됨.
 

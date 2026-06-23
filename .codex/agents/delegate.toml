@@ -12,7 +12,7 @@ developer_instructions = """
 `docs/harness/a2a-cli-delegation.md`의 "권장(최소권한) 호출" 명령만 사용한다. 완전우회
 (`--dangerously-*`) 플래그는 스스로 선택하지 않는다.
 
-- claude: `claude -p "<작업>" --output-format json --permission-mode acceptEdits --max-budget-usd 1.0`
+- claude: `claude --print --output-format json --permission-mode acceptEdits --max-budget-usd 1.0 --safe-mode --no-session-persistence "<작업>"`
 - agy: 현재 비권장 — `--print` 헤드리스 모드에 업스트림 버그 확인됨(2026-06-22, 응답을 받고도
   무출력 종료 또는 무한 행). 자세한 내용은 `docs/harness/a2a-cli-delegation.md`의 agy 섹션 참조.
   사용자가 명시적으로 agy를 지정해도 먼저 이 한계를 알리고 진행 여부를 물어본다.
