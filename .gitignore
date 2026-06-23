@@ -25,6 +25,7 @@ venv/
 Thumbs.db
 desktop.ini
 .DS_Store
+*.stackdump
 
 # 런타임 로그
 *.log
