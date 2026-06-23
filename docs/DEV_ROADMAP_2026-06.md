@@ -1,66 +1,71 @@
-# MES Agent — 향후 개발 미션 우선순위 로드맵 (2026-06)
+# MES Agent Development Roadmap (2026-06, current as of 2026-06-24)
 
-> 작성: 2026-06-19 · 기준 문서: `CLAUDE.md`(현재 상태 SSOT), `docs/TRANSFORMATION_PLAN.md`,
-> `docs/backlog/`. 우선순위 기준: **업무 가치(MES 도메인) 우선**.
+> Priority SSOT. Implementation state lives in `CLAUDE.md`; design history lives in
+> `docs/specs/`, `docs/contracts/`, `docs/adr/`, `docs/backlog/`, and `docs/harness/`.
+> This file answers only: what remains, why, and in what order.
 
-## 배경
+## Current Snapshot
 
-지난 2주 개발은 **에이전트 하네스 인프라**(적응형 타임아웃 V2·감독 콘솔·RunLedger·
-하네스 PoC·Verifier phase·동적 업무타입·Tesseract 제거·Active Excel COM)에 집중되어
-거의 완성됐다. 그러나 이 인프라가 **실제 MES 업무 버티컬에 아직 연결되지 않았다** —
-하네스 PoC는 기본 off, Verifier는 라벨만, 업무타입(syncade/unscript/knox)은 일반 프롬프트만
-있고 검증·감사 루프를 쓰지 않는다. **인프라→업무가치 전환**이 가장 큰 미연결 지점이며,
-회사 PC 검증·하드웨어 결정 같은 외부 차단요인이 없는 최상위 가치 미션이다.
+The agent infrastructure is mostly in place: workflow/run-state storage, RunLedger, dynamic task
+types, plan mode, adaptive timeout recovery, Office COM/Graph/local fallback, and the
+Executor->Reviewer harness are implemented and tested.
 
-> 완료 항목(Track 0 전체, T, O-A, V-1/V-2 대부분, Track 1 Stage 1/1.5, 감독 reducer·
-> RunLedger·Verifier 라벨, 하네스 PoC v1, Tesseract 제거, Active Excel COM)은 미션에서 제외.
+Recent GMP readiness work added:
 
-## P0 — 최우선 (업무가치 高 · 차단요인 無)
+- `gmp-validation` task type, 7-step workflow template, read-only safety prompt, CSV fixture
+  parser, and artifact ledger helper.
+- Local dry-run execution on 2026-06-23:
+  - baseline threads `2026-06-23-002` to `2026-06-23-004`
+  - harness threads `2026-06-23-005` to `2026-06-23-007`
+  - harness metrics: `total_reviews=1`, `retries=0`, `final_passed=true`,
+    `self_corrected=false`, `max_history_tokens=1138`
+- The dry-run validated `/chat`, `/ledger`, `/harness/metrics`, and server restart toggling, but
+  it did **not** classify the real company document backend.
 
-| # | 미션 | 근거 | 규모 | 상태 |
-|---|------|------|------|------|
-| 1 | **도메인 하네스 팩** — 업무타입별 옵트인 하네스/Verifier 연결 + 실측 + 검증 충실도 | 이미 만든 PoC·Verifier·RunLedger·워크플로우 템플릿을 실제 MES 버티컬에 연결. 자기검증으로 배포/검증 신뢰도↑(GxP 감사) | M | ✅ Phase 1·2(G2)·3 완료 · 실측 실행·G1 대기 |
+## P0 - Must Do Next
 
-세부계획·갭 진단: `docs/specs/domain-harness-pack.md`.
+| # | Mission | Why | Status / next action |
+|---|---------|-----|----------------------|
+| 1 | **Company document B-0 classification** | We must know whether the representative GMP document is local/network/sync, on-prem SharePoint, M365/Graph, or another portal before implementing backend code. | Run `docs/harness/cards/company-pc-b0-checklist.md` with a read-only representative document. Keep raw sensitive content out of repo. |
+| 2 | **Live GMP Phase 4 measurement** | The local fixture dry-run proves plumbing, not real evidence quality. Live data is needed for P1 #3 and ADR-0004. | Run `docs/harness/cards/gmp-validation-eval-procedure.md` with the same real document and prompt: baseline 3 + harness 3, `HARNESS_MAX_ROUNDS=3`. |
 
-**v1 완료(2026-06-19, `c61ce1e`)**: `harness`/`verify_prompt` 업무 설정, `_should_use_harness()`
-업무타입 옵트인 라우팅, `syncade` 자기검증.
+P0 guardrails:
 
-**Phase 1·2·3 완료(2026-06-19, `0ebe0fa`)**:
-- **Phase 1 실측 계측(G3)** — `agent/harness/metrics.py`, `_harness_generate`가 매 판결을
-  RunLedger(`harness_round`)에 영속화, `GET /threads/{type}/{id}/harness/metrics` 집계.
-- **Phase 2 Reviewer 멀티모달(G2)** — `_reviewer_call`이 화면 캡처를 `prune_images`로 최신
-  N개 전달(`HARNESS_REVIEWER_IMAGES`, 0=텍스트 폴백). **G1(Reviewer 도구부여)은 ADR-0004
-  Proposed** — Phase 4 실측 후 결정.
-- **Phase 3** — `unscript` 2번째 버티컬 옵트인.
+- Do not implement `agent/tools/office_sp.py` until B-0 confirms Path B.
+- Do not grant Reviewer read-only tools until ADR-0004 is decided from live measurement data.
+- Do not upload, mutate, approve, or externally transmit GMP documents without explicit approval.
 
-**남은 액션**: **Phase 4 실측 실행**(회사 PC, `HARNESS_ENABLED=true`) — 방법론
-`docs/harness/cards/harness-eval-methodology.md`. 결과가 P1 #2(N 에픽)와 ADR-0004 G1 결정의 입력.
+## P1 - Decide After P0 Data
 
-## P1 — 높음 (가치·견고성, 대부분 unblocked)
+| # | Mission | Decision input | Default until decided |
+|---|---------|----------------|-----------------------|
+| 3 | **Harness N epic GO/NO-GO** | Live Phase 4 correction rate, false pass rate, latency, and token cost. | Keep current Executor->Reviewer harness; do not add Planner role yet. |
+| 4 | **ADR-0004 G1 Reviewer read-only tools** | Whether text-only/multimodal Reviewer catches real misses often enough. | Keep Reviewer tool-free except multimodal message context. |
+| 5 | **Office backend implementation path** | B-0 Path A/B/C/D. | Path A uses existing COM/local flow; Path B plans SharePoint REST; Path C reuses Graph; Path D remains browser/download fallback. |
 
-| # | 미션 | 근거 | 규모 |
-|---|------|------|------|
-| 2 | **하네스 N 에픽 결정** — PoC 가치 평가 → Planner 역할 추가 여부(계약서→TDD) | 복잡 작업 자기교정 품질. #1 실사용 데이터 확보 후 결정 | XL |
-| 3 | **V-2 잔여** — baseline 적응학습(p50/p90), OS별 liveness 신뢰성 보강 | 무한 행·실패 MES 작업 감소(Windows 실검증 일부 필요) | L |
-| 4 | **감독 도메인 버티컬 템플릿** — MES 검증/Office 작성/배포별 감독 콘솔 표현(#1 연계) | 감독 UX를 실제 업무에 특화 | M |
+## P2 - Valuable But Not Blocking
 
-## P2 — 중간 (가치 보통 또는 보안 검토 필요)
+| # | Mission | Notes |
+|---|---------|-------|
+| 6 | **Adaptive timeout baseline learning** | V-2 core recovery exists; remaining work is OS-specific liveness confidence and p50/p90 baseline learning. |
+| 7 | **Supervisor/domain templates** | Turn the existing supervisor console into domain-specific GMP/MES validation views after real Phase 4 data. |
+| 8 | **O-B LAN binding and auth hardening** | Vault command inbox exists; LAN mode needs origin/token/security review before enabling. |
 
-| # | 미션 | 근거 | 규모 |
-|---|------|------|------|
-| 5 | **O-B LAN 바인딩 + 인증강화** — host=0.0.0.0 옵트인·Origin 허용목록·토큰 영속화 | O-A로 원격 이미 가능. 보안 민감 | M |
-| 6 | **Track 2 스펙 역설계 1건** — context condenser 또는 external stop 선택 | 개발 하네스 가치 | M |
-| 7 | **감독 HUD fit-to-view 마감**(진행중 카드) | 폴리시 | S |
+## P3 - Deferred / Needs External Decision
 
-## P3 — 차단/연기 (외부 결정 선행 필수)
+| # | Mission | Blocker |
+|---|---------|---------|
+| 9 | Electron installer packaging | Product distribution decision and bundled Python/Node packaging budget. |
+| 10 | Office base64 multimodal ingestion | Internal LLM multimodal support and document security review. |
+| 11 | OpenHands/pattern import | Governance, clean-room review, and value relative to current harness. |
+| 12 | Advanced window UX / input shielding | Security and user-control review. |
+| 13 | Knox vertical expansion | Wait until GMP/syncade/unscript measurement stabilizes. |
 
-| # | 미션 | 차단요인 |
-|---|------|---------|
-| 8 | Office 편집 백엔드(Path B/C/D) + Y Office365 로그인 | **회사 PC B-0 체크리스트 검증 선행** |
-| 9 | F Electron 패키징 배포 | 현재 개발단계 — 명시적 연기 |
-| 10 | K Office base64 멀티모달 | 사내 LLM 멀티모달 지원 확인 선행 |
-| 11 | L OpenHands 패턴 이식 | 리서치·클린룸 거버넌스 |
-| 12 | X 창 UX 고도화 / 입력 가로채기 | **보안 검토 선행** |
-| 13 | Track 1 Stage 2 Ralph 루프 | **루프 호스트 하드웨어 결정 선행** |
-| 14 | Track 3b Knox 챗봇 | Track 1/2 안정화 후 |
+## Documentation Hygiene Rules
+
+- `DEV_ROADMAP_2026-06.md`: priority and remaining work only.
+- `CLAUDE.md`: implementation state table only; avoid duplicating priority debates.
+- `docs/backlog/pending/*`: one-page decision briefs; details should point back here.
+- `docs/harness/cards/*`: executable procedures and recorded results.
+- Date-stamped harness docs are audit history. Update them only when their stale guidance could
+  mislead the next run.

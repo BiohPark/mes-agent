@@ -1,6 +1,6 @@
 # P0 세부 개발계획 — 도메인 하네스 팩 (Domain Harness Pack)
 
-> 작성: 2026-06-19 · 상태: ✅ Phase 1·2(G2)·3 완료(`0ebe0fa`) / G1·Phase 4 실행 대기 · 우선순위: **P0**
+> 작성: 2026-06-19 · 상태: ✅ Phase 1·2(G2)·3 완료(`0ebe0fa`) / ✅ GMP local dry-run 완료 / G1·live Phase 4 실행 대기 · 우선순위: **P0**
 > 기준: `docs/DEV_ROADMAP_2026-06.md`, `docs/contracts/harness-poc-v1.md`,
 > `docs/backlog/pending/N-harness-mode.md`, `docs/adr/0002-L1-loop-contract.md`
 
@@ -13,7 +13,8 @@
 
 이 계획의 목표: **(A) 하네스가 실제로 가치를 내는지 측정 가능하게 만들고, (B) Reviewer가
 진짜 검증을 하도록 충실도를 올리고, (C) 차단요인 없는 2번째 버티컬로 확장**한다.
-측정 데이터는 P1 #2(N 에픽 — Planner 역할 추가 여부) 의사결정의 직접 입력이 된다.
+측정 데이터는 `docs/DEV_ROADMAP_2026-06.md` P1 Harness N epic GO/NO-GO(Planner 역할 추가 여부)
+의사결정의 직접 입력이 된다.
 
 ## 2. 현재 구현 정밀 진단 (코드 확인 결과)
 
@@ -105,7 +106,7 @@
 
 ---
 
-### Phase 4 — 실측 평가 방법론 + 실행 (P1 #2 입력) · 4.1 ✅ 방법론 / 4.2 ⏳ 회사PC 실행
+### Phase 4 — 실측 평가 방법론 + 실행 (Harness N 입력) · 4.1 ✅ 방법론 / 4.2 ⏳ live 회사PC 실행
 
 > 목적: 하네스 ON/OFF를 같은 작업에 비교해 N 에픽(Planner 추가) 결정 근거를 만든다(G5).
 
@@ -116,15 +117,16 @@
   Phase 1 `harness/metrics` + 사람 평가표 기록.
 - 종료 게이트(N 에픽 GO/NO-GO): 자기교정 효과 ≥ 임계치 & 비용 증가 허용범위.
 
-**4.2 실행** — 회사 PC(`HARNESS_ENABLED=true`)에서 방법론대로 데이터 수집. (실행만 환경 의존,
-계측·방법론은 Phase 1·4.1에서 미리 완성되어 있음.)
+**4.2 실행** — local fixture dry-run은 2026-06-23 완료. 다음은 회사 PC에서 대표 GMP 문서를
+read-only로 열고 방법론대로 live 데이터를 수집한다. (실행만 환경 의존, 계측·방법론은 Phase 1·4.1에서
+미리 완성되어 있음.)
 
 ---
 
 ## 5. 의존성·순서
 
 ```
-Phase 1 (계측, 무차단) ─┬─→ Phase 4.1 (방법론) ─→ Phase 4.2 (회사PC 실행) ─→ N 에픽 결정(P1 #2)
+Phase 1 (계측, 무차단) ─┬─→ Phase 4.1 (방법론) ─→ Phase 4.2 (live 회사PC 실행) ─→ N 에픽 결정
                         │
 Phase 3 (unscript, 무차단) ┘
 Phase 2 (Reviewer 충실도) ── ADR 0004 선행 ── (Phase 1 비용 데이터 참고)

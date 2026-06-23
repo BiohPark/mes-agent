@@ -96,13 +96,13 @@ cmd /c codex -a never exec -C D:\_Repositories\mes-agent -s read-only --ephemera
 - 따라서 민감한 계획/사내 문서 기반 critic 실행은 사용자 명시 승인 후에만 한다.
 - 기본 config를 그대로 로드하면 플러그인/MCP/훅 경고가 많으므로, critic 용도는 `--ignore-user-config --ignore-rules --ephemeral`을 기본으로 한다.
 - Claude Code critic은 외부 전송 등급에 따라 실행한다. Codex 관리 셸 안에서는 repo 파생 정보가 포함된 Claude 호출이 차단될 수 있으므로, 기본은 `-ClaudeMode None` 또는 `-ClaudeMode Generic`이다.
-- Claude Code 2.1.168+ 기준 `--safe-mode`는 없으므로 쓰지 않는다. 안전한 smoke는 `cmd /c claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence` 형태다.
-- PowerShell-native Claude 호출에서 `terminator`/`ParserError`가 나면 Claude 응답 실패가 아니라 Windows quoting 표면 문제로 보고 `cmd /c claude.cmd ...` 표준형으로만 재검증한다.
+- Claude Code 2.1.183 기준 비대화형 호출은 `claude --print [options] "<prompt>"` 형태다. `-p "<prompt>"`는 프롬프트 인자가 아니라 잘못된 구형 예시로 취급한다.
+- PowerShell에서 `--tools ""`는 variadic 파싱 때문에 뒤의 프롬프트까지 먹을 수 있으므로 기본 예시에서 쓰지 않는다. 안전한 smoke는 `claude --print --output-format json --permission-mode plan --max-budget-usd 1.0 --safe-mode --no-session-persistence "Reply exactly CLAUDE_EXEC_OK"` 형태다.
 - Codex Desktop 관리 셸의 네트워크/파일 샌드박스에서 CLI agent 호출이 실패하면, 승인된 샌드박스 외부 실행으로 smoke/critic을 수행한다.
 
 ### Claude 외부 전송 등급
 
-Claude Code의 `--permission-mode plan`, `--tools ""`, `--no-session-persistence`는 도구 실행과 로컬 세션 저장을 제한할 뿐, 프롬프트가 외부 Claude 서비스로 전송되는 사실을 없애지 않는다. 따라서 하네스는 다음 등급으로만 Claude 사용을 허용한다.
+Claude Code의 `--permission-mode plan`, `--safe-mode`, `--no-session-persistence`는 도구 실행·프로젝트 커스터마이징·로컬 세션 저장을 제한할 뿐, 프롬프트가 외부 Claude 서비스로 전송되는 사실을 없애지 않는다. 따라서 하네스는 다음 등급으로만 Claude 사용을 허용한다.
 
 | 등급 | 전송 내용 | 실행 경로 |
 |------|-----------|-----------|

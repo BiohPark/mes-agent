@@ -55,7 +55,7 @@
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
 | 동적 업무 타입 관리 (백로그 T) ✅ | `agent/obsidian_session.py` + `agent/tools/task_type.py` + `agent/server.py` + `electron/renderer/chat.js`·`index.html` | 기본 6타입은 `_DEFAULT_TASK_CONFIGS`(`general`·`syncade`·`obsidian`·`unscript`·`gmp-validation`·`knox`), 사용자 정의 타입은 Vault `agent/task_types.json` 오버레이로 머지. `task_type_create`/`task_type_remove`(mutate 확인 게이트, 기본 타입 삭제 거부) 2종 추가. `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링. |
-| GMP 품질평가 준비 ✅ | `agent/obsidian_session.py` + `agent/workflow/storage.py` + `agent/harness/gmp_validation.py` + `docs/harness/cards/*gmp*` | `gmp-validation` 업무타입 추가: read-only 우선, 원본 문서/SharePoint mutate 전 `ask_user` 승인, harness 옵트인. 기본 7단계 workflow, 비민감 CSV fixture 파서(`load_requirements_csv`), RunLedger `artifact` 이벤트 helper(`append_artifact_ledger`), 회사 PC B-0 체크리스트와 harness ON/OFF 평가 절차 문서화. |
+| GMP 품질평가 준비 ✅ | `agent/obsidian_session.py` + `agent/workflow/storage.py` + `agent/harness/gmp_validation.py` + `docs/harness/cards/*gmp*` | `gmp-validation` 업무타입 추가: read-only 우선, 원본 문서/SharePoint mutate 전 `ask_user` 승인, harness 옵트인. 기본 7단계 workflow, 비민감 CSV fixture 파서(`load_requirements_csv`), RunLedger `artifact` 이벤트 helper(`append_artifact_ledger`), B-0 체크리스트와 harness ON/OFF 평가 절차 문서화. 2026-06-23 로컬 fixture dry-run은 완료됐고, 실제 회사 문서 B-0/live Phase 4는 `docs/DEV_ROADMAP_2026-06.md` P0 잔여 작업. |
 | 업무 스레드 대화 | `agent/obsidian_session.py` + `agent/server.py` | 사이드바 버튼별 독립 다중 스레드, 멀티턴 대화 이력, 완료/보관/삭제, Obsidian 저장 |
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
@@ -390,7 +390,7 @@ Office 문서를 base64로 멀티모달 LLM에 직접 보내 읽히는 경로(`c
 
 ### N. 하네스(멀티에이전트 역할) 모드 🤖🤖 — PoC v1·Phase 1~3 완료 ✅, 잔여: 에픽 결정
 
-PoC v1(Executor+Reviewer 자기교정 루프)과 도메인 하네스 팩 Phase 1~3(실측 계측·Reviewer 멀티모달·2번째 버티컬)은 완료(현재 상태 표 참조). 남은 결정은 **Planner 역할까지 추가한 정식 멀티에이전트 에픽으로 확장할지 여부** — `docs/DEV_ROADMAP_2026-06.md` P1 #2("하네스 N 에픽 결정")에서 PoC 실사용 데이터를 본 뒤 판단한다. 확장 시 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출하는 구조. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. 상세: `docs/backlog/pending/N-harness-mode.md`.
+PoC v1(Executor+Reviewer 자기교정 루프)과 도메인 하네스 팩 Phase 1~3(실측 계측·Reviewer 멀티모달·2번째 버티컬)은 완료(현재 상태 표 참조). 남은 결정은 **Planner 역할까지 추가한 정식 멀티에이전트 에픽으로 확장할지 여부** — `docs/DEV_ROADMAP_2026-06.md` P1 #3("Harness N epic GO/NO-GO")에서 live Phase 4 데이터를 본 뒤 판단한다. 확장 시 오케스트레이터가 역할별 서브-루프(전용 프롬프트 + `select_tools` 서브셋 + 공유 RunState/Vault)를 호출하는 구조. 참조 HarnessLab/claw-code-agent는 **라이선스·클린룸 적합성 확인 후** 패턴만 참고(계약서→TDD). L(OpenHands)과 이벤트 스트림 통합 검토. 상세: `docs/backlog/pending/N-harness-mode.md`.
 
 ### V-2단계. 적응형 타임아웃 고도화 🔲
 

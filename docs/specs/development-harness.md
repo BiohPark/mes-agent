@@ -134,7 +134,7 @@ Critic 통합 후에는 다음이 선명해야 한다.
 .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
 ```
 
-주의: Claude Code의 `--permission-mode plan`, `--tools ""`, `--no-session-persistence`는 도구 실행과 로컬 세션 저장을 제한할 뿐 외부 전송을 막지 않는다. 따라서 Claude Code critic/worker는 다음 등급으로만 다룬다.
+주의: Claude Code의 `--permission-mode plan`, `--safe-mode`, `--no-session-persistence`는 도구 실행·프로젝트 커스터마이징·로컬 세션 저장을 제한할 뿐 외부 전송을 막지 않는다. PowerShell에서 `--tools ""`는 프롬프트를 삼킬 수 있으므로 기본 호출 예시에서 쓰지 않는다. 따라서 Claude Code critic/worker는 다음 등급으로만 다룬다.
 
 | 등급 | 전송 내용 | 사용 기준 |
 |------|-----------|-----------|
