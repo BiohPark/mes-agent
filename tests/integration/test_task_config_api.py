@@ -7,7 +7,7 @@ class TestDynamicTaskConfigApi:
 
         assert resp.status_code == 200
         data = resp.json()
-        for task_type in ("general", "syncade", "obsidian", "unscript", "knox"):
+        for task_type in ("general", "syncade", "obsidian", "unscript", "knox", "gmp-validation"):
             assert task_type in data
             assert {"label", "icon", "description"}.issubset(data[task_type])
             assert "system_prompt" not in data[task_type]

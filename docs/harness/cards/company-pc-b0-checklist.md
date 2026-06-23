@@ -42,6 +42,26 @@ Confirm the real document/backend path before implementing SharePoint or Office 
 - Login prompts encountered and whether the user had to intervene.
 - Any blocked action, delay, repeated selector failure, or confusing UX moment.
 
+## Result Recording Template
+
+Fill in this table after running the checklist on the company PC. One row per run/date.
+
+| Field | Value |
+|-------|-------|
+| Date/time | |
+| Document host | (e.g. `*.sharepoint.com`, network share, OneDrive, other portal) |
+| Opening method observed | (File Explorer path / browser URL — full address bar value) |
+| Sample document identifier | (sanitized name or ID, no sensitive content) |
+| Original files unchanged? | Yes / No — note any unexpected write |
+| Login/SSO friction | (none / manual login required / prompt loop / other) |
+| Backend path chosen (A/B/C/D) | |
+| Why this path | |
+| `GET /threads/{type}/{id}/ledger` check | Pass / Fail — note response shape or error |
+| `GET /threads/{type}/{id}/harness/metrics` check | Pass / Fail — note response shape or error |
+
+> Add one table (or one filled set of rows) per company-PC session. Keep raw sensitive content
+> out of this file — sanitize document names/URLs before recording.
+
 ## Decision
 
 - **Path A: local/network/sync file** — no new backend; run GMP evaluation via local copy + COM/OpenXML.

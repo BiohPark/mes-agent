@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from agent.harness.gmp_validation import load_requirements_csv
 
 
@@ -31,3 +33,15 @@ def test_fixture_rows_can_be_rendered_as_coverage_matrix():
         "evidence": "",
         "questions": "",
     }
+
+
+def test_load_requirements_csv_raises_on_missing_column(tmp_path):
+    csv_path = tmp_path / "missing_column.csv"
+    csv_path.write_text(
+        "requirement_id,function_name,approval_status,expected_evidence\n"
+        "REQ-GMP-999,Sample function,Approved,Some evidence\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="gmp_impact"):
+        load_requirements_csv(csv_path)

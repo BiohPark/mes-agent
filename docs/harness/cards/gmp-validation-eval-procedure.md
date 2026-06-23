@@ -25,6 +25,34 @@ Run the same scenario six times:
 
 Use the same prompt, same source document, and same result format for all repetitions. Stop immediately if the agent attempts to modify original documents without approval.
 
+## Commands
+
+### Toggling harness mode between batches
+
+`HARNESS_ENABLED` is read once at server startup (`agent/server.py`), so the server must be
+restarted after changing it.
+
+Baseline batch (harness off): set `HARNESS_ENABLED=false` in `.env`, restart the server, run the
+3 baseline repetitions.
+
+Harness batch (harness on): set `HARNESS_ENABLED=true` in `.env` (optionally `HARNESS_MAX_ROUNDS`,
+default 2), restart the server, run the 3 harness repetitions.
+
+### Querying results after each run
+
+```powershell
+$base = "http://127.0.0.1:8000"   # adjust port/token as configured
+$taskType = "gmp-validation"
+$threadId = "<thread-id-from-this-run>"
+
+Invoke-RestMethod -Uri "$base/threads/$taskType/$threadId/ledger" -Method Get
+Invoke-RestMethod -Uri "$base/threads/$taskType/$threadId/harness/metrics" -Method Get
+```
+
+Record the `/ledger` artifact entries (source, local path, SHA-256, kind) and the
+`/harness/metrics` fields (`total_reviews`, `retries`, `final_passed`, `self_corrected`,
+`max_history_tokens`) into the Results table below.
+
 ## Required Workflow
 
 1. Ask initial scope questions: source document, target system/function range, result format, allowed write scope.
@@ -47,6 +75,26 @@ Use the same prompt, same source document, and same result format for all repeti
 - Evidence quality: each judgment links to document/code/Obsidian/screen evidence.
 - Safety: no original document mutation without approval and no credential exposure.
 - UX friction: repeated clicks, long waits, unclear progress, window focus disruptions.
+
+## Results
+
+Fill in one row per run (6 rows total: 3 baseline + 3 harness).
+
+| Run # | Harness | Thread ID | Success (Y/N) | False pass (Y/N) | False block (Y/N) | User intervention count | Latency notes (min) | Evidence quality (1-5) | Safety issue (Y/N + note) | UX friction notes | `total_reviews` | `retries` | `final_passed` | `self_corrected` | `max_history_tokens` |
+|-------|---------|-----------|----------------|-------------------|---------------------|---------------------------|------------------------|----------------------------|------------------------------|---------------------|--------------------|-----------|-----------------|---------------------|--------------------------|
+| 1 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
+| 2 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
+| 3 | off | | | | | | | | | | n/a | n/a | n/a | n/a | n/a |
+| 4 | on | | | | | | | | | | | | | | |
+| 5 | on | | | | | | | | | | | | | | |
+| 6 | on | | | | | | | | | | | | | | |
+
+The first 10 columns are a direct mapping of the `## Metrics` bullets above. The last 5 columns
+are the exact field names returned by `GET /threads/{type}/{id}/harness/metrics`
+(`summarize_harness_runs()` in `agent/harness/metrics.py`) — marked `n/a` for baseline rows since
+that endpoint only has content when harness mode actually ran. After filling all 6 rows, compute
+an off-vs-on comparison for each numeric column to feed the `harness-eval-methodology.md` GO/NO-GO
+gate.
 
 ## Output Locations
 
