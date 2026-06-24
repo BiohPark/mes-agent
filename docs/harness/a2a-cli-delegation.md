@@ -51,9 +51,36 @@ Codex 쪽의 자율적 판단인지는 재현·확인되지 않았다** — 단�
    승인을 구한다** — 이는 "막히면 사용자에게 묻는다"는 기존 도구-권한 원칙을 데이터 민감도 차단에도
    동일하게 확장한 것이다.
 
+## ⚠️ 회귀 이력 — "고쳤는데 다시 하면 또 안 됨" (2026-06-24, 우선순위 상향)
+
+사용자 보고(2026-06-24): claude/agy A2A 호출이 **여러 차례 고쳤음에도 다시 시도하면 또 실패**하는
+패턴이 반복되고 있다 ("몇번을 개선했는데, 다시하면 또 안되고 그러네"). 이는 위 agy 섹션의
+"업스트림 버그 1회 확인" 같은 **고정된 단일 원인 문제가 아니라, 환경 드리프트(CLI 자동 업데이트·
+PATH 변경·세션별 인증 상태·OS 셸 차이)로 계속 재발하는 신뢰성 문제**로 취급해야 한다.
+
+**이 문서 갱신만으로는 재발을 막지 못한다** — 매번 사람이 수동으로 재진단하는 대신, 다음을
+`docs/DEV_ROADMAP_2026-06.md` P0/P1에 우선순위로 반영한다(상세는 로드맵 참조):
+
+1. **자동 스모크 체크** — 이 저장소의 `tests/smoke/` 패턴을 따라, codex/claude/agy 각각에 대해
+   "버전 확인 → 헤드리스 1줄 프롬프트 실행 → stdout 비어있지 않음 + exit 0" 를 검증하는 가벼운
+   스모크 스크립트를 두고, 위임을 시도하기 **직전에** 그 CLI가 살아있는지 먼저 확인한다(매번 전체
+   위임을 시도했다가 조용히 실패하는 대신, 실패를 빨리 드러내고 사람에게 보고).
+   - 2026-06-25 반영: `scripts/harness/run-plan-critics.ps1 -Smoke`가 codex/claude/agy를 순서대로
+     확인한다. 개별 확인은 `-SkipCodex`, `-SkipClaude`, `-SkipAgy`로 분리한다.
+   - Claude는 `claude.cmd` 하드코딩을 제거하고 `Get-Command claude`로 실제 실행 파일을 찾는다.
+     `cmd.exe` 문자열 호출 대신 실행 파일 + 인자 quote helper를 사용한다.
+   - agy는 `--print-timeout 20s`를 쓰되, CLI 자체가 timeout을 지키지 않는 경우를 대비해 외부 30초
+     hard timeout으로 `AGY_TIMEOUT`을 기록하고 프로세스를 종료한다.
+2. **재발 시 진단 우선순위** — 막히면 먼저 ① `<cli> --version` 변경 여부(자동 업데이트로 플래그가
+   바뀌었는지) ② PATH 상의 실제 실행 바이너리 경로 ③ 인증/세션 상태(만료) 순으로 확인하고, 이
+   문서의 "최후수단" 플래그로 임의 재시도하지 않는다(가드레일 유지).
+3. **agy는 여전히 비권장 유지** — 위 "업스트림 버그" 분석은 변경 없음. claude CLI 회귀는 agy와
+   별개 현상이므로 혼동하지 않는다.
+
 ## codex
 
-- 버전: 0.139.0, 위치: `C:\nvm4w\nodejs\codex.ps1`
+- 버전: 0.139.0, 위치: 현재 PC에서는 WindowsApps 패키지 경로
+  (`C:\Program Files\WindowsApps\OpenAI.Codex_...\app\resources\codex.exe`)
 - 비대화형 실행: `codex exec [PROMPT]` (별칭 `e`)
 - 결과 캡처: `-o, --output-last-message <FILE>` (마지막 메시지만 파일로), `--json` (전체 이벤트 JSONL stdout)
 - 구조화 출력: `--output-schema <FILE>` (JSON Schema로 응답 형식 강제)
@@ -80,19 +107,23 @@ codex exec --dangerously-bypass-approvals-and-sandbox "<작업 지시>"
 
 ## claude (Claude Code)
 
-- 버전: 2.1.183, 위치: `C:\Users\qldh1\.local\bin\claude`
+- 버전: 2.1.187, 위치: `C:\Users\qldh1\.local\bin\claude.exe`
 - 비대화형 실행: `claude --print [options] "<prompt>"` (`-p`도 가능하나, `-p "<prompt>"` 형태가 아님)
 - 출력 형식: `--output-format {text|json|stream-json}` — 위임 결과 파싱에는 `json` 권장
-- 비용 상한: `--max-budget-usd <amount>` (print 모드 전용) — 위임 호출에 항상 거는 것을 권장
+- 비용 상한: `--max-budget-usd <amount>` (print 모드 전용) — Claude Code의 기본 제한이 아니라
+  호출자가 선택적으로 거는 1회 호출 상한이다.
 
 ### 권장(최소권한) 호출
 ```bash
 claude --print --output-format json --permission-mode acceptEdits \
-  --max-budget-usd 1.0 --safe-mode --no-session-persistence \
+  --safe-mode --no-session-persistence \
   "<위임할 작업 지시>"
 ```
 - Windows PowerShell에서 `--tools ""`는 variadic 옵션 파싱 때문에 뒤의 프롬프트까지 먹을 수 있으므로
   권장 예시에서 제외한다. 도구를 제한해야 하면 짧은 별도 실측 후 사용한다.
+- `--max-budget-usd 0.2`나 `1.0`은 이 프로젝트 스크립트가 넘겼던 호출별 비용 상한일 뿐, Claude Code의
+  일반 기본값이 아니다. 2026-06-25 기준 스모크/critic 스크립트에서는 이 제한을 제거했다. 특정 실험에서
+  비용을 반드시 봉쇄해야 할 때만 명시적으로 추가한다.
 - `--permission-mode {acceptEdits|auto|bypassPermissions|default|dontAsk|plan}`
   - `acceptEdits`: 파일 편집은 자동 승인, 그 외 위험 작업은 여전히 막힘(무인 실행엔 완전하지 않음)
   - `plan`: 실행 안 하고 계획만 — 위임받은 쪽이 "검토만" 해야 할 때 적합
@@ -126,16 +157,17 @@ OAuth 인증은 정상 동작한다 — 키체인 경유로 `qldh1669@gmail.com`
    그 직후 transcript 로그를 `/Users/qldh1/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`
    (드라이브 문자 없는 비정상 Unix식 경로)에 쓰려다 `The system cannot find the path specified`로
    반복 실패한다. 결과적으로 **stdout에 아무것도 출력하지 않고 조용히 종료**(exit 0).
-2. **PowerShell에서 실행**: 같은 프롬프트가 `--print-timeout 20s`를 명시했음에도 90초 넘게
-   응답 없이 행이 걸렸다(CPU 사용량도 거의 0 — 진짜로 멈춤). 강제 종료(`Stop-Process -Force`)해야
-   끝났다.
+2. **PowerShell에서 실행**: 같은 프롬프트가 `--print-timeout 20s`를 명시했음에도 응답 없이
+   행이 걸렸다(CPU 사용량도 거의 0 — 진짜로 멈춤). 2026-06-25 스모크에서는 외부 30초 hard timeout으로
+   `AGY_TIMEOUT`을 기록하고 강제 종료하도록 보강했다.
 3. `agy models`도 동일하게 무출력·exit 0으로 끝남(인증/네트워크 문제가 아니라 출력 파이프라인 자체의
    문제로 보임).
 
 ### 결론 및 권고
 - 코드/설정으로 우리 쪽에서 고칠 수 있는 문제가 아니다(agy 자체의 업스트림 버그로 판단).
-- **헤드리스 `--print` 위임은 현재 신뢰할 수 없다** — `.claude/skills/delegate-cli/`,
-  `.codex/agents/delegate.toml`에서 agy는 위임 대상에서 비권장으로 취급한다(재확인 전까지 보류).
+- **헤드리스 `--print` 위임은 현재 신뢰할 수 없다** — 스모크는 실행하지만, `AGY_EXEC_OK`가 나오지
+  않으면 자동 위임 대상으로 쓰지 않는다. `.claude/skills/delegate-cli/`, `.codex/agents/delegate.toml`에서
+  agy는 재확인 전까지 비권장으로 취급한다.
 - 사용자가 원하면 직접 `agy`를 인자 없이 대화형으로 한 번 실행해 같은 증상이 재현되는지, 또는 agy를
   업데이트(`agy update`)한 뒤 재현되는지 확인하는 게 다음 진단 단계.
 

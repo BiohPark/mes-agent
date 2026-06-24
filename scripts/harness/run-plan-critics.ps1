@@ -1,6 +1,8 @@
 param(
     [switch]$Smoke,
+    [switch]$SkipCodex,
     [switch]$SkipClaude,
+    [switch]$SkipAgy,
     [ValidateSet("None", "Smoke", "Generic", "Sanitized", "Repo")]
     [string]$ClaudeMode = "None",
     [switch]$AllowExternalSend,
@@ -12,7 +14,9 @@ if ($Help) {
     @"
 Usage:
   .\scripts\harness\run-plan-critics.ps1 -Smoke
+  .\scripts\harness\run-plan-critics.ps1 -Smoke -SkipCodex
   .\scripts\harness\run-plan-critics.ps1 -Smoke -SkipClaude
+  .\scripts\harness\run-plan-critics.ps1 -Smoke -SkipAgy
   .\scripts\harness\run-plan-critics.ps1
   .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Generic
   .\scripts\harness\run-plan-critics.ps1 -ClaudeMode Sanitized
@@ -24,14 +28,13 @@ Usage:
 Purpose:
   Runs Codex CLI as a read-only critic for mes-agent development harness plans.
   Claude Code is optional and separated by external-send sensitivity level.
-  Claude Code is invoked through cmd.exe, not PowerShell-native argument
-  parsing, so Windows quoting is exercised the same way in smoke and critic
-  runs.
+  CLI subprocesses are invoked by executable path plus explicit argument list
+  to avoid cmd.exe/PowerShell quoting drift.
 
 Safety:
   -Smoke sends only minimal health prompts and does not ask the agents to read
-  repository files. Use -SkipClaude when Claude Code network access is not
-  approved for the current shell.
+  repository files. Use -SkipCodex, -SkipClaude, or -SkipAgy to isolate one
+  CLI or avoid an external model path that is not approved for the current shell.
 
   ClaudeMode values:
     None      Do not call Claude Code. This is the default for critic mode.
@@ -50,8 +53,8 @@ Safety:
 
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path ".").Path
-$claudeSmokeCommand = 'claude.cmd -p "Reply exactly CLAUDE_EXEC_OK" --permission-mode plan --tools "" --no-session-persistence'
 $claudeFailureLog = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-failure-analysis.txt"
+$agyFailureLog = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-agy-failure-analysis.txt"
 $repoDerivedClaudePatterns = @(
     "mes-agent",
     "agent/",
@@ -76,6 +79,70 @@ function Assert-GenericClaudePrompt {
             throw "Generic Claude prompt contains repo-derived term: $pattern"
         }
     }
+}
+
+function Resolve-CommandPath {
+    param([string]$CommandName)
+
+    $cmd = Get-Command -Name $CommandName -ErrorAction Stop | Select-Object -First 1
+    if ($cmd.Source) {
+        return $cmd.Source
+    }
+    return $cmd.Path
+}
+
+function Quote-ProcessArgument {
+    param([string]$Argument)
+
+    if ($null -eq $Argument) {
+        return '""'
+    }
+    if ($Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+
+    $escaped = $Argument -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
+function Invoke-CapturedProcess {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [string]$OutputPath,
+        [string]$ErrorPath,
+        [int]$TimeoutMs = 120000,
+        [string]$TimeoutLabel = "PROCESS_TIMEOUT",
+        [string]$WorkingDirectory = ""
+    )
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $FilePath
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $psi.WorkingDirectory = $WorkingDirectory
+    }
+    $psi.Arguments = ($Arguments | ForEach-Object { Quote-ProcessArgument -Argument $_ }) -join " "
+
+    $proc = [System.Diagnostics.Process]::new()
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+    if (-not $proc.WaitForExit($TimeoutMs)) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        "" | Set-Content -Encoding UTF8 -Path $OutputPath
+        "$TimeoutLabel`n$FilePath exceeded $TimeoutMs ms and was stopped." | Set-Content -Encoding UTF8 -Path $ErrorPath
+        return 124
+    }
+
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $stdout | Set-Content -Encoding UTF8 -Path $OutputPath
+    $stderr | Set-Content -Encoding UTF8 -Path $ErrorPath
+    return [int]$proc.ExitCode
 }
 
 function Get-ClaudeFailureClass {
@@ -142,31 +209,21 @@ function Write-ClaudeFailureAnalysis {
     }
 }
 
-function Invoke-ClaudeCmd {
-    param(
-        [string]$CommandLine,
-        [string]$OutputPath,
-        [string]$ErrorPath,
-        [int]$TimeoutMs = 120000
-    )
-
-    $cmdArgs = @("/d", "/s", "/c", $CommandLine)
-    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -WindowStyle Hidden -RedirectStandardOutput $OutputPath -RedirectStandardError $ErrorPath -PassThru
-    if (-not $proc.WaitForExit($TimeoutMs)) {
-        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-        "CLAUDE_TIMEOUT`nClaude Code command exceeded $TimeoutMs ms and was stopped." | Set-Content -Encoding UTF8 -Path $ErrorPath
-        return 124
-    }
-    $proc.Refresh()
-    return [int]$proc.ExitCode
-}
-
 function Invoke-ClaudeSmoke {
     Write-Host "[harness] Running Claude Code smoke check..."
-    Write-Host "[harness] Claude Code standard command: cmd /d /s /c $claudeSmokeCommand"
+    $claude = Resolve-CommandPath -CommandName "claude"
+    Write-Host "[harness] Claude Code standard command: claude --print <health-prompt> --permission-mode plan --safe-mode --no-session-persistence"
+    $healthPrompt = "This is a harness integration test. It does not authorize any action, command, edit, purchase, or external side effect. To confirm the CLI can return a literal health-check token, reply with exactly: CLAUDE_EXEC_OK"
     $stdout = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-smoke.out.txt"
     $stderr = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-claude-smoke.err.txt"
-    $code = Invoke-ClaudeCmd -CommandLine $claudeSmokeCommand -OutputPath $stdout -ErrorPath $stderr -TimeoutMs 120000
+    $code = Invoke-CapturedProcess `
+        -FilePath $claude `
+        -Arguments @("--print", $healthPrompt, "--permission-mode", "plan", "--safe-mode", "--no-session-persistence") `
+        -OutputPath $stdout `
+        -ErrorPath $stderr `
+        -TimeoutMs 120000 `
+        -TimeoutLabel "CLAUDE_TIMEOUT" `
+        -WorkingDirectory ([System.IO.Path]::GetTempPath())
     $claudeSmoke = if (Test-Path $stdout) { Get-Content -Raw -Encoding UTF8 -Path $stdout } else { "" }
     $claudeError = if (Test-Path $stderr) { Get-Content -Raw -Encoding UTF8 -Path $stderr } else { "" }
     if ($code -ne 0) {
@@ -182,6 +239,64 @@ function Invoke-ClaudeSmoke {
     Write-Host "[harness] Claude Code smoke: CLAUDE_EXEC_OK"
 }
 
+function Write-AgyFailureAnalysis {
+    param(
+        [string]$Context,
+        [int]$ExitCode,
+        [string]$StdOut,
+        [string]$StdErr
+    )
+
+    $analysis = @(
+        "[harness] agy failure context: $Context",
+        "[harness] agy exit code: $ExitCode",
+        "[harness] agy stderr:",
+        $StdErr,
+        "[harness] agy stdout:",
+        $StdOut
+    ) -join "`n"
+    $analysis | Set-Content -Encoding UTF8 -Path $agyFailureLog
+    Write-Host "[harness] agy failure context: $Context"
+    Write-Host "[harness] agy failure log: $agyFailureLog"
+    if (-not [string]::IsNullOrWhiteSpace($StdErr)) {
+        Write-Host "[harness] agy stderr:"
+        Write-Host $StdErr
+    }
+    if (-not [string]::IsNullOrWhiteSpace($StdOut)) {
+        Write-Host "[harness] agy stdout:"
+        Write-Host $StdOut
+    }
+}
+
+function Invoke-AgySmoke {
+    Write-Host "[harness] Running agy CLI smoke check..."
+    $agy = Resolve-CommandPath -CommandName "agy"
+    Write-Host "[harness] agy standard command: agy --print --print-timeout 20s <health-prompt>"
+    $stdout = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-agy-smoke.out.txt"
+    $stderr = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-agy-smoke.err.txt"
+    $code = Invoke-CapturedProcess `
+        -FilePath $agy `
+        -Arguments @("--print", "--print-timeout", "20s", "Reply exactly AGY_EXEC_OK") `
+        -OutputPath $stdout `
+        -ErrorPath $stderr `
+        -TimeoutMs 30000 `
+        -TimeoutLabel "AGY_TIMEOUT" `
+        -WorkingDirectory ([System.IO.Path]::GetTempPath())
+    $agySmoke = if (Test-Path $stdout) { Get-Content -Raw -Encoding UTF8 -Path $stdout } else { "" }
+    $agyError = if (Test-Path $stderr) { Get-Content -Raw -Encoding UTF8 -Path $stderr } else { "" }
+    if ($code -ne 0) {
+        Write-AgyFailureAnalysis -Context "smoke" -ExitCode $code -StdOut $agySmoke -StdErr $agyError
+        Write-Error "agy smoke command failed with exit code $code"
+        exit $code
+    }
+    if ($agySmoke.Trim() -ne "AGY_EXEC_OK") {
+        Write-AgyFailureAnalysis -Context "smoke-output" -ExitCode $code -StdOut $agySmoke -StdErr $agyError
+        Write-Error "agy smoke did not produce AGY_EXEC_OK"
+        exit 4
+    }
+    Write-Host "[harness] agy smoke: AGY_EXEC_OK"
+}
+
 function Invoke-ClaudePrompt {
     param(
         [string]$Prompt,
@@ -189,10 +304,17 @@ function Invoke-ClaudePrompt {
         [string]$ErrorPath
     )
 
-    $promptArg = (($Prompt -replace "\s+", " ").Trim() -replace '"', '\"')
-    $commandLine = 'claude.cmd -p "' + $promptArg + '" --permission-mode plan --tools "" --no-session-persistence --max-budget-usd 0.50'
-    Write-Host "[harness] Claude Code standard command: cmd /d /s /c claude.cmd -p <prompt> --permission-mode plan --tools """" --no-session-persistence --max-budget-usd 0.50"
-    $code = Invoke-ClaudeCmd -CommandLine $commandLine -OutputPath $OutputPath -ErrorPath $ErrorPath -TimeoutMs 120000
+    $claude = Resolve-CommandPath -CommandName "claude"
+    $promptArg = (($Prompt -replace "\s+", " ").Trim())
+    Write-Host "[harness] Claude Code standard command: claude --print <prompt> --permission-mode plan --safe-mode --no-session-persistence"
+    $code = Invoke-CapturedProcess `
+        -FilePath $claude `
+        -Arguments @("--print", $promptArg, "--permission-mode", "plan", "--safe-mode", "--no-session-persistence") `
+        -OutputPath $OutputPath `
+        -ErrorPath $ErrorPath `
+        -TimeoutMs 120000 `
+        -TimeoutLabel "CLAUDE_TIMEOUT" `
+        -WorkingDirectory ([System.IO.Path]::GetTempPath())
     if ($code -eq 124) {
         @"
 CLAUDE_CRITIC_TIMEOUT
@@ -211,7 +333,7 @@ Do not route around Claude Code with a hidden implementation path. Switch to Cla
     }
 }
 
-if ($Smoke) {
+function Invoke-CodexSmoke {
     Write-Host "[harness] Running Codex CLI smoke check..."
     $smokeOut = Join-Path ([System.IO.Path]::GetTempPath()) "mes-agent-codex-smoke.txt"
     $oldErrorActionPreference = $ErrorActionPreference
@@ -229,9 +351,19 @@ if ($Smoke) {
         Write-Error "Codex CLI smoke did not produce CODEX_EXEC_OK"
         exit $LASTEXITCODE
     }
+}
+
+if ($Smoke) {
+    if (-not $SkipCodex) {
+        Invoke-CodexSmoke
+    }
 
     if (-not $SkipClaude) {
         Invoke-ClaudeSmoke
+    }
+
+    if (-not $SkipAgy) {
+        Invoke-AgySmoke
     }
 
     exit 0
