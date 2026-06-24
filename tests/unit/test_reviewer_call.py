@@ -6,6 +6,8 @@
 네트워크 없음 — get_client를 레코더로 대체한다.
 """
 
+import json
+
 import pytest
 
 import agent.server as server
@@ -116,3 +118,52 @@ async def test_passed_true_fallback_on_error(monkeypatch):
     monkeypatch.setattr(server, "get_model", lambda: "gpt-test")
     verdict = await server._reviewer_call([{"role": "assistant", "content": "x"}])
     assert verdict.passed is True
+
+
+async def test_harness_generate_records_executor_error_without_reviewer(monkeypatch):
+    """Executor errors must be recorded as failed rounds, not reviewed into a pass."""
+    captured = []
+
+    async def fake_generate(*args, **kwargs):
+        yield server.sse({"type": server.ev.ERROR, "message": "rate limit"})
+
+    async def fail_reviewer(*args, **kwargs):
+        raise AssertionError("reviewer must not run after executor error")
+
+    async def fake_record(task_type, thread_id, round_n, verdict, history):
+        captured.append({
+            "task_type": task_type,
+            "thread_id": thread_id,
+            "round_n": round_n,
+            "verdict": verdict,
+            "history": history,
+        })
+
+    class FakeSessionManager:
+        def get_thread_messages(self, task_type, thread_id):
+            return [{"role": "assistant", "content": "partial"}]
+
+    monkeypatch.setattr(server, "generate", fake_generate)
+    monkeypatch.setattr(server, "_reviewer_call", fail_reviewer)
+    monkeypatch.setattr(server, "_record_harness_round", fake_record)
+    monkeypatch.setattr(server, "_HARNESS_MAX_ROUNDS", 1)
+    monkeypatch.setattr(server, "get_session_manager", lambda: FakeSessionManager())
+
+    raw_events = [
+        raw async for raw in server._harness_generate(
+            "do work",
+            "thread-1",
+            "gmp-validation",
+            "auto",
+        )
+    ]
+    events = [json.loads(raw.removeprefix("data: ").strip()) for raw in raw_events]
+
+    assert [item["type"] for item in events] == [
+        server.ev.ERROR,
+        server.ev.HARNESS_ROUND,
+        server.ev.DONE,
+    ]
+    assert len(captured) == 1
+    assert captured[0]["verdict"].passed is False
+    assert "rate limit" in captured[0]["verdict"].feedback

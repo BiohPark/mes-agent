@@ -34,6 +34,7 @@ priority lives in `docs/DEV_ROADMAP_2026-06.md`; this file only routes you to th
 | `cards/company-pc-b0-checklist.md` | Backend classification checklist. |
 | `cards/gmp-validation-eval-procedure.md` | Six-run GMP evaluation procedure and result table. |
 | `cards/harness-eval-methodology.md` | Metrics and GO/NO-GO gates. |
+| `fixtures/gmp-validation/synthetic-batch-record-v1/` | Non-sensitive incomplete validation package for pre-live quality evaluation. |
 | `phase-report.md` | Historical phase report; not the current priority source. |
 
 ## CLI Delegation Safety

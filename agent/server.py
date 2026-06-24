@@ -531,10 +531,15 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
         is_last = (round_n == _HARNESS_MAX_ROUNDS - 1)
         exec_msg = message if round_n == 0 else f"[하네스 재시도 {round_n}: 위 검증자 피드백을 반영해 재수행하라]"
 
+        executor_error = ""
+
         async for raw in generate(exec_msg, thread_id, task_type, agent_mode):
             try:
                 data = json.loads(raw.removeprefix("data: ").strip())
-                if data.get("type") == ev.DONE:
+                event_type = data.get("type")
+                if event_type == ev.ERROR:
+                    executor_error = str(data.get("message") or data.get("error") or "executor error")
+                if event_type == ev.DONE:
                     break  # generate() 종료 신호 억제 — 하네스가 종료를 통제
             except Exception:
                 pass
@@ -543,7 +548,14 @@ async def _harness_generate(message: str, thread_id: str, task_type: str, agent_
         # 매 라운드 검증 — 마지막 라운드도 측정을 위해 판결을 기록(재시도 없음)
         yield sse({"type": ev.HARNESS_ROUND, "round": round_n + 1, "phase": "reviewing"})
         history = await loop.run_in_executor(None, session_mgr.get_thread_messages, task_type, thread_id)
-        verdict = await _reviewer_call(history, verify_prompt)
+        if executor_error:
+            from agent.harness.orchestrator import ReviewVerdict
+            verdict = ReviewVerdict(
+                passed=False,
+                feedback=f"Executor failed before final report: {executor_error[:500]}",
+            )
+        else:
+            verdict = await _reviewer_call(history, verify_prompt)
         await _record_harness_round(task_type, thread_id, round_n + 1, verdict, history)
 
         if verdict.passed or is_last:

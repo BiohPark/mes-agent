@@ -1,0 +1,4 @@
+signature_id,record_id,user_id,role,signature_meaning,signed_at,token_reuse_flag
+SIG-001,BR-1001,qa_approver_02,QA_APPROVER,final batch approval,2026-01-15T10:22:04Z,false
+SIG-002,BR-1001,operator_17,OPERATOR,,2026-01-15T09:41:19Z,false
+SIG-003,BR-1002,qa_approver_02,QA_APPROVER,final batch approval,2026-01-16T11:04:12Z,possible_duplicate_session

@@ -1,0 +1,7 @@
+trace_id,need_ref,design_ref,test_ref,test_status,owner_note
+RTM-001,BR-VAL-001,FS-BR-010,TC-FINAL-APPROVAL,pass,Tested operator login path and QA menu visibility separately
+RTM-002,BR-VAL-002,FS-BR-020,TC-AUDIT-CHANGE,pass,Reason field not mapped in this export
+RTM-003,BR-VAL-003,FS-BR-030,TC-ESIG-MEANING,pass,Signature export attached but reuse prevention not evidenced
+RTM-004,BR-VAL-004,FS-BR-040,TC-DEVIATION-CANCEL,pass,Protocol tested cancel after start not skip before start
+RTM-005,BR-VAL-005,,TC-REPORT-FILTER,not_run,Requirement has no linked design row
+RTM-999,,FS-BR-050,TC-EMERGENCY-RELEASE,not_run,Design-only item with no requirement source

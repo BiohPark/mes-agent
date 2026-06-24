@@ -1,0 +1,5 @@
+evidence_id,path,claimed_support,quality_note
+EV-AUD-001,audit_trail_excerpt.csv,BR-VAL-002,Missing reason in one critical row
+EV-SIG-001,esignature_export.csv,BR-VAL-001;BR-VAL-003,Missing signature meaning in one row
+EV-DEV-001,ui_observation_notes.md,BR-VAL-004,Observation covers cancel not skip
+EV-RPT-001,,BR-VAL-005,No file attached

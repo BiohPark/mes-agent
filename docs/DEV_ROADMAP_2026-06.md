@@ -30,6 +30,12 @@ Recent GMP readiness work added:
   in `docs/harness/cards/harness-eval-methodology.md` and
   `docs/harness/fixtures/gmp-validation/synthetic-batch-record-v1/computer-use-checklist.md` so any
   future Computer-Use verifying/Reviewer agent inherits them.
+- 2026-06-25 review pass added evidence that reframes priorities below: (a) the
+  Executor-error→Reviewer-pass bug is **fixed and tested** (`_harness_generate` forces `passed=False`
+  on any `ev.ERROR`; `test_reviewer_call.py`), (b) evaluator-file contamination is now structurally
+  guarded (prompt + `inventory.csv` `agent_allowed=no`), and (c) a **429/rate-limit run-death with no
+  retry/resume** was isolated as the single biggest trust blocker for live GMP runs — promoted to a
+  P0 item below.
 
 **Priority principle (2026-06-24, applies to all tables below):** the top-level goal is not feature
 breadth — it is (a) practical, real-world-usable feature quality, and (b) building an environment
@@ -47,6 +53,7 @@ Computer-Use evaluation itself).
 | 2 | **Live GMP Phase 4 measurement** | The local fixture dry-run proves plumbing, not real evidence quality. Live data is needed for P1 #3 and ADR-0004. | Run `docs/harness/cards/gmp-validation-eval-procedure.md` with the same real document and prompt: baseline 3 + harness 3, `HARNESS_MAX_ROUNDS=3`. |
 | Prep | **Synthetic validation evaluation** | The current local CSV dry-run proves plumbing only; a deliberately incomplete synthetic package tests interpretation quality before sensitive live documents are available. | Run `docs/harness/fixtures/gmp-validation/synthetic-batch-record-v1/prompts/six-run-prompt.md` baseline 3 + harness 3, then keep B-0 and live Phase 4 as required P0 work. |
 | A2A | **A2A CLI delegation reliability regression** (2026-06-24) | claude/agy headless delegation has been "fixed" multiple times and breaks again on retry — a recurring environment-drift problem, not a closed one-off bug. Self-improvement workflows that rely on delegation inherit this flakiness. | Add a pre-flight smoke check (version + 1-line headless prompt + non-empty stdout/exit 0) before any delegated call, per `docs/harness/a2a-cli-delegation.md` "회귀 이력". Keep using minimal-privilege flags only; do not auto-retry with `--dangerously-*` bypass flags. |
+| RL | **Rate-limit (429) recovery + resumable finalization** (2026-06-25) | A 429 is not a context overflow, so it skips the M4 prune/compact retry and ends the run via the global `ev.ERROR` handler — no backoff, no resume, no final report saved. A long GMP run that dies mid-way loses all visible work; this is the single biggest "can I trust it" blocker for live Phase 4. | Add bounded retry-with-backoff for 429/transient API errors in `generate()` (distinct from the 400/overflow path), and a resumable/partial finalization so the user gets a "stopped at step N, here is what I have" report instead of a bare error. TDD: extend `test_run_tool_watched.py`/overflow tests with a 429 fixture. Verify the harness still records `passed=False` on a non-recovered failure (already covered). |
 | UX | **비켜보기 (busy-mode) UX redesign** (2026-06-24) — ✅ 1차 완료 | User feedback: current default busy-mode (HUD/minimize/translucent, Backlog C) is disruptive. Desired direction: keep the main chat stream fully visible during agent execution; only collapse/hide the sidebar, not the whole window or chat panel. This directly affects the user's ability to supervise/trust agent runs, including Computer-Use self-verification sessions. | ✅ Done: new default `dock-right` (drop sidebar + right panel, keep chat only, shrink+dock right; `dock-keep` collapses sidebar only), plus a Codex/Claude-style full-screen click-through **monitor-border glow** (`screen-glow.html`) shown while running in all modes except `off`. Old hud/minimize/translucent/off retained as options. Remaining (deferred, security review): in-run input shielding (work-takeover, global ESC) and multi-monitor glow/dock — see P3 #12. |
 
 P0 guardrails:
@@ -60,7 +67,8 @@ P0 guardrails:
 | # | Mission | Decision input | Default until decided |
 |---|---------|----------------|-----------------------|
 | 3 | **Harness N epic GO/NO-GO** | Live Phase 4 correction rate, false pass rate, latency, and token cost. | Keep current Executor->Reviewer harness; do not add Planner role yet. |
-| 4 | **ADR-0004 G1 Reviewer read-only tools** | Whether text-only/multimodal Reviewer catches real misses often enough. | Keep Reviewer tool-free except multimodal message context. |
+| 4 | **ADR-0004 G1 Reviewer read-only tools** | Whether text-only/multimodal Reviewer catches real misses often enough. The 2026-06-25 fix already closed the worst failure mode (Executor error reviewed into a pass), so remaining input is purely evidence-quality on real documents. | Keep Reviewer tool-free except multimodal message context. |
+| OBS | **Obsidian path-retry hardening (agent robustness)** | Baseline run-003 (FIND-007): a bare-relative `list_directory("obsidian/")` failed and the agent gave up instead of retrying with the qualified path, then wrongly told the user the notes were inaccessible. This is an autonomy/trust gap independent of the harness. | Add a path-normalization/retry fallback in the Obsidian/list tools (or agent prompt guidance) so a failed relative lookup retries against the task/fixture-qualified root before concluding "inaccessible". TDD on `agent/tools/obsidian_rag.py`. |
 | 5 | **Office backend implementation path** | B-0 Path A/B/C/D. | Path A uses existing COM/local flow; Path B plans SharePoint REST; Path C reuses Graph; Path D remains browser/download fallback. |
 
 ## P2 - Valuable But Not Blocking

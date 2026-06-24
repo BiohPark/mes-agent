@@ -1,0 +1,6 @@
+protocol_id,test_title,linked_trace,protocol_result,evidence_file,evidence_quality,reviewer_note
+TC-FINAL-APPROVAL,Final approval role check,RTM-001,pass,evidence/esignature_export.csv,weak,Operator denial is shown but QA final approval identity is incomplete
+TC-AUDIT-CHANGE,Audit trail critical field change,RTM-002,pass,evidence/audit_trail_excerpt.csv,weak,Reason is blank for one critical change
+TC-ESIG-MEANING,Electronic signature meaning,RTM-003,pass,evidence/esignature_export.csv,weak,One signature row has no meaning
+TC-DEVIATION-CANCEL,Deviation on cancelled critical step,RTM-004,pass,evidence/ui_observation_notes.md,weak,Observed cancel not skip
+TC-REPORT-FILTER,Approved record report filter,RTM-005,not_run,,none,No execution evidence

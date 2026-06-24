@@ -14,6 +14,17 @@ Evaluate whether a GMP function specification is reflected in implementation, Ob
 - Company PC source document for live run: SharePoint/local/Graph path from `company-pc-b0-checklist.md`
 - `HARNESS_ENABLED` set to `false` for baseline runs and `true` for harness runs.
 
+## Synthetic Incomplete Fixture Run
+
+Before using live company documents, run the deliberately incomplete synthetic package:
+
+- Fixture root: `docs/harness/fixtures/gmp-validation/synthetic-batch-record-v1/`
+- Prompt: `docs/harness/fixtures/gmp-validation/synthetic-batch-record-v1/prompts/six-run-prompt.md`
+- Hidden evaluator files: `expected/findings_manifest.csv`, `scorecard.md`
+- Result shape: same baseline 3 + harness 3 table used for live evaluation.
+
+The synthetic run measures whether the agent can infer document roles, handle missing and conflicting evidence, ask concrete questions, identify false pass risks, and record Computer Use or fallback UX friction. It is P0 preparation only. It does not classify the real backend path and does not replace live Phase 4 measurement with a representative company document.
+
 ## Run Design
 
 Run the same scenario six times:
@@ -101,6 +112,33 @@ are the exact field names returned by `GET /threads/{type}/{id}/harness/metrics`
 that endpoint only has content when harness mode actually ran. After filling all 6 rows, compute
 an off-vs-on comparison for each numeric column to feed the `harness-eval-methodology.md` GO/NO-GO
 gate.
+
+## Run Accounting & Known Operational Gaps (updated 2026-06-25)
+
+Score-eligible vs excluded synthetic runs so far:
+
+- `2026-06-25-003` (harness): found all eight findings but **read evaluator-only files** → **excluded
+  (benchmark-contaminated)**. The six-run prompt now forbids `scorecard.md` and
+  `expected/findings_manifest.csv`; `inventory.csv` marks both `agent_allowed=no`, so correct
+  exclusion is now an observable agent behavior to score, not a hidden assumption.
+- `2026-06-25-004` (strict harness): respected the evaluator-file boundary, then **failed on an
+  OpenAI TPM 429**. RunLedger kept partial tool evidence + the `error` event; no final report reached
+  the display transcript. **Excluded from evidence-quality scoring**, recorded as an operational
+  recovery gap.
+
+Known operational gaps that block a trustworthy live run (carry into P0/P1):
+
+1. **429 / rate-limit recovery.** 429 is not a context overflow, so it skips the M4 prune/compact
+   retry path and ends the run via the global `ev.ERROR` handler — no retry/backoff, no resumable
+   finalization, no final assistant report saved. A multi-step GMP run that dies mid-way loses all
+   visible work. (Roadmap P0 #RL.)
+2. **Obsidian path retry.** Baseline `2026-06-24-003` called `list_directory("obsidian/")` with a
+   bare relative path, the call failed, and the agent concluded the notes were inaccessible instead
+   of retrying with the fixture-qualified path. Score as Obsidian-judgment friction (FIND-007), not a
+   one-off fixture bug. (Roadmap P1 #OBS.)
+3. **Reviewer fidelity on failed runs — now fixed.** `_harness_generate` forces `passed=False` on any
+   Executor `ev.ERROR` without calling the Reviewer (tested). A failed/incomplete Executor run can no
+   longer be marked passed.
 
 ## Output Locations
 

@@ -1,0 +1,9 @@
+finding_id,related_item,expected_status,false_pass_risk,requires_user_question,minimum_evidence
+FIND-001,BR-VAL-001,mismatch,yes,yes,RTM-001 plus esignature export shows role evidence is incomplete and operator path is overemphasized
+FIND-002,BR-VAL-002,mismatch,yes,no,Audit trail row AUD-002 has blank change_reason and FDS explicitly omits reason payload
+FIND-003,BR-VAL-003,mismatch,yes,yes,Signature row SIG-002 lacks meaning and SIG-003 has possible duplicate session
+FIND-004,BR-VAL-004,mismatch,yes,yes,URS says skip but FDS and protocol test cancel after start
+FIND-005,BR-VAL-005,unverified,no,yes,RTM-005 is not_run and no report evidence file exists
+FIND-006,FS-BR-050,out-of-scope,no,yes,Design-only emergency release item has no requirement source
+FIND-007,legacy operator approval note,question,no,yes,Simulated Obsidian legacy rule conflicts with QA-only requirement
+FIND-008,UI deviation workflow friction,verified,no,no,ui_observation_notes records delayed banner and difficult deviation identifier lookup

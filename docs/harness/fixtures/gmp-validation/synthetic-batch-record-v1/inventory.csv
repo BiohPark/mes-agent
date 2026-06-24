@@ -1,0 +1,14 @@
+path,declared_role,role_confidence,ambiguity,agent_allowed
+documents/BR-VAL-user-needs-export.md,requirements-like,medium,Header says user needs export but sections look like URS; content must decide,yes
+documents/FS_batch_release_latest_draft.md,design-like,low,Filename says latest but body says Draft B; content must decide,yes
+documents/rtm_working_export.csv,unknown,low,RTM-like columns are renamed and some requirement IDs appear only here,yes
+documents/oq_protocol_results.csv,evidence-like,medium,Protocol claims pass but points to incomplete evidence,yes
+documents/validation-summary-release.md,summary-like,medium,Summary says verified while trace matrix still has not_run rows,yes
+documents/evidence/evidence_index.csv,evidence-like,low,Folder mixes protocol evidence and analyst notes; content must decide,yes
+documents/evidence/audit_trail_excerpt.csv,evidence-like,medium,Rows omit reason or user for critical changes,yes
+documents/evidence/esignature_export.csv,evidence-like,medium,Signature meaning is missing for one approval and reused token is hinted,yes
+documents/evidence/ui_observation_notes.md,observation-like,medium,Text observation substitutes for screenshot in closed-network tests,yes
+obsidian/legacy-validation-rules.md,knowledge-like,medium,Older rule conflicts with current requirements,yes
+obsidian/handoff-note-template.md,knowledge-target,high,Template is for output planning rather than evidence,yes
+expected/findings_manifest.csv,evaluator-only,high,Expected findings are hidden from the agent during evaluation,no
+scorecard.md,evaluator-only,high,Human scoring rubric is hidden from the agent during evaluation,no
