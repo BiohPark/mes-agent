@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<!--
+  화면 테두리 글로우 오버레이 (백로그 X) — 에이전트가 컴퓨터를 조작하는 동안 모니터 전체
+  테두리에 은은한 음영을 띄워 "사용 중"을 표시한다(코덱스/Claude Code 컴퓨터 사용과 동일).
+  전체 화면을 덮는 투명·클릭 통과 창이며 가운데는 완전 투명, 테두리만 그린다. JS 없음.
+-->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      /* 창 전체가 setIgnoreMouseEvents로 클릭 통과되지만 방어적으로 한 번 더 */
+      pointer-events: none;
+    }
+    /* 테두리만 그리는 inset 글로우. 가운데는 투명 → 작업 화면이 그대로 보임 */
+    .glow {
+      position: fixed;
+      inset: 0;
+      border-radius: 2px;
+      box-shadow:
+        inset 0 0 0 2px rgba(58, 134, 255, 0.55),
+        inset 0 0 22px 2px rgba(58, 134, 255, 0.30),
+        inset 0 0 60px 8px rgba(58, 134, 255, 0.12);
+      animation: glow-pulse 2.6s ease-in-out infinite;
+    }
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .glow { animation: none; opacity: 0.8; }
+    }
+  </style>
+</head>
+<body>
+  <div class="glow"></div>
+</body>
+</html>

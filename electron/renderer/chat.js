@@ -157,27 +157,45 @@ function setAgentState(state) {
   if (state === 'idle') {
     setTimeout(() => agentStateBar.classList.add('hidden'), 800)
     // 실행 종료 → 창 원복 (개선 아이디어 C)
+    clearBusyBodyClass()
     window.electronAPI?.agentIdle?.()
   } else {
     agentStateBar.classList.remove('hidden')
     // 화면 제어가 시작되는 running 상태에서만 창을 비킨다
     if (state === 'running') {
+      applyBusyBodyClass()
       window.electronAPI?.agentBusy?.(busyMode)
       updateAgentHud()
     } else if (state === 'waiting') {
-      // 사용자 확인 팝업이 보이도록 창을 원복 (응답 후 다시 running 되면 재최소화)
+      // 사용자 확인 팝업이 보이도록 창·사이드바를 원복 (응답 후 다시 running 되면 재적용)
+      clearBusyBodyClass()
       window.electronAPI?.agentIdle?.()
     }
     // thinking 상태는 running 사이의 짧은 단계 — 창을 건드리지 않아 깜빡임 방지
   }
 }
 
-// ── 실행 중 창 모드 (개선 아이디어 C) ─────────────────────────
-let busyMode = localStorage.getItem('busyMode') || 'hud'
-if (busyMode === 'minimize' && !localStorage.getItem('busyMode')) busyMode = 'hud'
-const BUSYMODE_LABELS = { hud: '📌 작게 보기', minimize: '🪟 최소화', translucent: '👻 반투명', off: '🚫 끄기' }
+// ── 실행 중 창 모드 (개선 아이디어 C / 백로그 X) ─────────────────
+// 기본값: 'dock-right' — 사이드바·우측 패널을 떼고 대화창만 남겨 우측에 작게 도킹.
+let busyMode = localStorage.getItem('busyMode') || 'dock-right'
+if (busyMode === 'minimize' && !localStorage.getItem('busyMode')) busyMode = 'dock-right'
+const BUSYMODE_LABELS = {
+  'dock-right': '📑 대화만(우측)', 'dock-keep': '📥 사이드바 접기',
+  hud: '📌 작게 보기', minimize: '🪟 최소화', translucent: '👻 반투명', off: '🚫 끄기',
+}
 const busymodeBtn = document.getElementById('busymode-btn')
 const busymodeMenu = document.getElementById('busymode-menu')
+
+// running 시 현재 busyMode에 맞는 body 클래스를 적용(사이드바/우측 패널 숨김), 그 외엔 해제.
+function applyBusyBodyClass() {
+  const cls = window.BusyMode?.bodyClassForBusyMode?.(busyMode) || ''
+  const all = window.BusyMode?.ALL_BODY_CLASSES || ['chat-only', 'sidebar-hidden']
+  all.forEach(c => document.body.classList.toggle(c, c === cls && cls !== ''))
+}
+function clearBusyBodyClass() {
+  const all = window.BusyMode?.ALL_BODY_CLASSES || ['chat-only', 'sidebar-hidden']
+  all.forEach(c => document.body.classList.remove(c))
+}
 
 function renderBusyMode() {
   if (busymodeBtn) busymodeBtn.textContent = BUSYMODE_LABELS[busyMode] || BUSYMODE_LABELS.hud

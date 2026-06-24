@@ -55,7 +55,7 @@
 | 환경 설정 | `.env` / `start.ps1` | conda + nvm PATH 자동 설정 |
 | Obsidian 세션 관리 | `agent/obsidian_session.py` | 세션 자동 기록, 개발 노트, 백로그, 세션 검색 (4종 툴) |
 | 동적 업무 타입 관리 (백로그 T) ✅ | `agent/obsidian_session.py` + `agent/tools/task_type.py` + `agent/server.py` + `electron/renderer/chat.js`·`index.html` | 기본 6타입은 `_DEFAULT_TASK_CONFIGS`(`general`·`syncade`·`obsidian`·`unscript`·`gmp-validation`·`knox`), 사용자 정의 타입은 Vault `agent/task_types.json` 오버레이로 머지. `task_type_create`/`task_type_remove`(mutate 확인 게이트, 기본 타입 삭제 거부) 2종 추가. `/task-config` 동적 반환 + 사이드바 업무 그룹 동적 렌더링. |
-| GMP 품질평가 준비 ✅ | `agent/obsidian_session.py` + `agent/workflow/storage.py` + `agent/harness/gmp_validation.py` + `docs/harness/cards/*gmp*` | `gmp-validation` 업무타입 추가: read-only 우선, 원본 문서/SharePoint mutate 전 `ask_user` 승인, harness 옵트인. 기본 7단계 workflow, 비민감 CSV fixture 파서(`load_requirements_csv`), RunLedger `artifact` 이벤트 helper(`append_artifact_ledger`), B-0 체크리스트와 harness ON/OFF 평가 절차 문서화. 2026-06-23 로컬 fixture dry-run은 완료됐고, 실제 회사 문서 B-0/live Phase 4는 `docs/DEV_ROADMAP_2026-06.md` P0 잔여 작업. |
+| GMP 품질평가 준비 ✅ | `agent/obsidian_session.py` + `agent/workflow/storage.py` + `agent/harness/gmp_validation.py` + `docs/harness/cards/*gmp*` | `gmp-validation` 업무타입 추가: read-only 우선, 원본 문서/SharePoint mutate 전 `ask_user` 승인, harness 옵트인. 기본 7단계 workflow, 비민감 CSV fixture 파서(`load_requirements_csv`), RunLedger `artifact` 이벤트 helper(`append_artifact_ledger`), B-0 체크리스트와 harness ON/OFF 평가 절차 문서화. 2026-06-23 로컬 fixture dry-run은 완료됐고, 실제 회사 문서 B-0/live Phase 4는 `docs/DEV_ROADMAP_2026-06.md` P0 잔여 작업. **2026-06-24**: synthetic Computer-Use 평가(`synthetic-batch-record-v1`) baseline 3/3 완료, harness 토글 후 harness 1/3 진행 중(나머지는 다음 세션). 평가 방법론 교훈(vault 직접 읽기, Glob 재귀패턴 필요, baseline run에서 발견된 Obsidian 경로 재시도 부재 갭)은 `docs/harness/cards/harness-eval-methodology.md`·`computer-use-checklist.md`에 기록 — 향후 Computer-Use 검증 에이전트가 그대로 상속. |
 | 업무 스레드 대화 | `agent/obsidian_session.py` + `agent/server.py` | 사이드바 버튼별 독립 다중 스레드, 멀티턴 대화 이력, 완료/보관/삭제, Obsidian 저장 |
 | 스레드 API | `agent/server.py` | `/task-config` `/threads/{type}` GET·POST·DELETE `/threads/{type}/{id}/messages·close·restore·unarchive·permanent` |
 | Playwright 브라우저 바이너리 | `%LOCALAPPDATA%\ms-playwright\` | `python -m playwright install chromium` 으로 설치 |
@@ -95,7 +95,7 @@
 | 브라우저 greenlet 스레드 버그 수정 ✅ | `agent/tools/browser.py` | 전용 단일 스레드 executor(`_on_pw_thread`)로 모든 Playwright 핸들러 위임 → "Cannot switch to a different thread" 해결 (웹 조사 실패 수정) |
 | 마크다운→진짜 docx 변환 ✅ | `agent/tools/document.py` | `write_word` — 제목·목록·굵게·표를 Word 서식으로 변환한 OOXML .docx 저장. write_file 스키마에 .docx 경고 추가 |
 | 긴 호흡·자가복구 에이전트 ✅ | `agent/obsidian_session.py` + `agent/server.py` | `_AUTO_EXEC`/`_AUTONOMOUS_INSTRUCTION`에 끈질긴 문제해결·근본원인 조사·선택지 제시 지침, `_MAX_STEPS` 20→40, 단계 상한 도달 시 '계속' 안내 |
-| 실행 중 창 비켜 보기 UX (백로그 C + 감독 HUD) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `index.html` + `electron/renderer/hud.*` | agentState=running 시 기본 `hud`(작게 비켜 보기)로 공용 HUD에 목표·단계·도구·위험 표시, 선택 모드로 자동 최소화/반투명/끄기 유지(헤더 토글, localStorage 저장), idle 시 원복 |
+| 실행 중 창 비켜 보기 UX (백로그 C·X + 감독 HUD) ✅ | `electron/main.js` + `preload.js` + `chat.js` + `busy-mode.js` + `index.html` + `style.css` + `electron/renderer/{hud,screen-glow}.*` | agentState=running 시 busy 모드로 창을 비킨다. **기본값 `dock-right`(백로그 X, 2026-06-24)** — 사이드바+우측 패널을 떼고 **메인 대화창만** 남겨 화면 우측에 작게 도킹(`main.js`가 `_savedBounds` 저장 후 `setMinimumSize(360,400)`로 minWidth 우회·`workArea` 우측 도킹, idle 시 원복; 렌더러는 순수 헬퍼 `busy-mode.js`의 `bodyClassForBusyMode`로 `.chat-only`/`.sidebar-hidden` body 클래스 토글). 선택 모드 `dock-keep`(사이드바만 접기)·`hud`(작게 비켜 보기)·`minimize`·`translucent`·`off`(헤더 토글, localStorage). **화면 테두리 글로우**: 실행 중 모니터 전체 테두리에 "사용 중" 음영을 표시(`screen-glow.html` 전체화면 투명·클릭 통과·항상 위·포커스 비탈취 오버레이, `off` 제외 모든 모드). waiting/idle 시 사이드바·창·글로우 원복. 테스트: `tests/renderer/busy-mode.test.js` + `tests/unit/test_busy_mode_js.py`. 한계: 글로우·도킹은 주 모니터 기준. |
 | 모델 선택 드롭다운 (백로그 D) ✅ | `agent/config.py` + `agent/llm.py` + `agent/server.py` + `chat.js` | `/models` 동적 조회(/v1/models, 3s 타임아웃) → .env `LLM_*_MODELS` 프리셋 폴백, 런타임 모델 오버라이드, 헤더 드롭다운 |
 | 설정 정리·모델 출처 표기 (백로그 W) ✅ | `.env.example` + `chat.js` | `.env.example` LLM/Office/Vision 블록 분리, `COMPACT_RATIO` 0.7 보수화, 모델 드롭다운 `loadModels()`에 `source`(동적/.env 프리셋) title 표시. 트랙0 P3·I1, 상세 `docs/TRANSFORMATION_PLAN.md` 트랙0 |
 | IDE식 스레드 탭 (백로그 A) ✅ | `electron/renderer/chat.js` + `index.html` + `style.css` | 상단 열린 스레드 탭 바, X=탭 닫기(사이드바 보존), 탭 클릭 전환, 보관/삭제 시 탭 동기화. **버그픽스**: 마지막 탭 닫을 때 우측 워크플로우 패널이 갱신 안 되던 stale 버그 — `window.workflowPanel.load(null, null)` 호출 추가 |
@@ -396,9 +396,20 @@ PoC v1(Executor+Reviewer 자기교정 루프)과 도메인 하네스 팩 Phase 1
 
 V-1단계(완료) 위에: 진행도(liveness) 탐지(CPU/stdout/창 응답성) → 에이전트 인루프 판단(스턱 시 구조화 결과 LLM 환류) → 자동 백그라운드 디태치(정당히 긴 작업은 SSE 비블록) → baseline 적응 학습(p50/p90 누적 보정). **자동 백그라운드 디태치 구현 완료(ADR-0003)**. (진행도 탐지 OS별 신뢰성 보완 및 baseline 학습이 남음). 상세: `docs/backlog/pending/V-adaptive-tool-timeout.md`.
 
-### X. 창 UX 고도화 (트랙0 I2) 🔲 — Electron 수동확인, 보안 검토 선행
+### X. 창 UX 고도화 (트랙0 I2) — ✅ 1차 완료(2026-06-24): dock-right 기본 모드 + 화면 테두리 글로우
 
-실행 중 채팅창 드롭 방지: 기본 busy_mode `minimize`→`translucent`(반투명). "비켜보기" 팝업 확대 + 상세 동작 설명. Codex식 윈도우 네이티브 컴퓨터 사용 UX 모방(동작 중 모니터 테두리·작업권 회수·ESC 중지). **작업권 회수·전역 ESC는 입력 가로채기 리스크 → 보안 검토 후.** 백로그 C 후속. 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0.
+**완료**: agentState=running 시 **기본값 `dock-right`** — 사이드바+우측 패널을 떼고 메인
+대화창만 남겨 화면 우측에 작게 도킹(`dock-keep`은 사이드바만 접기). 기존 `hud`/`minimize`/
+`translucent`/`off`는 옵션으로 유지(헤더 토글, localStorage). Codex/Claude Code 컴퓨터
+사용처럼 **실행 중 모니터 전체 테두리에 "사용 중" 글로우**(전체화면 투명·클릭 통과 오버레이
+`screen-glow.html`, `off` 제외 모든 모드). 구현은 위 "현재 상태" 표의 "실행 중 창 비켜 보기
+UX" 행 참조.
+
+- **보류(후속, 변경 없음)**: Codex식 윈도우 네이티브 컴퓨터 사용 UX의 나머지(동작 중 작업권
+  회수·전역 ESC 중지) — **입력 가로채기 리스크 → 보안 검토 후.** 멀티모니터 글로우/도킹
+  확장도 후속.
+
+백로그 C 후속. 상세: `docs/TRANSFORMATION_PLAN.md` 트랙0, `docs/DEV_ROADMAP_2026-06.md` P0 **UX**.
 
 ### Y. Office365 로그인·로컬 작업 강화 (트랙0 I3) 🔲 — 회사 PC 선검증 필수
 
@@ -439,7 +450,10 @@ Bash는 예외적으로 `~/.bashrc`를 로드하지만, 그건 저장소 밖 개
 검증된 플래그는 `docs/harness/a2a-cli-delegation.md` 참조. Claude Code 쪽은 `.claude/skills/delegate-cli/`,
 Codex 쪽은 `.codex/agents/delegate.toml`. 항상 최소권한 모드(샌드박스/승인정책)만 자동으로 사용하고,
 막히면(승인 대기·타임아웃) **스스로 완전우회(`--dangerously-*`) 플래그로 재시도하지 않고 사용자에게
-승인을 구한다.**
+승인을 구한다.** **⚠️ 재발성 회귀(2026-06-24)**: claude/agy 위임이 여러 차례 고쳐졌다가 재시도 시
+다시 실패하는 패턴이 반복 보고됐다 — 단일 원인의 종결된 버그가 아니라 환경 드리프트로 계속 재발하는
+신뢰성 문제로 취급한다. 우선순위·대응(자동 스모크 체크 등)은 `docs/harness/a2a-cli-delegation.md`
+"회귀 이력" + `docs/DEV_ROADMAP_2026-06.md` P0 항목 **A2A** 참조.
 
 ---
 

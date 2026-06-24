@@ -27,6 +27,8 @@
         <div id="busymode-switcher">
           <button id="busymode-btn" class="hdr-btn" title="에이전트 실행 중 창 동작">📌 작게 보기</button>
           <div id="busymode-menu" class="hdr-menu hidden">
+            <div class="hdr-menu-item" data-mode="dock-right">📑 대화만 (우측 도킹)</div>
+            <div class="hdr-menu-item" data-mode="dock-keep">📥 사이드바만 접기 (우측)</div>
             <div class="hdr-menu-item" data-mode="hud">📌 작게 비켜 보기</div>
             <div class="hdr-menu-item" data-mode="minimize">🪟 자동 최소화</div>
             <div class="hdr-menu-item" data-mode="translucent">👻 반투명</div>
@@ -282,6 +284,7 @@
 
   <script src="vendor/panzoom.min.js"></script>
   <script src="scroll-utils.js"></script>
+  <script src="busy-mode.js"></script>
   <script src="chat.js"></script>
   <script src="supervisor-state.js"></script>
   <script src="workflow.js"></script>

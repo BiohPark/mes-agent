@@ -130,6 +130,13 @@ body {
   overflow: hidden;
 }
 
+/* 실행 중 창 모드 (백로그 X): 사이드바(±우측 패널)를 떼고 대화창만 남긴다.
+   chat.js가 running 시 busyMode에 따라 body에 클래스를 토글한다. */
+body.sidebar-hidden #sidebar { display: none; }
+body.chat-only #sidebar,
+body.chat-only #right-panel,
+body.chat-only #right-resize-handle { display: none; }
+
 /* 3영역 레이아웃 (백로그 P): 상단 고정 / 중단 스크롤 / 하단 고정 */
 .sidebar-fixed-top {
   flex-shrink: 0;
