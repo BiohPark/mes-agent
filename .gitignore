@@ -42,3 +42,4 @@ htmlcov/
 
 # Superpowers visual brainstorming artifacts
 .superpowers/
+.aider*
